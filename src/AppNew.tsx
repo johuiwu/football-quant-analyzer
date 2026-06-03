@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { TeamStats } from "./data/realTeamsData";
 import { ModelWeights } from "./utils/quantModel";
@@ -10,12 +10,12 @@ import { useTeamDataSync } from "./hooks/useTeamDataSync";
 import { useRiskAlerts } from "./hooks/useRiskAlerts";
 import PageHeader from "./components/PageHeader";
 import StandingsPage from "./pages/StandingsPage";
-import CornerSystemPage from './pages/CornerSystemPage';
+import CornerSystemPage from "./pages/CornerSystemPage";
 import DashboardPage from "./pages/DashboardPage";
 import PythonExportTab from "./components/PythonExportTab";
 import { useAppStore } from "./store/useAppStore";
 
-// 路径名 → activeTab 映射
+// 路径与 activeTab 映射
 const PATH_TO_TAB: Record<string, string> = {
   "/dashboard": "dashboard",
   "/standings": "standings",
@@ -39,6 +39,7 @@ function AppNewContent() {
   const setFixturesLoading = useAppStore((s) => s.setFixturesLoading);
   const setFixtureSyncMsg = useAppStore((s) => s.setFixtureSyncMsg);
   const setFixtureSyncSource = useAppStore((s) => s.setFixtureSyncSource);
+  const setLoadRealTimeFixtures = useAppStore((s) => s.setLoadRealTimeFixtures);
   const setRiskAlerts = useAppStore((s) => s.setRiskAlerts);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setIsExporting = useAppStore((s) => s.setIsExporting);
@@ -47,9 +48,9 @@ function AppNewContent() {
   const isFirstRender = useRef(true);
   const location = useLocation();
 
-  // ===== 双向同步：activeTab ↔ URL =====
+  // ===== 双向同步：activeTab 与 URL =====
 
-  // activeTab → URL（store 驱动导航，如 setHomeAndGo 触发）
+  // activeTab 到 URL（store 驱动导航，如 setHomeAndGo 触发）
   useEffect(() => {
     const targetPath = "/" + activeTab;
     if (location.pathname !== targetPath) {
@@ -57,7 +58,7 @@ function AppNewContent() {
     }
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // URL → activeTab（浏览器导航驱动 store 更新）
+  // URL 到 activeTab（浏览器导航驱动 store 更新）
   useEffect(() => {
     const tab = PATH_TO_TAB[location.pathname];
     if (tab && tab !== activeTab) {
@@ -109,6 +110,7 @@ function AppNewContent() {
   useEffect(() => { setFixturesLoading(isFixturesLoading); }, [isFixturesLoading, setFixturesLoading]);
   useEffect(() => { setFixtureSyncMsg(fixtureSyncMsg); }, [fixtureSyncMsg, setFixtureSyncMsg]);
   useEffect(() => { setFixtureSyncSource(fixtureSyncSource); }, [fixtureSyncSource, setFixtureSyncSource]);
+  useEffect(() => { setLoadRealTimeFixtures(() => loadRealTimeFixtures); }, [loadRealTimeFixtures, setLoadRealTimeFixtures]);
   useEffect(() => { setRiskAlerts(riskAlerts); }, [riskAlerts, setRiskAlerts]);
 
   // Download stand-alone custom python software file
@@ -135,7 +137,7 @@ function AppNewContent() {
       window.URL.revokeObjectURL(url);
     } catch (e: any) {
       console.error("Export error:", e);
-      alert("导出 Python 脚本失败: " + (e.message || "未知错误"));
+      alert("导出 Python 脚本失败：" + (e.message || "未知错误"));
     } finally {
       setIsExporting(false);
     }
@@ -154,7 +156,7 @@ function AppNewContent() {
           <Route path="/teams" element={<ErrorBoundary><TeamInfoSection /></ErrorBoundary>} />
           <Route path="/worldcup" element={<WorldCupDashboard />} />
           <Route path="/python" element={<PythonExportTab handleExportPython={handleExportPython} isExporting={isExporting} />} />
-          <Route path="/corner" element={<CornerSystemPage />} />
+          <Route path="/corner" element={<ErrorBoundary><CornerSystemPage /></ErrorBoundary>} />
         </Routes>
       </main>
 
@@ -163,9 +165,9 @@ function AppNewContent() {
           <p className="text-xs text-slate-500 font-mono">
             Football Quantitative Precision Predictor Engine - Built for Academic Rationality Research - All Rights Reserved 2026
           </p>
-          <div className="inline-flex items-center gap-2 bg-slate-900/60 border border-slate-850 px-3.5 py-1.5 rounded-lg text-[10px] text-slate-400">
+          <div className="inline-flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3.5 py-1.5 rounded-lg text-[10px] text-slate-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>2026 赛季赛果数据状态：增量更新已完成 (覆盖英超/意甲/西甲/德甲等 200+劲旅完整对赛历史)</span>
+            <span>2026 赛季赛果数据状态：增量更新已完成 (覆盖英超/意甲/西甲/德甲 200+劲旅完整对赛历史)</span>
           </div>
           <p className="text-[10px] text-red-500/80 max-w-2xl mx-auto leading-relaxed">
             * 再次声明：本软件为开源教学模型，绝不向任何博彩企业、竞彩店铺提供连通、代购服务。理性对待对赛计算结果，反对赌博，遵守法律法规。

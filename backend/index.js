@@ -48,7 +48,8 @@ app.get('/api', (req, res) => {
         'GET /api/matches/team/:teamId': 'Get matches by team'
       },
       fixtures: {
-        'GET /api/sync-fixtures': 'Get preset fixture data (local data source)'
+        'GET /api/sync-fixtures': 'Get preset fixture data (local data source)',
+        'GET /api/qiumiwu-fixtures': 'Crawl live football fixtures from qiumiwu.com'
       },
       features: {
         'GET /api/features/teams': 'Get feature vectors for all teams',

@@ -3,7 +3,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
 import { parseAllMarkets, handlePopups } from "./crawlerShared.js";
 import fs from "fs";
 
@@ -89,6 +89,32 @@ async function clickNoButton(page) {
 export async function loginToHG(credentials, forceNew = false) {
   console.log("[HgCrawler] 开始登录...");
   crawlerStatus.error = null;
+
+  // Priority: reuse shared browser session from browserPool
+  if (!forceNew) {
+    const sharedPage = getSharedPage();
+    if (sharedPage && isBrowserActive()) {
+      try {
+        const sharedUrl = await sharedPage.url();
+        console.log("[HgCrawler] Shared session found: " + (sharedUrl || "").substring(0, 100));
+        const status = await safeEvaluate(sharedPage, () => {
+          try {
+            const bodyText = document.body.textContent || "";
+            return (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
+                   (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
+          } catch (e) { return false; }
+        });
+        if (status) {
+          console.log("[HgCrawler] Reusing shared session, skip login");
+          mainPage = sharedPage;
+          crawlerStatus.isLoggedIn = true;
+          return { success: true };
+        }
+      } catch (err) {
+        console.log("[HgCrawler] Shared session invalid: " + err.message);
+      }
+    }
+  }
 
   // 如果 mainPage 仍有效，尝试复用
   if (!forceNew && mainPage) {

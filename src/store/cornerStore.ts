@@ -34,6 +34,8 @@ export interface HandicapEntry {
     even?: number;
   };
   source: "dom" | "xhr" | "fallback";
+  /** 盘口分组: main=让球&大小, corner=角球盘口, correct_score=波胆 */
+  marketGroup?: "main" | "corner" | "correct_score";
 }
 
 /** 实时比赛角球数据 */
@@ -200,8 +202,10 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
 ];
 
 // ==================== 策略评估 ====================
+// 【同步提醒】此处逻辑与 backend/services/cornerEvaluator.js:evaluateSingleStrategy 保持一致
+// 修改任一处时请同步更新另一处
 
-function evaluateMatchForStrategies(
+export function evaluateMatchForStrategies(
   match: { currentMinute: number; cornerHandicap: number; odds: number; homeScore: number; awayScore: number },
   strategies: CornerStrategy[]
 ): number[] {

@@ -34,7 +34,7 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "lru-cache": "^11.5.1",
-    "lucide-react": "^0.546.0",
+    "lucide-react": "0.468.0",
     "openai": "^6.39.0",
     "puppeteer": "^25.0.4",
     "puppeteer-extra": "^3.3.6",
@@ -91,7 +91,11 @@
       {
         "from": "build_resources/database/",
         "to": "database/",
-        "filter": ["*.db", "*.db-shm", "*.db-wal"]
+        "filter": [
+          "*.db",
+          "*.db-shm",
+          "*.db-wal"
+        ]
       },
       {
         "from": "config/",
@@ -124,7 +128,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

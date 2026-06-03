@@ -1,4 +1,4 @@
-// 角球系统翻译表 - 联赛、国家、球队名称中英对照
+﻿// 角球系统翻译表 - 联赛、国家、球队名称中英对照
 // 从 CrawlerControlPanel.tsx 抽取，便于复用
 export const leagueTranslation: { [key: string]: string } = {
   "International Friendly": "国际友谊赛",
@@ -337,15 +337,37 @@ export const teamTranslation: { [key: string]: string } = {
 };
 
 // 翻译函数
+// 文本清理：去除不可见字符和常见乱码
+function sanitizeText(text) {
+  if (!text) return '';
+  let cleaned = text.replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060]/g, '');
+  cleaned = cleaned.trim();
+  if (!cleaned) return '';
+  const garbledPattern = /[\u00C0-\u00FF]{3,}/;
+  if (garbledPattern.test(cleaned)) {
+    try {
+      const bytes = new Uint8Array([...cleaned].map(c => c.charCodeAt(0) & 0xFF));
+      const decoded = new TextDecoder('utf-8').decode(bytes);
+      if (decoded && decoded !== cleaned && !garbledPattern.test(decoded)) {
+        return decoded.trim();
+      }
+    } catch (e) {}
+  }
+  return cleaned;
+}
 export const translateLeague = (league: string): string => {
   if (!league) return "--";
-  const l = league.trim();
+  const l = sanitizeText(league);
+  if (!l) return "--";
+
   return leagueTranslation[l] || l;
 };
 
 export const translateTeam = (team: string): string => {
   if (!team) return "--";
-  const t = team.trim();
+  const t = sanitizeText(team);
+  if (!t) return "--";
+
   // 先查俱乐部翻译表，再查国家翻译表，最后返回原文
   if (teamTranslation[t]) return teamTranslation[t];
   if (countryTranslation[t]) return countryTranslation[t];
@@ -361,10 +383,12 @@ export const translateTeam = (team: string): string => {
 };
 
 export const translateTime = (time: string): string => {
-  if (time === "HT") return "半场";
-  if (time.startsWith("1H")) return time.replace("1H", "上半场 ");
-  if (time.startsWith("2H")) return time.replace("2H", "下半场 ");
-  return time;
+  const ct = sanitizeText(time);
+  if (!ct) return "--";
+  if (ct === "HT") return "半场";
+  if (ct.startsWith("1H")) return ct.replace("1H", "上半场 ");
+  if (ct.startsWith("2H")) return ct.replace("2H", "下半场 ");
+  return ct;
 };
 
 interface CrawlerStatus {

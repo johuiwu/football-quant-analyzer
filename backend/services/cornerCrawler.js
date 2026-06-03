@@ -1,13 +1,13 @@
-﻿import puppeteer from "puppeteer-extra";
+import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import {
   getSharedBrowser, getSharedPage, setSharedPage,
   getLoginCookies, setLoginCookies,
-  getBalance, setBalance, isLoggedIn,
+  getBalance, setBalance, isLoggedIn, isBrowserActive,
   closeSharedBrowser, HG_URL
 } from "./browserPool.js";
-import { parseAllMarkets } from "./crawlerShared.js";
+import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -17,39 +17,18 @@ const HG_PASSWORD = process.env.HG_PASSWORD || "";
 if (!process.env.HG_USERNAME || !process.env.HG_PASSWORD) {
   console.warn("[cornerCrawler] 环境变量 HG_USERNAME / HG_PASSWORD 未设置，将使用运行时凭据");
 }
-const HEADLESS = process.env.CRAWLER_HEADLESS !== "false";
 const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "5000", 10);
 
 // 运行时凭据
 let runtimeCredentials = null;
+let loginInProgress = false;
+let crawlingLock = false;
 let pollingActive = false;
 let pollingStopFn = null;
 
 // XHR 拦截缓存
 let capturedResponses = [];
 const seenRequestUrls = new Set();
-
-// ======================== 弹窗处理 ========================
-async function handlePopups(page) {
-  for (let i = 0; i < 5; i++) {
-    await new Promise(r => setTimeout(r, 1000));
-    const clicked = await page.evaluate(() => {
-      let clickedSomething = false;
-      const noBtns = document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, [class*='cancel']");
-      for (const btn of noBtns) {
-        const text = (btn.textContent || "").trim().toUpperCase();
-        if (text === "NO" || text === "CANCEL") { btn.click(); clickedSomething = true; }
-      }
-      const okBtns = document.querySelectorAll("[class*='msg_popup'] .btn, .btn_confirm, #C_ok_btn, #ok_btn, [class*='confirm']");
-      for (const btn of okBtns) {
-        const text = (btn.textContent || "").trim().toUpperCase();
-        if (text === "OK" || text === "CONFIRM") { btn.click(); clickedSomething = true; }
-      }
-      return clickedSomething;
-    });
-    if (!clicked) break;
-  }
-}
 
 // ======================== 余额提取 ========================
 async function extractBalance(page) {
@@ -83,20 +62,57 @@ async function extractBalance(page) {
 
 // ======================== 登录流程 ========================
 async function ensureLogin() {
+  // 登录并发保护
+  if (loginInProgress) {
+    console.log("[cornerCrawler] 登录正在进行中，等待...");
+    while (loginInProgress) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    const existingPage = getSharedPage();
+    if (existingPage && isBrowserActive()) {
+      try {
+        await existingPage.url();
+        return existingPage;
+      } catch (e) {}
+    }
+  }
+
   const bi = await getSharedBrowser(false);
 
   // 如果已有活跃页面且已登录，直接复用
   const existingPage = getSharedPage();
-  if (existingPage) {
+  if (existingPage && isBrowserActive()) {
     try {
-      await existingPage.url();
-      console.log("[cornerCrawler] 复用已有登录会话");
+      // 检查页面是否仍然可用
+      const url = await existingPage.url();
+      console.log("[cornerCrawler] 复用已有登录会话，当前页面:", url);
       return existingPage;
     } catch (e) {
+      console.warn("[cornerCrawler] 页面不可用，需要重新登录:", e.message);
       setSharedPage(null);
     }
   }
 
+  // 检查是否已登录（浏览器活跃但页面可能已关闭）
+  if (isLoggedIn()) {
+    console.log("[cornerCrawler] 浏览器已登录但页面为空，创建新页面...");
+    loginInProgress = true;
+    try {
+    const page = await bi.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+    await page.setViewport({ width: 1920, height: 1400 });
+    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await new Promise(r => setTimeout(r, 5000));
+    setSharedPage(page);
+    console.log("[cornerCrawler] 新页面创建完成");
+    return page;
+    } finally {
+      loginInProgress = false;
+    }
+  }
+
+  loginInProgress = true;
+  try {
   console.log("[cornerCrawler] 正在登录 hga050.com...");
   const page = await bi.newPage();
 
@@ -110,50 +126,156 @@ async function ensureLogin() {
   });
 
   await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await new Promise(r => setTimeout(r, 5000));
+  await new Promise(r => setTimeout(r, 8000));
+  
+  // 保存初始页面截图
+  try {
+    await page.screenshot({ path: "debug/login-page-1.png" });
+  } catch(e) {}
 
   const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
   const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
+  
+  // 先查看页面有哪些表单元素
+  const pageElements = await page.evaluate(() => {
+    const inputs = Array.from(document.querySelectorAll('input')).map(i => ({
+      type: i.type,
+      id: i.id,
+      name: i.name,
+      className: i.className,
+      placeholder: i.placeholder,
+      tag: i.tagName
+    }));
+    const buttons = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"]')).map(b => ({
+      text: (b.textContent || '').substring(0, 50),
+      id: b.id,
+      className: b.className
+    }));
+    return { inputs, buttons };
+  });
+  console.log("[cornerCrawler] 页面输入框:", JSON.stringify(pageElements.inputs));
+  console.log("[cornerCrawler] 页面按钮:", JSON.stringify(pageElements.buttons));
+
+  // 更智能的选择器策略
+  const usernameSelectors = [
+    "input#usr",
+    "input#username",
+    'input[name="username"]',
+    'input[type="text"]'
+  ];
+  
+  const passwordSelectors = [
+    "input#pwd",
+    "input#password",
+    'input[name="password"]',
+    'input[type="password"]'
+  ];
+
+  const loginButtonSelectors = [
+    "#btn_login",
+    "button#login",
+    'input[type="submit"]',
+    'button[type="submit"]'
+  ];
 
   // 填入用户名
-  try {
-    await page.waitForSelector("input#usr", { timeout: 10000 });
-    await page.click("input#usr", { clickCount: 3 });
-    await page.type("input#usr", username, { delay: 80 });
-  } catch (e) {
-    console.log("[cornerCrawler] 用户名输入框未找到，尝试备用选择器...");
+  let usernameFilled = false;
+  for (const selector of usernameSelectors) {
     try {
-      await page.waitForSelector('input[type="text"]', { timeout: 5000 });
-      const inputs = await page.$$('input[type="text"]');
-      if (inputs.length > 0) {
-        await inputs[0].click({ clickCount: 3 });
-        await inputs[0].type(username, { delay: 80 });
+      const el = await page.$(selector);
+      if (el) {
+        console.log("[cornerCrawler] 使用用户名选择器成功:", selector);
+        await el.click({ clickCount: 3 });
+        await el.type(username, { delay: 80 });
+        usernameFilled = true;
+        break;
       }
-    } catch (e2) {}
+    } catch(e) {}
+  }
+  
+  // 备份方案：直接找所有可见的 text 输入框
+  if (!usernameFilled) {
+    console.log("[cornerCrawler] 使用备份策略：查找所有文本输入框...");
+    const allInputs = await page.$$('input[type="text"], input:not([type])');
+    for (const el of allInputs) {
+      try {
+        const isVisible = await page.evaluate(e => {
+          const rect = e.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        }, el);
+        if (isVisible) {
+          await el.click({ clickCount: 3 });
+          await el.type(username, { delay: 80 });
+          usernameFilled = true;
+          break;
+        }
+      } catch(e) {}
+    }
   }
 
   // 填入密码
-  try {
-    await page.waitForSelector("input#pwd", { timeout: 5000 });
-    await page.click("input#pwd", { clickCount: 3 });
-    await page.type("input#pwd", password, { delay: 80 });
-  } catch (e) {
+  let passwordFilled = false;
+  for (const selector of passwordSelectors) {
     try {
-      await page.waitForSelector('input[type="password"]', { timeout: 5000 });
-      const pwds = await page.$$('input[type="password"]');
-      if (pwds.length > 0) {
-        await pwds[0].click({ clickCount: 3 });
-        await pwds[0].type(password, { delay: 80 });
+      const el = await page.$(selector);
+      if (el) {
+        console.log("[cornerCrawler] 使用密码选择器成功:", selector);
+        await el.click({ clickCount: 3 });
+        await el.type(password, { delay: 80 });
+        passwordFilled = true;
+        break;
       }
-    } catch (e2) {}
+    } catch(e) {}
   }
 
-  await new Promise(r => setTimeout(r, 500));
-  try { await page.click("#btn_login", { delay: 100 }); } catch (e) {}
+  if (!passwordFilled) {
+    console.log("[cornerCrawler] 使用备份策略：查找所有密码输入框...");
+    const allPwds = await page.$$('input[type="password"]');
+    if (allPwds.length > 0) {
+      await allPwds[0].click({ clickCount: 3 });
+      await allPwds[0].type(password, { delay: 80 });
+      passwordFilled = true;
+    }
+  }
+
+  // 保存填写后的截图
+  try {
+    await page.screenshot({ path: "debug/login-page-2-filled.png" });
+  } catch(e) {}
+
+  // 点击登录按钮
+  await new Promise(r => setTimeout(r, 800));
+  let loginButtonClicked = false;
+  for (const selector of loginButtonSelectors) {
+    try {
+      const el = await page.$(selector);
+      if (el) {
+        console.log("[cornerCrawler] 使用登录按钮选择器:", selector);
+        await el.click({ delay: 150 });
+        loginButtonClicked = true;
+        break;
+      }
+    } catch(e) {}
+  }
+  
+  if (!loginButtonClicked) {
+    console.log("[cornerCrawler] 尝试点击所有可能的按钮...");
+    const allButtons = await page.$$('button, [role="button"], [onclick]');
+    for (const btn of allButtons) {
+      try {
+        const text = await page.evaluate(el => (el.textContent || '').toLowerCase(), btn);
+        if (text.includes('login') || text.includes('登录')) {
+          await btn.click({ delay: 150 });
+          loginButtonClicked = true;
+          break;
+        }
+      } catch(e) {}
+    }
+  }
 
   // 等待登录成功
   let loginSuccess = false;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 90; i++) {
     await new Promise(r => setTimeout(r, 1000));
 
     // 处理弹窗
@@ -163,11 +285,18 @@ async function ensureLogin() {
       const body = document.body;
       const bodyText = body ? body.textContent || "" : "";
       return {
-        hasInPlay: bodyText.includes("In-Play") && bodyText.includes("Soccer"),
-        hasMyBets: bodyText.includes("My Bets") || bodyText.includes("My Events"),
-        hasPasscode: bodyText.includes("Passcode Login")
+        hasInPlay: (bodyText.includes("In-Play") || bodyText.includes("滚球")) && (bodyText.includes("Soccer") || bodyText.includes("足球")),
+        hasMyBets: bodyText.includes("My Bets") || bodyText.includes("My Events") || bodyText.includes("我的投注") || bodyText.includes("我的赛事"),
+        hasPasscode: bodyText.includes("Passcode Login"),
+        currentUrl: window.location.href,
+        bodyTextSample: bodyText.substring(0, 200)
       };
     });
+    
+    if (i % 10 === 0) {
+      console.log("[cornerCrawler] 当前页面:", status.currentUrl);
+      console.log("[cornerCrawler] 页面内容:", status.bodyTextSample);
+    }
 
     if (status.hasInPlay && status.hasMyBets) {
       loginSuccess = true;
@@ -184,6 +313,11 @@ async function ensureLogin() {
     }
   }
 
+  // 保存最终登录后的截图
+  try {
+    await page.screenshot({ path: "debug/login-page-3-final.png" });
+  } catch(e) {}
+
   if (!loginSuccess) {
     console.error("[cornerCrawler] 登录超时");
     return null;
@@ -193,88 +327,154 @@ async function ensureLogin() {
   await extractBalance(page);
   console.log("[cornerCrawler] 登录完成，页面已就绪");
   return page;
+} finally {
+  loginInProgress = false;
 }
-
-// ======================== Fuzzy Tab Click ========================
-async function clickTab(page, tabName) {
-  console.log("[cornerCrawler] click tab: " + tabName);
-  try {
-    const result = await page.evaluate((name) => {
-      const upperName = name.toUpperCase();
-      const tabs = document.querySelectorAll('div[role="tab"]');
-      for (const tab of tabs) {
-        const text = (tab.textContent || "").trim().toUpperCase();
-        if (text === upperName || text.replace(/\s/g, "") === upperName.replace(/\s/g, "")) {
-          tab.click();
-          return { action: "clicked_role_tab", text };
-        }
-      }
-      const allEls = document.querySelectorAll("div, span, a, li, button");
-      for (const el of allEls) {
-        const text = (el.textContent || "").trim().toUpperCase();
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 20 || rect.height < 12) continue;
-        if (text === upperName) { el.click(); return { action: "clicked_exact", text }; }
-      }
-      for (const el of allEls) {
-        const text = (el.textContent || "").trim().toUpperCase();
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 20 || rect.height < 12) continue;
-        if (text.includes(upperName)) { el.click(); return { action: "clicked_contains", text }; }
-      }
-      return { action: "not_found" };
-    }, tabName);
-    console.log("[cornerCrawler] click result: " + JSON.stringify(result));
-    return result.action !== "not_found";
-  } catch (e) {
-    console.error("[cornerCrawler] click tab failed:", e.message);
-    return false;
-  }
 }
 
 // ======================== 导航到角球页面 ========================
 async function navigateToCorners(page) {
   console.log("[cornerCrawler] ===== Navigating to Corner page =====");
 
-  // 1. Click "Today" tab
-  console.log("[cornerCrawler] Step 1: Click Today...");
-  try {
-    await page.waitForSelector('div[role="tab"]', { timeout: 8000 });
-    const todayText = await page.evaluate(() => {
-      const tabs = document.querySelectorAll('div[role="tab"]');
-      for (const tab of tabs) {
-        const text = (tab.textContent || "").trim().toUpperCase();
-        if (text === "TODAY" || text.includes("TODAY")) { tab.click(); return text; }
-      }
-      return null;
-    });
-    console.log("[cornerCrawler] Today clicked: " + (todayText || "not found, skip"));
-  } catch (e) {
-    console.log("[cornerCrawler] Today click failed: " + e.message);
+  // Helper: check if page has match rows
+  async function hasMatches() {
+    try {
+      const count = await page.evaluate(() => document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length);
+      return count > 0;
+    } catch (e) { return false; }
   }
+
+  // Helper: try clicking a view tab
+  async function trySwitchView(tabText) {
+    console.log("[cornerCrawler] Trying to switch to: " + tabText);
+    try {
+      const clicked = await page.evaluate((txt) => {
+        const all = document.querySelectorAll('#showtype_now, #league_name, div.btn_filter, div[id*="tab"], div.btn_title_le, div.txt_sport, div.btn_le_sport');
+        for (const el of all) {
+          const t = (el.textContent || "").trim();
+          if (t === txt || t.includes(txt)) { el.scrollIntoView({block:'center'}); el.click(); return true; }
+        }
+        return false;
+      }, tabText);
+      if (clicked) {
+        await new Promise(r => setTimeout(r, 5000));
+        await handlePopups(page);
+      }
+      return clicked;
+    } catch (e) { return false; }
+  }
+
+  // 1. Wait for match content - try In-Play first
+  console.log("[cornerCrawler] Step 1: Waiting for match content (In-Play)...");
+  let contentLoaded = false;
+  try {
+    await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 12000 });
+    contentLoaded = true;
+    console.log("[cornerCrawler] Match content loaded (In-Play)");
+  } catch (e) {
+    console.log("[cornerCrawler] In-Play empty: " + e.message);
+  }
+
+  // Fallback: if In-Play is empty, try "Today" view
+  if (!contentLoaded) {
+    console.log("[cornerCrawler] In-Play has no matches, trying Today...");
+    await trySwitchView("Today");
+    // Also try clicking the league/sport name to refresh
+    try {
+      await page.evaluate(() => {
+        const leagueBtn = document.getElementById('league_title') || document.getElementById('goToLegPage');
+        if (leagueBtn) leagueBtn.click();
+      });
+      await new Promise(r => setTimeout(r, 5000));
+    } catch (e) {}
+    await handlePopups(page);
+
+    try {
+      await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 12000 });
+      contentLoaded = true;
+      console.log("[cornerCrawler] Match content loaded (Today)");
+    } catch (e) {
+      console.log("[cornerCrawler] Today also empty: " + e.message);
+    }
+  }
+
+  // Last resort: try clicking first available league
+  if (!contentLoaded) {
+    console.log("[cornerCrawler] Trying to click first league...");
+    try {
+      await page.evaluate(() => {
+        const leagues = document.querySelectorAll('div.btn_title_le, div[id^="LEG_"]');
+        if (leagues.length > 0) leagues[0].click();
+      });
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 10000 });
+        contentLoaded = true;
+        console.log("[cornerCrawler] Match content loaded via league click");
+      } catch (e) {}
+    } catch (e) {}
+  }
+
+  // Final fallback: try "World Cup 2026" section
+  if (!contentLoaded) {
+    console.log("[cornerCrawler] Trying World Cup 2026 section...");
+    await trySwitchView("World Cup 2026");
+    try {
+      await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 10000 });
+      contentLoaded = true;
+      console.log("[cornerCrawler] Match content loaded (World Cup 2026)");
+    } catch (e) {
+      console.log("[cornerCrawler] World Cup 2026 also empty: " + e.message);
+    }
+  }
+
   await new Promise(r => setTimeout(r, 2000));
   await handlePopups(page);
 
-  // 2. Click CORNERS tab
-  console.log("[cornerCrawler] Step 2: Click CORNERS...");
-  let clicked = await clickTab(page, "CORNERS");
-  if (!clicked) {
-    console.log("[cornerCrawler] Trying Chinese ...");
-    clicked = await clickTab(page, "...");
+  // 2. Click 角球 tab
+  console.log("[cornerCrawler] Step 2: Click 角球 tab...");
+  let clicked = false;
+  try {
+    clicked = await page.evaluate(() => {
+      const tab = document.getElementById('tab_cn');
+      if (tab) { tab.scrollIntoView({block:'center'}); tab.click(); return true; }
+      return false;
+    });
+    if (clicked) {
+      console.log("[cornerCrawler] 角球 tab clicked via id");
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  } catch (e) {
+    console.log("[cornerCrawler] Direct id click failed: " + e.message);
   }
+
+  if (!clicked) {
+    clicked = await clickTab(page, "角球", 4000);
+    if (!clicked) clicked = await clickTab(page, "CORNERS", 4000);
+  }
+
   if (!clicked) {
     try {
       const allTabs = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('div[role="tab"]')).map(t => (t.textContent || "").trim())
+        Array.from(document.querySelectorAll('div.btn_filter, div[id*="tab"], div[class*="tab"]')).map(t => ({id: t.id, text: (t.textContent || "").trim()}))
       );
       console.log("[cornerCrawler] Available tabs: " + JSON.stringify(allTabs));
     } catch(e) {}
-  }
-  if (!clicked) {
-    console.warn("[cornerCrawler] CORNERS tab not found, using current page");
+    console.warn("[cornerCrawler] 角球 tab not found, using current page");
   }
 
-  await new Promise(r => setTimeout(r, 3000));
+  // 3. Wait for corner market data to render
+  if (clicked) {
+    console.log("[cornerCrawler] Step 3: Waiting for corner markets...");
+    try {
+      await page.waitForSelector('div.box_lebet_odd', { timeout: 10000 });
+      console.log("[cornerCrawler] Corner markets loaded");
+    } catch (e) {
+      console.log("[cornerCrawler] Corner markets wait timeout: " + e.message);
+    }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
   await handlePopups(page);
 
   try {
@@ -363,7 +563,7 @@ async function parseCornerMarkets(page) {
         return parseFloat(t) || 0;
       }
 
-      // ====== 策略1: 按 div.bet_box 解析（用户提供的新结构） ======
+      // ====== 策略1: 按 div.bet_box 解析（用户提供的新结构）======
       let containers = document.querySelectorAll("div.bet_box");
       if (containers.length > 0) {
         console.log("[DOM] Using div.bet_box containers, found " + containers.length);
@@ -499,7 +699,7 @@ async function parseCornerMarkets(page) {
         }
       }
 
-      // ====== 策略2: 按 div.box_lebet.bet_type_cn 解析（原有结构） ======
+      // ====== 策略2: 按 div.box_lebet.bet_type_cn 解析（原有结构）======
       if (results.length === 0) {
         containers = document.querySelectorAll("div.box_lebet.bet_type_cn");
         if (containers.length > 0) {
@@ -608,8 +808,8 @@ async function parseCornerMarkets(page) {
           // 过滤掉非比赛容器（如仅有导航的）
           const matchContainers = [...containers].filter(el => {
             const text = (el.textContent || "").toLowerCase();
-            return text.includes("vs") || 
-                   (el.querySelector("[class*='team']") && el.querySelector("[class*='odd']"));
+            return text.includes("vs") ||
+              (el.querySelector("[class*='team']") && el.querySelector("[class*='odd']"));
           });
           console.log("[DOM] Filtered to " + matchContainers.length + " likely match containers");
 
@@ -732,22 +932,65 @@ async function setupXHRInterception(page) {
       let jsonData = null;
       try { jsonData = JSON.parse(text); } catch (e) { return; }
 
-      // transform.php 处理
-      if (url.includes("transform.php")) {
-        if (saveCount < 3) {
+      // transform.php 处理 - 扩展：尝试从任意响应提取比赛数据
+      if (url.includes("transform.php") || url.includes("transform_nl.php")) {
+        if (saveCount < 5) {
           try {
-            fs.writeFileSync("debug/transform-" + Date.now() + ".json", text.substring(0, 5000));
+            fs.writeFileSync("debug/transform-" + Date.now() + ".json", text.substring(0, 8000));
             saveCount++;
           } catch (e) {}
         }
 
         let matchList = null;
+        const topKeys = Object.keys(jsonData);
+        console.log("[cornerCrawler] transform response keys: " + JSON.stringify(topKeys.slice(0, 10)));
+
+        // Pattern 1: jsonData.response.GAME_X
         if (jsonData.response && typeof jsonData.response === "object") {
           const respObj = jsonData.response;
           const gameKeys = Object.keys(respObj).filter(k => k.startsWith("GAME_"));
           if (gameKeys.length > 0) {
             matchList = gameKeys.map(k => respObj[k]);
             console.log("[cornerCrawler] Found " + matchList.length + " games in jsonData.response.GAME_X");
+          }
+        }
+
+        // Pattern 2: jsonData directly has game-like keys
+        if (!matchList) {
+          const directGameKeys = topKeys.filter(k => k.startsWith("GAME_"));
+          if (directGameKeys.length > 0) {
+            matchList = directGameKeys.map(k => jsonData[k]);
+            console.log("[cornerCrawler] Found " + matchList.length + " games in jsonData.GAME_X (direct)");
+          }
+        }
+
+        // Pattern 3: Any array in response
+        if (!matchList) {
+          for (const key of topKeys) {
+            if (Array.isArray(jsonData[key]) && jsonData[key].length > 0) {
+              const first = jsonData[key][0];
+              if (first && typeof first === "object" && (first.homeTeam || first.awayTeam || first.home || first.away || first.matchId || first.eventId)) {
+                matchList = jsonData[key];
+                console.log("[cornerCrawler] Found " + matchList.length + " items in jsonData." + key);
+                break;
+              }
+            }
+          }
+        }
+
+        // Pattern 4: Deep search in response object
+        if (!matchList && jsonData.response) {
+          const resp = jsonData.response;
+          for (const key of Object.keys(resp)) {
+            const val = resp[key];
+            if (Array.isArray(val) && val.length > 0) {
+              const first = val[0];
+              if (first && typeof first === "object" && Object.keys(first).length > 2) {
+                matchList = val;
+                console.log("[cornerCrawler] Found " + matchList.length + " items in jsonData.response." + key);
+                break;
+              }
+            }
           }
         }
 
@@ -759,6 +1002,89 @@ async function setupXHRInterception(page) {
             itemCount: matchList.length,
             sampleFields: typeof firstItem === "object" ? Object.keys(firstItem).slice(0, 20) : []
           });
+        } else {
+          // Log top-level keys for debugging
+          console.log("[cornerCrawler] transform: no matches found, code=" + (jsonData.code || "none") + " topKeys=" + JSON.stringify(topKeys));
+        }
+        return;
+      }
+
+      // Betradar / Sportradar gismo API interception
+      if (url.includes("betradar.hgapp0003.com") || url.includes("ws-fn-cdn001.akamaized.net")) {
+        if (saveCount < 5) {
+          try {
+            const fname = "debug/betradar-" + Date.now() + ".json";
+            fs.writeFileSync(fname, text.substring(0, 8000));
+            saveCount++;
+          } catch (e) {}
+        }
+
+        let matchList = null;
+        const topKeys = Object.keys(jsonData);
+        console.log("[cornerCrawler] betradar/gismo response keys: " + JSON.stringify(topKeys.slice(0, 10)));
+
+        // gismo format: jsonData.doc is an array of match data
+        if (jsonData.doc && Array.isArray(jsonData.doc) && jsonData.doc.length > 0) {
+          matchList = jsonData.doc;
+          console.log("[cornerCrawler] gismo doc array: " + matchList.length + " items");
+        }
+
+        // gismo match_info: contains team names, score, etc.
+        if (!matchList && jsonData.match && typeof jsonData.match === "object") {
+          matchList = [jsonData.match];
+          console.log("[cornerCrawler] gismo match_info single match");
+        }
+
+        // Betradar p=getDataMT: look for any array with team data
+        if (!matchList) {
+          for (const key of topKeys) {
+            if (Array.isArray(jsonData[key]) && jsonData[key].length > 0) {
+              const first = jsonData[key][0];
+              if (first && typeof first === "object") {
+                const fk = Object.keys(first);
+                if (fk.some(k => k.toLowerCase().includes("team") || k.toLowerCase().includes("match") || k.toLowerCase().includes("event") || k.toLowerCase().includes("name"))) {
+                  matchList = jsonData[key];
+                  console.log("[cornerCrawler] betradar array in " + key + ": " + matchList.length + " items, sample keys: " + JSON.stringify(fk.slice(0, 10)));
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // Deep recursive search for arrays with team/match data
+        if (!matchList) {
+          function deepFind(obj, depth) {
+            if (depth > 4 || !obj || typeof obj !== "object") return null;
+            if (Array.isArray(obj) && obj.length > 0 && obj.length < 200) {
+              const first = obj[0];
+              if (first && typeof first === "object") {
+                const fk = Object.keys(first);
+                if (fk.some(k => /team|match|event|name|score/i.test(k))) return obj;
+              }
+            }
+            if (typeof obj === "object" && !Array.isArray(obj)) {
+              for (const k of Object.keys(obj)) {
+                const r = deepFind(obj[k], depth + 1);
+                if (r) return r;
+              }
+            }
+            return null;
+          }
+          matchList = deepFind(jsonData, 0);
+          if (matchList) console.log("[cornerCrawler] betradar deep find: " + matchList.length + " items");
+        }
+
+        if (matchList && matchList.length > 0) {
+          const firstItem = matchList[0];
+          capturedResponses.push({
+            url,
+            matchList,
+            itemCount: matchList.length,
+            sampleFields: typeof firstItem === "object" ? Object.keys(firstItem).slice(0, 20) : [],
+            source: "betradar"
+          });
+          console.log("[cornerCrawler] Captured betradar/gismo: " + matchList.length + " items");
         }
         return;
       }
@@ -793,14 +1119,16 @@ async function setupXHRInterception(page) {
 // ======================== 数据映射 ========================
 function mapToCornerMatch(apiMatch) {
   const matchId = String(
-    apiMatch.id || apiMatch.match_id || apiMatch.matchId ||
+    apiMatch.id || apiMatch.match_id || apiMatch.matchId || apiMatch._id ||
     apiMatch.event_id || apiMatch.eventId || apiMatch.game_id || apiMatch.gameId || ""
   );
 
   const homeTeam = apiMatch.home || apiMatch.homeTeam || apiMatch.home_team ||
-                   apiMatch.team1 || apiMatch.team_home || apiMatch.h_name || "";
+                   apiMatch.team1 || apiMatch.team_home || apiMatch.h_name ||
+                   apiMatch.homeName || apiMatch.name_home || apiMatch.team_h || "";
   const awayTeam = apiMatch.away || apiMatch.awayTeam || apiMatch.away_team ||
-                   apiMatch.team2 || apiMatch.team_away || apiMatch.a_name || "";
+                   apiMatch.team2 || apiMatch.team_away || apiMatch.a_name ||
+                   apiMatch.awayName || apiMatch.name_away || apiMatch.team_a || "";
 
   let elapsedMinutes = 0;
   if (apiMatch.timer !== undefined && apiMatch.timer !== null) {
@@ -831,29 +1159,6 @@ function mapToCornerMatch(apiMatch) {
 }
 
 
-// ======================== 亚洲盘口解析 ========================
-/**
- * 将亚洲盘口字符串解析为数值
- * "-0.5/1" -> -0.75  "+1.5/2" -> 1.75  "0/0.5" -> 0.25  "-1" -> -1
- */
-function parseAsianHandicap(line) {
-  if (line == null || line === "") return 0;
-  if (typeof line === "number") return line;
-  const s = String(line).trim();
-  let sign = 1;
-  let rest = s;
-  if (rest.startsWith("-")) { sign = -1; rest = rest.substring(1); }
-  else if (rest.startsWith("+")) { rest = rest.substring(1); }
-  if (rest.includes("/")) {
-    const parts = rest.split("/");
-    const vals = parts.map(p => parseFloat(p)).filter(v => !isNaN(v));
-    if (vals.length === 2) return sign * ((vals[0] + vals[1]) / 2);
-    if (vals.length === 1) return sign * vals[0];
-    return 0;
-  }
-  const val = parseFloat(rest);
-  return (isNaN(val)) ? 0 : sign * val;
-}
 
 function pickBestResponse(captured) {
   if (captured.length === 0) return null;
@@ -875,8 +1180,8 @@ function pickBestResponse(captured) {
   return scored[0];
 }
 
-// ======================== 并发锁 ========================
-let crawlingLock = false;
+// ======================== 并发锁（变量已移至顶部） ========================
+
 
 // ======================== 主函数：爬取角球比赛数据 ========================
 export async function crawlCornerMatches() {
@@ -886,14 +1191,14 @@ export async function crawlCornerMatches() {
     return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, error: "Crawler busy", busy: true };
   }
   crawlingLock = true;
-  console.log("[cornerCrawler] ====== Crawling corner data ======");
+  console.log("[cornerCrawler] ===== Crawling corner data =====");
   const ts = new Date().toISOString();
 
-  // 超时保护：120 秒后自动释放锁，防止死锁
-  const LOCK_TIMEOUT_MS = 120000;
+  // 超时保护：180 秒（3 分钟）后自动释放锁，防止死锁
+  const LOCK_TIMEOUT_MS = 180000; // 延长到 3 分钟
   const lockTimeout = setTimeout(() => {
     if (crawlingLock) {
-      console.warn("[cornerCrawler] Lock timeout reached (120s), force releasing");
+      console.warn("[cornerCrawler] Lock timeout reached (180s), force releasing");
       crawlingLock = false;
     }
   }, LOCK_TIMEOUT_MS);
@@ -916,12 +1221,18 @@ export async function crawlCornerMatches() {
       console.warn("[cornerCrawler] XHR interception setup failed:", e.message);
     }
 
-    // 导航到角球页面
+    // 导航到角球页面（反爬随机延迟）
+    await randomDelay(1000, 3000);
     await navigateToCorners(page);
+    await randomDelay(1000, 3000);
 
-    // 等待数据加载
-    console.log("[cornerCrawler] Waiting for market data...");
-    await new Promise(r => setTimeout(r, 4000));
+    // 等待数据加载 - 延长以等待 Betradar 组件
+    console.log("[cornerCrawler] Waiting for market data + Betradar widget...");
+    await new Promise(r => setTimeout(r, 8000));
+
+    // 额外等待 Betradar iframe 加载和内部 API 调用
+    console.log("[cornerCrawler] Waiting for Betradar gismo API calls...");
+    await new Promise(r => setTimeout(r, 12000));
 
     // 滚动触发懒加载
     try {
@@ -939,12 +1250,25 @@ export async function crawlCornerMatches() {
     // 尝试从 XHR 捕获中提取比赛列表
     let xhrMatches = [];
     try {
+      // Log all captured response summaries for debugging
+      if (capturedResponses.length > 0) {
+        console.log("[cornerCrawler] Captured " + capturedResponses.length + " XHR responses:");
+        for (let ci = 0; ci < capturedResponses.length; ci++) {
+          const cr = capturedResponses[ci];
+          console.log("[cornerCrawler]   [" + ci + "] items=" + cr.itemCount + " fields=" + JSON.stringify(cr.sampleFields) + " url=" + cr.url.substring(0, 120));
+        }
+      } else {
+        console.log("[cornerCrawler] No XHR responses captured, seen URLs: " + seenRequestUrls.size);
+      }
+
       const bestResponse = pickBestResponse(capturedResponses);
       if (bestResponse && bestResponse.matchList && bestResponse.matchList.length > 0) {
         xhrMatches = bestResponse.matchList
           .map(mapToCornerMatch)
           .filter(m => m.homeTeam && m.awayTeam);
         console.log("[cornerCrawler] XHR matches found: " + xhrMatches.length);
+      } else {
+        console.log("[cornerCrawler] No XHR matches extracted from " + capturedResponses.length + " responses");
       }
     } catch (e) {
       console.warn("[cornerCrawler] XHR data extraction failed:", e.message);
@@ -995,7 +1319,19 @@ export async function crawlCornerMatches() {
       }
     }
 
-    console.log("[cornerCrawler] ====== Done: " + matches.length + " corner matches ======");
+        console.log("[cornerCrawler] ===== Done: " + matches.length + " corner matches =====");
+    if (matches.length === 0) {
+      console.log("[cornerCrawler] ZERO matches! DOM count=" + domData.length + " XHR count=" + xhrMatches.length + " capturedResponses=" + capturedResponses.length);
+      // Dump page sample to debug file
+      try {
+        const sample = await page.evaluate(() => {
+          const body = document.body;
+          return body ? (body.textContent || "").replace(/\s+/g, " ").trim().substring(0, 500) : "(no body)";
+        });
+        fs.writeFileSync("debug/zero-matches-page.txt", sample + "\n\nSeen URLs: " + JSON.stringify([...seenRequestUrls].slice(0, 20)));
+        console.log("[cornerCrawler] Page sample written to debug/zero-matches-page.txt");
+      } catch(e) {}
+    }
 
     // 保存调试截图
     try {
@@ -1122,13 +1458,13 @@ export async function loginToHG(username, password) {
       lastError = "登录返回空页面";
     } catch (err) {
       lastError = err.message;
-      console.warn(`[cornerCrawler] 登录尝试 ${attempt}/${MAX_RETRIES} 失败: ${lastError}`);
+      console.warn("[cornerCrawler] 登录尝试 " + attempt + "/" + MAX_RETRIES + " 失败: " + lastError);
     }
     if (attempt < MAX_RETRIES) {
       await new Promise(r => setTimeout(r, attempt * 2000));
     }
   }
-  return { success: false, message: `登录失败（已重试${MAX_RETRIES}次）: ${lastError}`, balance: getBalance() };
+  return { success: false, message: "登录失败（已重试" + MAX_RETRIES + "次）: " + lastError, balance: getBalance() };
 }
 
 // ======================== 关闭 ========================
@@ -1143,7 +1479,7 @@ export async function closeCrawler() {
 // ======================== 调试 ========================
 export function getDebugInfo() {
   return {
-    headless: HEADLESS,
+    headless: process.env.CRAWLER_HEADLESS === 'true',
     isLoggedIn: isLoggedIn(),
     balance: getBalance(),
     capturedResponseCount: capturedResponses.length,
@@ -1161,7 +1497,7 @@ export function getDebugInfo() {
 export async function diagnoseCrawler() {
   const report = {
     timestamp: new Date().toISOString(),
-    headless: HEADLESS,
+    headless: process.env.CRAWLER_HEADLESS === 'true',
     steps: [],
     status: "starting",
     errors: [],

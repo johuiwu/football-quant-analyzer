@@ -1,5 +1,7 @@
-﻿import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { REAL_FIXTURES } from '../data/realTeamsData';
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
 export function useFixtureSync() {
   const [fixtures, setFixtures] = useState<any[]>(REAL_FIXTURES);
@@ -15,22 +17,49 @@ export function useFixtureSync() {
   const loadRealTimeFixtures = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      // 从本地预设数据源加载赛程（不再依赖外部 API）
+      // Step 1: 尝试从后端 qiumiwu 爬虫获取实时赛程数据
+      const response = await fetch(`${API_BASE}/api/qiumiwu-fixtures`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(30000) // 30秒超时
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.fixtures && result.fixtures.length > 0) {
+        setFixtures(result.fixtures);
+        setSyncMessage(result.msg || `已加载 ${result.fixtures.length} 场实时赛程数据`);
+        setSyncSource(result.source || 'google_search_grounding');
+      } else {
+        // 爬取成功但无数据，回退到本地预设
+        if (REAL_FIXTURES.length > 0) {
+          setFixtures([...REAL_FIXTURES]);
+          setSyncMessage(`实时赛程为空，回退至 ${REAL_FIXTURES.length} 场预设赛事数据`);
+        } else {
+          setSyncMessage(result.msg || '暂无赛程数据');
+        }
+        setSyncSource('local-preset');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '加载失败';
+      console.error('[useFixtureSync] 联网刷新失败:', err);
+
+      // Step 2: 联网失败，回退到本地预设
       if (REAL_FIXTURES.length > 0) {
         setFixtures([...REAL_FIXTURES]);
-        setSyncMessage(`已加载 ${REAL_FIXTURES.length} 场预设赛事数据`);
+        setSyncMessage(`联网刷新超时，已回退至 ${REAL_FIXTURES.length} 场预设赛事数据`);
         setSyncSource('local-preset');
       } else {
         setSyncMessage('暂无预设赛事数据，请手动配置对阵队伍');
         setSyncSource('local-preset');
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '加载失败';
-      console.error('[useFixtureSync] 加载赛事失败:', err);
       setError(err instanceof Error ? err : new Error(errorMessage));
-      setSyncMessage('加载异常：已安全回退至本地赛事库');
     } finally {
       setIsLoading(false);
     }

@@ -1,7 +1,7 @@
-﻿// ======================== P+P5jNem5YWs5oqr5qCH5Y+K5YWs5YWx5qih5Z2X ========================
+// ======================== 公开爬虫与公共模块 ========================
 import fs from "fs";
 // ======================== 随机延迟（反爬） ========================
-function randomDelay(min, max) {
+export function randomDelay(min, max) {
   min = min || 500;
   max = max || 2000;
   return new Promise(function(r) { setTimeout(r, Math.floor(Math.random() * (max - min) + min)); });
@@ -31,7 +31,7 @@ export async function clickTab(page, tabName, waitMs) {
   try {
     const result = await page.evaluate((name) => {
       var uname = name.toUpperCase();
-      var sels = ["div[role=\"tab\"]","span[class*=\"tab\"]","a[class*=\"tab\"]","li[class*=\"nav\"]","span[class*=\"nav\"]","div[class*=\"tab\"]","div[class*=\"nav\"]","button[class*=\"tab\"]"];
+      var sels = ["div[id=\"tab_cn\"]","div[role=\"tab\"]","span[class*=\"tab\"]","a[class*=\"tab\"]","li[class*=\"nav\"]","span[class*=\"nav\"]","div[class*=\"tab\"]","div[class*=\"nav\"]","button[class*=\"tab\"]","div[id*=\"tab\"]","div.btn_filter"];
       for (var si = 0; si < sels.length; si++) {
         var els = document.querySelectorAll(sels[si]);
         for (var ei = 0; ei < els.length; ei++) {
@@ -72,8 +72,8 @@ export async function parseAllMarkets(page) {
     eval(fn);
     var results = [];
     function st(el,sel){var f=sel?el.querySelector(sel):el;return f?(f.textContent||'').trim():'';}
-    var containers = document.querySelectorAll('div.bet_box');
-    if(!containers.length) containers = document.querySelectorAll('div.box_lebet.bet_type_cn');
+    var containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+    if(!containers.length) containers = document.querySelectorAll('div.bet_box');
     for(var bi=0; bi<containers.length; bi++){
       try{
         var box = containers[bi];
@@ -100,7 +100,13 @@ export async function parseAllMarkets(page) {
             var cat=cm[ml];if(!cat)continue;
             var btns=bl.querySelectorAll('div.btn_lebet_odd:not(.lock)');if(!btns.length)continue;
             var cl=ih?('上半场 '+ml):ml;
-            var he={order:oi++,category:cat,categoryLabel:cl,period:ih?'half':'full',source:'dom'};
+            var mg = 'main';
+            if (ml.indexOf('\u89D2\u7403') >= 0 || cat === 'O/E') {
+              mg = 'corner';
+            } else if (cat === 'HDP' || cat === 'O/U') {
+              mg = 'main';
+            }
+            var he = {order:oi++,category:cat,categoryLabel:cl,period:ih?'half':'full',source:'dom',marketGroup:mg};
             if(btns.length===3){
               var ods={};
               for(var bj=0;bj<btns.length;bj++){

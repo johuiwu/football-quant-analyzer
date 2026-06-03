@@ -1,7 +1,7 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
-import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance } from "../services/cornerCrawler.js";
+import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
@@ -27,6 +27,35 @@ router.get("/corner/live", async (req, res) => {
     res.status(500).json({ success: false, error: msg });
   }
 });
+
+// ======================== POST /api/corner/fetch ========================
+// 即时爬取：直接调用 crawlCornerMatches()，不读缓存
+router.post("/corner/fetch", async (req, res) => {
+  try {
+    console.log("[cornerRoutes] /corner/fetch 即时爬取开始...");
+    const timeoutMs = 90000;
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("爬取超时（90s）")), timeoutMs)
+    );
+    const result = await Promise.race([crawlCornerMatches(), timeoutPromise]);
+    if (!result || !result.success) {
+      const errMsg = (result && result.error) || "爬取失败";
+      console.error("[cornerRoutes] /corner/fetch failed:", errMsg);
+      return res.status(500).json({ success: false, error: errMsg });
+    }
+    const matches = result.data?.matches || [];
+    console.log("[cornerRoutes] /corner/fetch 完成:", matches.length, "场比赛");
+    res.json({ success: true, data: matches, count: matches.length, source: "live-fetch" });
+  } catch (err) {
+    const msg = err.message || String(err);
+    console.error("[cornerRoutes] /corner/fetch error:", msg);
+    if (msg.includes("browser") || msg.includes("isConnected") || msg.includes("launch")) {
+      return res.status(503).json({ success: false, error: "爬虫浏览器未就绪，请稍后重试", detail: msg });
+    }
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
 
 // ======================== GET /api/corner/strategies/check ========================
 router.get("/corner/strategies/check", async (req, res) => {
@@ -96,7 +125,7 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     }
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("登录超时，请重试")), 30000)
+      setTimeout(() => reject(new Error("登录超时，请重试")), 120000)
     );
 
     const result = await Promise.race([
@@ -292,6 +321,25 @@ router.get("/corner/alert-status", async (req, res) => {
     const status = getAlertStatus();
     res.json({ success: true, data: status });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/alert-log ========================
+router.get("/corner/alert-log", async (req, res) => {
+  try {
+    const fs = await import("fs");
+    const limit = parseInt(req.query.limit) || 20;
+    if (!fs.existsSync("corner_alert_log.jsonl")) {
+      return res.json({ success: true, data: [], count: 0 });
+    }
+    const lines = fs.readFileSync("corner_alert_log.jsonl", "utf-8").trim().split("\n");
+    const entries = lines.slice(-limit).map(line => {
+      try { return JSON.parse(line); } catch (_) { return null; }
+    }).filter(Boolean);
+    res.json({ success: true, data: entries, count: entries.length });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/alert-log error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

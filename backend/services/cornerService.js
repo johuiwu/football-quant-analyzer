@@ -8,15 +8,17 @@ const USE_REAL_DATA = process.env.USE_REAL_DATA === "true";
 let cachedMatches = [];
 let pollingInterval = null;
 let pollingActive = false;
-const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "5000", 10);
+let lastFetchTime = 0;
+const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "15000", 10); // 调整为15秒
+const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
 
 // ======================== 策略配置 ========================
 export const DEFAULT_STRATEGIES = [
-  { id: 1, enabled: true, name: "策略一", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 1, cornerHandicapLower: -1.25, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-  { id: 2, enabled: true, name: "策略二", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8 },
-  { id: 3, enabled: true, name: "策略三", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8 },
-  { id: 4, enabled: true, name: "策略四", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-  { id: 5, enabled: true, name: "策略五", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
+  { id: 1, enabled: false, name: "策略一", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 1, cornerHandicapLower: -1.25, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
+  { id: 2, enabled: false, name: "策略二", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8 },
+  { id: 3, enabled: false, name: "策略三", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8 },
+  { id: 4, enabled: false, name: "策略四", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
+  { id: 5, enabled: false, name: "策略五", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
 ];
 
 let activeStrategies = DEFAULT_STRATEGIES;
@@ -80,6 +82,7 @@ export function startCornerBackendPolling() {
       }
 
       cachedMatches = matches;
+      lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛");
         if (matches.length > 0 && !pollingFirstDone) {
@@ -130,7 +133,7 @@ let pollingPaused = false;
 let pollingFirstDone = false;
 let pauseTime = null;
 
-// ======================== P+P6K2m5o2f54q25oCB ========================
+// ======================== 告警状态 ========================
 let consecutiveFailures = 0;
 const ALERT_THRESHOLD = 5;
 let lastAlertTime = null;
@@ -196,6 +199,7 @@ export function resumeCornerBackendPolling() {
       }
 
       cachedMatches = matches;
+      lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛");
         if (matches.length > 0 && !pollingFirstDone) {
@@ -240,7 +244,7 @@ export function getBackendPollingStatus() {
 function mapMatchToCornerFormat(match) {
   return {
     matchId: match.matchId || "",
-    matchName: match.matchName || (match.homeTeam + " vs " + match.awayTeam),
+    matchName: match.matchName || ((match.homeTeam && match.awayTeam) ? match.homeTeam + " vs " + match.awayTeam : "未知比赛"),
     homeTeam: match.homeTeam || "",
     awayTeam: match.awayTeam || "",
     league: match.league || "",
@@ -263,12 +267,26 @@ function mapMatchToCornerFormat(match) {
 export async function getLiveCornerData(filterMatchId) {
   const generatedAt = new Date().toISOString();
 
-  // 如果有缓存数据，直接返回（忽略 USE_REAL_DATA，确保轮询数据能返回）
-  if (cachedMatches.length > 0) {
+  // 检查缓存是否有效（有数据且未过期）
+  const now = Date.now();
+  const isCacheValid = cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_EXPIRE_MS;
+
+  if (isCacheValid) {
     const filtered = filterMatchId
       ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
       : cachedMatches;
-    return { data: filtered, generatedAt, count: filtered.length };
+    console.log(`[cornerService] 返回缓存数据（${filtered.length}场），缓存年龄: ${Math.floor((now - lastFetchTime) / 1000)}秒`);
+    return { data: filtered, generatedAt, count: filtered.length, cacheAge: now - lastFetchTime };
+  }
+
+  // 缓存无效或为空，检查是否正在轮询中
+  if (pollingActive && cachedMatches.length > 0) {
+    // 轮询正在进行中，返回旧缓存但标记为过期
+    console.log(`[cornerService] 返回即将刷新的缓存数据（${cachedMatches.length}场），等待轮询更新...`);
+    const filtered = filterMatchId
+      ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
+      : cachedMatches;
+    return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true };
   }
 
   // 无缓存时，根据 USE_REAL_DATA 决定返回空还是 cacheEmpty 标志
@@ -400,7 +418,7 @@ async function placeBetOnHG(bet) {
     }, bet.match_name);
 
     if (!matchFound) {
-      return { success: false, error: "未找到比赛: " + bet.match_name };
+      if (process.env.DEBUG_SCREENSHOTS === "true") { try { await page.screenshot({ path: "debug/bet-fail-nomatch-" + Date.now() + ".png" }); } catch (_) {} }; return { success: false, error: "未找到比赛: " + bet.match_name };
     }
 
     // 3. 尝试在比赛行中查找角球盘口投注按钮并点击
@@ -412,7 +430,7 @@ async function placeBetOnHG(bet) {
         for (const el of clickables) {
           const text = (el.textContent || "").trim();
           const val = parseFloat(text);
-          if (!isNaN(val) && Math.abs(val - betData.odds) < 0.3) {
+          if (!isNaN(val) && Math.abs(val - betData.odds) < 0.05) {
             el.click();
             return true;
           }
@@ -422,7 +440,7 @@ async function placeBetOnHG(bet) {
     }, { match_name: bet.match_name, odds: bet.odds });
 
     if (!betPlaced) {
-      return { success: false, error: "未找到匹配的投注选项" };
+      if (process.env.DEBUG_SCREENSHOTS === "true") { try { await page.screenshot({ path: "debug/bet-fail-nooption-" + Date.now() + ".png" }); } catch (_) {} }; return { success: false, error: "未找到匹配的投注选项" };
     }
 
     // 4. 等待投注单弹出
@@ -468,7 +486,7 @@ async function placeBetOnHG(bet) {
     });
 
     if (!confirmed) {
-      return { success: false, error: "未找到确认投注按钮" };
+      if (process.env.DEBUG_SCREENSHOTS === "true") { try { await page.screenshot({ path: "debug/bet-fail-noconfirm-" + Date.now() + ".png" }); } catch (_) {} }; return { success: false, error: "未找到确认投注按钮" };
     }
 
     await new Promise(r => setTimeout(r, 2000));

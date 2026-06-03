@@ -1,4 +1,4 @@
-/// <reference types="vitest" />
+﻿/// <reference types="vitest" />
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -17,6 +17,9 @@ export default defineConfig(() => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
+    },
+    optimizeDeps: {
+      include: ['lucide-react'],
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

@@ -1,4 +1,6 @@
 // ======================== 共享策略条件评估模块 ========================
+// 【同步提醒】前端 cornerStore.ts:export evaluateMatchForStrategies 须与此逻辑保持一致
+// 修改任一处时请同步更新另一处
 // 统一后端策略评估逻辑，供 cornerService.js 和 cornerStrategyEngine.js 共用
 // 前端 cornerStore.ts 独立实现以支持实时响应，但逻辑须与此模块保持一致
 
