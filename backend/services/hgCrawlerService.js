@@ -4,7 +4,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 puppeteer.use(StealthPlugin());
 
 import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
-import { parseAllMarkets, handlePopups } from "./crawlerShared.js";
+import { parseAllMarkets, handlePopups, clickTab } from "./crawlerShared.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -250,115 +250,46 @@ export async function loginToHG(credentials, forceNew = false) {
   }
 }
 
-// ======================== 导航与标签点击 ========================
+// ======================== 导航到 In-Play（使用 shared clickTab） ========================
 async function navigateToInPlay(page) {
   console.log("[HgCrawler] 导航到 In-Play...");
   try {
-    const urlBefore = page.url();
-    console.log("[HgCrawler]   导航前 URL: " + urlBefore.substring(0, 120));
-
-    await page.evaluate(() => {
-      const selectors = [
-        "a", "button", "div[role=\"tab\"]", "li",
-        "span[class*=\"tab\"]", "span[class*=\"nav\"]", "span[class*=\"menu\"]",
-        "div[class*=\"tab\"]", "div[class*=\"nav\"]", "div[class*=\"menu\"]"
-      ];
-      for (const sel of selectors) {
-        const elements = document.querySelectorAll(sel);
-        for (const el of elements) {
-          const text = (el.textContent || "").trim();
-          if (text === "In-Play" || text === "IN-PLAY") {
+    // SPA 页面，URL 不变是正常的，以 DOM 内容为准
+    const clicked = await clickTab(page, "In-Play", NAV_WAIT_MS);
+    if (!clicked) {
+      console.log("[HgCrawler]   未找到 In-Play Tab，尝试模糊匹配...");
+      try {
+        const fuzzy = await page.evaluate(() => {
+          const all = document.querySelectorAll("a, button, span, div, li");
+          for (const el of all) {
+            const text = (el.textContent || "").trim().toUpperCase();
             const rect = el.getBoundingClientRect();
-            if (rect.width > 10 && rect.height > 10) {
+            if (rect.width < 15 || rect.height < 10) continue;
+            if (text.includes("IN-PLAY") || text.includes("INPLAY") || text.includes("LIVE")) {
               el.scrollIntoView({ block: "center" });
               el.click();
-              return;
+              return true;
             }
           }
+          return false;
+        });
+        if (fuzzy) {
+          console.log("[HgCrawler]   模糊匹配 In-Play 成功");
+          await new Promise(r => setTimeout(r, NAV_WAIT_MS));
         }
-      }
-    });
-    await new Promise((r) => setTimeout(r, NAV_WAIT_MS));
+      } catch (e) {}
+    }
 
-    const urlAfter = page.url();
-    console.log("[HgCrawler]   导航后 URL: " + urlAfter.substring(0, 120));
-    if (urlAfter === urlBefore) {
-      console.log("[HgCrawler]    URL 未变化，导航可能无效");
+    // 等待动态内容渲染
+    try {
+      await page.waitForSelector('div.box_lebet[class*="bet_type_"], div.bet_box', { timeout: 15000 });
+      console.log("[HgCrawler]   In-Play 比赛内容已加载");
+    } catch (e) {
+      console.log("[HgCrawler]   In-Play 无比赛内容 (超时): " + e.message);
     }
     return true;
   } catch (err) {
-    console.log("[HgCrawler] 导航失败:", err.message);
-    return false;
-  }
-}
-
-async function clickTab(page, tabName) {
-  console.log("[HgCrawler] 点击标签: " + tabName + " | URL: " + (page.url() || "(unknown)").substring(0, 120));
-  try {
-    const clicked = await page.evaluate((name) => {
-      const upperName = name.toUpperCase();
-      // 策略1: 选择器精确匹配
-      const tabSelectors = [
-        "div[role=\"tab\"]", "span[class*=\"tab\"]", "a[class*=\"tab\"]",
-        "li[class*=\"nav\"]", "span[class*=\"nav\"]", "div[class*=\"tab\"]",
-        "div[class*=\"nav\"]", "button[class*=\"tab\"]"
-      ];
-      for (const sel of tabSelectors) {
-        const els = document.querySelectorAll(sel);
-        for (const el of els) {
-          const text = (el.textContent || "").trim().toUpperCase();
-          if (text === upperName || text.replace(/\\s/g, "") === upperName.replace(/\\s/g, "")) {
-            el.scrollIntoView({ block: "center" });
-            el.click();
-            return { strategy: 1, text: text };
-          }
-        }
-      }
-      // 策略2: 可点击元素 + 精确文本
-      const clickableEls = document.querySelectorAll("a, button, span, div, li");
-      for (const el of clickableEls) {
-        const text = (el.textContent || "").trim().toUpperCase();
-        if (text !== upperName) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 10 || rect.height < 8) continue;
-        const style = window.getComputedStyle(el);
-        if (style.cursor === "pointer" || el.hasAttribute("onclick") || el.tagName === "A" || el.tagName === "BUTTON") {
-          el.scrollIntoView({ block: "center" });
-          el.click();
-          return { strategy: 2, text: text };
-        }
-      }
-      // 策略3: 模糊匹配（兜底）
-      for (const el of clickableEls) {
-        const text = (el.textContent || "").trim().toUpperCase();
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 15 || rect.height < 10) continue;
-        if (text.includes(upperName)) {
-          el.scrollIntoView({ block: "center" });
-          el.click();
-          return { strategy: 3, text: text };
-        }
-      }
-      return null;
-    }, tabName);
-
-    if (clicked) {
-      console.log("[HgCrawler]   已点击 " + tabName + " (策略" + clicked.strategy + ", 文本=\"" + clicked.text + "\")");
-      await new Promise((r) => setTimeout(r, TAB_WAIT_MS));
-      console.log("[HgCrawler]   点击后 URL: " + (page.url() || "(unknown)").substring(0, 120));
-    } else {
-      console.log("[HgCrawler]   未找到 " + tabName + " 标签");
-      try {
-        const html = await page.content();
-        fs.writeFileSync("debug/page-html.txt", html.substring(0, 8000));
-        console.log("[HgCrawler]   已保存页面 HTML (前8000字符) 到 debug/page-html.txt");
-      } catch (e) {
-        console.log("[HgCrawler]   保存 HTML 失败:", e.message);
-      }
-    }
-    return !!clicked;
-  } catch (err) {
-    console.log("[HgCrawler] 点击 " + tabName + " 标签失败:", err.message);
+    console.log("[HgCrawler] 导航到 In-Play 失败:", err.message);
     return false;
   }
 }
@@ -911,6 +842,22 @@ async function ensurePageReady() {
   try {
     const url = mainPage.url();
     console.log("[HgCrawler] 页面就绪，当前 URL: " + (url || "(unknown)").substring(0, 120));
+
+    // 等待动态内容渲染（SPA 页面需要 JS 渲染 DOM）
+    console.log("[HgCrawler] 等待页面动态内容渲染...");
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      await mainPage.waitForFunction(() => {
+        const body = document.body;
+        if (!body) return false;
+        const text = body.textContent || "";
+        return text.includes("In-Play") || text.includes("IN-PLAY") || text.length > 2000;
+      }, { timeout: 10000 });
+      console.log("[HgCrawler] 动态内容已渲染");
+    } catch (e) {
+      console.log("[HgCrawler] 动态内容等待超时，继续执行: " + e.message);
+    }
+
     return true;
   } catch (err) {
     console.log("[HgCrawler] mainPage 已失效 (" + err.message + ")，重新登录...");
@@ -1049,12 +996,65 @@ export async function fetchSchedule() {
     // Step 1: 点击 Today 标签
     console.log("[HgCrawler] 点击 Today 标签...");
     await clickTab(mainPage, "Today");
-    await new Promise(r => setTimeout(r, 4000));
+    // 智能等待：等待实际比赛数据渲染完成
+    console.log("[HgCrawler] 等待 Today 比赛数据渲染...");
+    try {
+      await mainPage.waitForFunction(() => {
+        const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+        if (containers.length === 0) return false;
+        // 检查是否有至少一个容器包含实际球队名（非模板）
+        for (const c of containers) {
+          const text = c.textContent || '';
+          if (text.includes('*')) continue; // 跳过模板占位符
+          const ht = c.querySelector('div.box_team.teamH span.text_team, div.team_home, [class*="team_h"]');
+          const at = c.querySelector('div.box_team.teamC span.text_team, div.team_away, [class*="team_a"]');
+          if (ht && at && (ht.textContent || '').trim().length > 2 && (at.textContent || '').trim().length > 2) {
+            return true;
+          }
+        }
+        return false;
+      }, { timeout: 20000 });
+      console.log("[HgCrawler] Today 比赛数据已加载");
+    } catch (e) {
+      console.log("[HgCrawler] Today 比赛等待超时: " + e.message);
+    }
+    await new Promise(r => setTimeout(r, 2000));
 
     // Step 2: 点击 CORNERS 标签
     console.log("[HgCrawler] 点击 CORNERS 标签...");
     await clickTab(mainPage, "CORNERS");
-    await new Promise(r => setTimeout(r, 4000));
+
+    // 智能等待：等待实际盘口数据渲染完成（而非仅 DOM 存在）
+    console.log("[HgCrawler] 等待 CORNERS 盘口数据渲染...");
+    let oddsReady = false;
+    try {
+      oddsReady = await mainPage.waitForFunction(() => {
+        const oddsEls = document.querySelectorAll('div.box_lebet_odd');
+        if (oddsEls.length === 0) return false;
+        // 检查是否有至少一个 odds 块包含实际数值（非模板占位符）
+        for (const od of oddsEls) {
+          const oddsText = od.textContent || '';
+          // 跳过含有模板占位符的块（如 *FANTASYGAME*, *MAIN_SHOW*）
+          if (oddsText.includes('*')) continue;
+          // 检查是否有实际赔率数值
+          const oddsSpan = od.querySelector('span.text_odds');
+          if (oddsSpan) {
+            const val = parseFloat(oddsSpan.textContent || '0');
+            if (val > 0 && val < 100) return true;
+          }
+        }
+        return false;
+      }, { timeout: 25000 });
+      console.log("[HgCrawler] CORNERS 盘口数据已加载" + (oddsReady ? "" : " (超时)"));
+    } catch (e) {
+      console.log("[HgCrawler] CORNERS 盘口等待超时: " + e.message);
+    }
+
+    // 额外等待确保所有数据渲染完成
+    if (!oddsReady) {
+      await new Promise(r => setTimeout(r, 5000));
+    }
+    await new Promise(r => setTimeout(r, 2000));
 
     // 滚动触发懒加载
     try {
@@ -1069,6 +1069,73 @@ export async function fetchSchedule() {
       await mainPage.screenshot({ path: "debug/schedule-corners.png", fullPage: true });
       console.log("[HgCrawler] 截图: debug/schedule-corners.png");
     } catch (e) {}
+
+    // === DOM诊断：确认CORNERS视图下的页面结构 ===
+    try {
+      const domDiag = await mainPage.evaluate(() => {
+        const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+        const oddsEls = document.querySelectorAll('div.box_lebet_odd');
+        const betBoxes = document.querySelectorAll('div.bet_box');
+        const stadiumRows = document.querySelectorAll('[class*="row"],[class*="game"],[class*="match"]');
+        
+        // 找前3个 odds 元素的父容器
+        const oddsParents = [];
+        for (let i = 0; i < Math.min(3, oddsEls.length); i++) {
+          const p = oddsEls[i].parentElement;
+          const pp = p ? p.parentElement : null;
+          oddsParents.push({
+            tag: oddsEls[i].tagName,
+            className: oddsEls[i].className,
+            parentTag: p ? p.tagName : '',
+            parentClass: p ? p.className : '',
+            grandParentTag: pp ? pp.tagName : '',
+            grandParentClass: pp ? (pp.className || '') : ''
+          });
+        }
+        
+        // 前5个容器信息
+        const containerSamples = [];
+        for (let i = 0; i < Math.min(5, containers.length); i++) {
+          const c = containers[i];
+          const ht = c.querySelector('div.box_team.teamH span.text_team, div.team_home, [class*="team_h"]');
+          const at = c.querySelector('div.box_team.teamC span.text_team, div.team_away, [class*="team_a"]');
+          const oddsInContainer = c.querySelectorAll('div.box_lebet_odd').length;
+          containerSamples.push({
+            className: c.className,
+            homeTeam: ht ? (ht.textContent || '').trim() : '(none)',
+            awayTeam: at ? (at.textContent || '').trim() : '(none)',
+            oddsInside: oddsInContainer
+          });
+        }
+
+        return {
+          boxLebetCount: containers.length,
+          betBoxCount: betBoxes.length,
+          oddsCount: oddsEls.length,
+          stadiumRowCount: stadiumRows.length,
+          oddsParents: oddsParents,
+          containerSamples: containerSamples
+        };
+      });
+      console.log("[HgCrawler] === DOM诊断 (CORNERS视图) ===");
+      console.log("  box_lebet[class*=bet_type_] 容器: " + domDiag.boxLebetCount);
+      console.log("  div.bet_box: " + domDiag.betBoxCount);
+      console.log("  div.box_lebet_odd: " + domDiag.oddsCount);
+      console.log("  [class*=row]/[class*=game] 行: " + domDiag.stadiumRowCount);
+      if (domDiag.oddsParents.length > 0) {
+        console.log("  odds 父容器示例:");
+        domDiag.oddsParents.forEach((op, i) => console.log("    [" + i + "] odds className=" + op.className + " → parent=" + op.parentTag + "." + op.parentClass + " → grandParent=" + op.grandParentTag + "." + op.grandParentClass));
+      }
+      if (domDiag.containerSamples.length > 0) {
+        console.log("  容器示例:");
+        domDiag.containerSamples.forEach((cs, i) => console.log("    [" + i + "] " + cs.className + " | " + cs.homeTeam + " vs " + cs.awayTeam + " | oddsInside=" + cs.oddsInside));
+      } else {
+        console.log("  (无容器样本)");
+      }
+      console.log("[HgCrawler] ===============================");
+    } catch (diagErr) {
+      console.log("[HgCrawler] DOM诊断异常: " + diagErr.message);
+    }
 
     // Step 3: 解析角球盘口
     const cornerOdds = await parseAllMarkets(mainPage);
