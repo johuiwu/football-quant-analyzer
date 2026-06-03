@@ -7,6 +7,7 @@ import {
   getBalance, setBalance, isLoggedIn,
   closeSharedBrowser, HG_URL
 } from "./browserPool.js";
+import { parseAllMarkets } from "./crawlerShared.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -932,7 +933,7 @@ export async function crawlCornerMatches() {
     await new Promise(r => setTimeout(r, 2000));
 
     // 解析 DOM 获取角球盘口
-    const domData = await parseCornerMarkets(page);
+    const domData = await parseAllMarkets(page);
     console.log("[cornerCrawler] DOM corner markets: " + domData.length);
 
     // 尝试从 XHR 捕获中提取比赛列表
@@ -949,41 +950,24 @@ export async function crawlCornerMatches() {
       console.warn("[cornerCrawler] XHR data extraction failed:", e.message);
     }
 
-    // 映射 DOM 数据到标准格式
+    // 映射 DOM 数据到标准格式（含 handicaps 数组）
     const matches = domData.map((m, idx) => {
-      const hdp = m.cornerHDP || {};
-      const ou = m.cornerOU || {};
-      const nc = m.nextCorner || {};
-      const oe = m.cornerOE || {};
-
-      // 使用 parseAsianHandicap 正确解析亚洲盘口
-      const handicapVal = parseAsianHandicap(hdp.line);
-
-      // 从 DOM 数据中提取角球数（优先实际值，回退为 0 并标记来源）
-      const domHomeCorners = m.homeCorners ?? 0;
-      const domAwayCorners = m.awayCorners ?? 0;
-      const hasDomCorners = (domHomeCorners > 0 || domAwayCorners > 0);
-
+      const cornerHdpEntry = m.handicaps.find(h => h.category === "HDP" && h.period === "full");
+      const handicapVal = cornerHdpEntry ? parseAsianHandicap(cornerHdpEntry.line) : 0;
+      const cornerOddsVal = (cornerHdpEntry && cornerHdpEntry.odds) ? (cornerHdpEntry.odds.home || 0) : 0;
       return {
         matchId: "g_" + (m.homeTeam + "_" + m.awayTeam).replace(/[^a-zA-Z0-9]/g, "_") + "_" + idx,
         matchName: m.homeTeam + " vs " + m.awayTeam,
-        homeTeam: m.homeTeam,
-        awayTeam: m.awayTeam,
-        league: m.league || "",
-        time: m.time || "",
+        homeTeam: m.homeTeam, awayTeam: m.awayTeam,
+        league: m.league || "", time: m.time || "",
         elapsedMinutes: m.elapsedMinutes || 0,
-        homeScore: m.homeScore || 0,
-        awayScore: m.awayScore || 0,
+        homeScore: m.homeScore || 0, awayScore: m.awayScore || 0,
         totalCorners: m.totalCorners || 0,
-        homeCorners: domHomeCorners,
-        awayCorners: domAwayCorners,
-        _cornerSource: hasDomCorners ? "dom" : "fallback",
-        cornerHandicap: handicapVal,
-        cornerOdds: hdp.homeOdds || 0,
-        cornerOverUnder: ou.line ? { line: ou.line, overOdds: ou.overOdds, underOdds: ou.underOdds } : null,
-        nextCorner: nc.corner ? nc : null,
-        cornerOddEven: oe.oddOdds ? oe : null,
-        dataQuality: m.dataQuality || "partial",
+        homeCorners: 0, awayCorners: 0,
+        _cornerSource: "dom",
+        cornerHandicap: handicapVal, cornerOdds: cornerOddsVal,
+        handicaps: m.handicaps || [],
+        dataQuality: m.handicaps.length >= 6 ? "full" : (m.handicaps.length > 0 ? "partial" : "empty"),
         timestamp: Date.now(),
         triggeredStrategies: []
       };
@@ -1254,7 +1238,7 @@ export async function diagnoseCrawler() {
     }
 
     // DOM 角球盘口
-    const domData = await parseCornerMarkets(page);
+    const domData = await parseAllMarkets(page);
     report.domCornerCount = domData.length;
     report.domCornerSample = domData.slice(0, 5);
 

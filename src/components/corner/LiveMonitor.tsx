@@ -2,6 +2,7 @@
 import { ExternalLink, History } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
+import type { HandicapEntry } from "../../store/cornerStore";
 import { REAL_TEAMS } from "../../data/realTeamsData";
 
 export default function LiveMonitor() {
@@ -69,16 +70,14 @@ export default function LiveMonitor() {
         </div>
       ) : (
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-hidden">
-          <div className="grid grid-cols-[1fr_1fr_0.35fr_0.25fr_0.25fr_0.25fr_0.25fr_0.35fr_0.25fr_0.25fr_0.25fr] gap-2 px-4 py-3 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
+          <div className="grid grid-cols-[1fr_1fr_0.3fr_0.2fr_0.2fr_0.2fr_1fr_0.2fr_0.2fr] gap-1.5 px-3 py-2.5 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
             <div>主队</div>
             <div>客队</div>
             <div className="text-center">时间</div>
             <div className="text-center">比分</div>
             <div className="text-center">主角</div>
             <div className="text-center">客角</div>
-            <div className="text-center">盘口</div>
-            <div className="text-center">赔率</div>
-            <div className="text-center">数据源</div>
+            <div className="text-center">盘口(8项)</div>
             <div className="text-center">策略</div>
             <div className="text-center">操作</div>
           </div>
@@ -94,7 +93,7 @@ export default function LiveMonitor() {
               <div
                 key={row.matchId}
                 className={
-                  "grid grid-cols-[1fr_1fr_0.35fr_0.25fr_0.25fr_0.25fr_0.25fr_0.35fr_0.25fr_0.25fr_0.25fr] gap-2 px-4 py-3 text-xs border-b border-slate-800/40 transition-colors " +
+                  "grid grid-cols-[1fr_1fr_0.3fr_0.2fr_0.2fr_0.2fr_1fr_0.2fr_0.2fr] gap-1.5 px-3 py-2.5 text-xs border-b border-slate-800/40 transition-colors " +
                   (isHighlighted
                     ? "ring-2 ring-emerald-500/60 bg-emerald-500/5"
                     : hasSignal
@@ -113,12 +112,41 @@ export default function LiveMonitor() {
                 </div>
                 <div className="text-center text-emerald-400 font-mono">{row.homeCorners ?? 0}</div>
                 <div className="text-center text-emerald-400 font-mono">{row.awayCorners ?? 0}</div>
-                <div className="text-center text-blue-400 font-mono">
-                  {(row.cornerHandicap ?? 0) > 0 ? "+" : ""}
-                  {(row.cornerHandicap ?? 0).toFixed(2)}
-                </div>
-                <div className="text-center text-amber-400 font-mono">
-                  {(row.cornerOdds ?? 0).toFixed(2)}
+                <div className="flex flex-wrap gap-1 items-start min-w-0">
+                  {(row.handicaps && row.handicaps.length > 0) ? (
+                    row.handicaps.map((h: HandicapEntry) => {
+                      const colors: Record<string, string> = {
+                        "O/U": h.period === "full" ? "bg-blue-600/20 text-blue-300 border-blue-500/30" : "bg-blue-400/10 text-blue-300/70 border-blue-400/20",
+                        "HDP": h.period === "full" ? "bg-orange-600/20 text-orange-300 border-orange-500/30" : "bg-orange-400/10 text-orange-300/70 border-orange-400/20",
+                        "1X2": h.period === "full" ? "bg-purple-600/20 text-purple-300 border-purple-500/30" : "bg-purple-400/10 text-purple-300/70 border-purple-400/20",
+                        "O/E": h.period === "full" ? "bg-green-600/20 text-green-300 border-green-500/30" : "bg-green-400/10 text-green-300/70 border-green-400/20",
+                      };
+                      const colorClass = colors[h.category] || "bg-slate-700/30 text-slate-400 border-slate-600/30";
+                      let shortLabel = h.categoryLabel;
+                      if (shortLabel.length > 5) shortLabel = shortLabel.replace("上半场 ", "半");
+                      
+                      let displayVal = "";
+                      if (h.category === "O/U" && h.line != null) {
+                        displayVal = h.line + (h.odds ? "|" + (h.odds.over || 0).toFixed(2) : "");
+                      } else if (h.category === "HDP" && h.line) {
+                        displayVal = String(h.line) + (h.odds ? "|" + (h.odds.home || 0).toFixed(2) : "");
+                      } else if (h.category === "1X2" && h.odds) {
+                        displayVal = (h.odds.home || 0).toFixed(2);
+                      } else if (h.category === "O/E" && h.odds) {
+                        displayVal = (h.odds.odd || 0).toFixed(2);
+                      }
+                      
+                      return (
+                        <span key={h.order} className={"inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded border " + colorClass} title={h.categoryLabel + ": " + JSON.stringify(h.odds || {})}>
+                          <span className="font-medium">{shortLabel}</span>
+                          {displayVal ? <span className="font-mono opacity-80">{displayVal}</span> : null}
+                          {h.source === "xhr" ? <span className="text-[7px] text-emerald-400">●</span> : h.source === "fallback" ? <span className="text-[7px] text-slate-500">○</span> : null}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span className="text-slate-600 text-[10px]">N/A</span>
+                  )}
                 </div>
                 <div className="text-center">
                   {row._cornerSource === "xhr" ? (

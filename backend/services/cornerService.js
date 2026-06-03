@@ -80,6 +80,7 @@ export function startCornerBackendPolling() {
       }
 
       cachedMatches = matches;
+      consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛");
         if (matches.length > 0 && !pollingFirstDone) {
           pollingFirstDone = true;
@@ -94,6 +95,11 @@ export function startCornerBackendPolling() {
       }
     } catch (e) {
       console.error("[cornerService] 轮询错误:", e.message);
+      consecutiveFailures++;
+      if (consecutiveFailures >= ALERT_THRESHOLD) {
+        console.error("[cornerService] 告警: 连续 " + consecutiveFailures + " 次爬取失败!");
+        lastAlertTime = new Date().toISOString();
+      }
     }
     if (pollingActive) {
       pollingInterval = setTimeout(poll, POLL_INTERVAL);
@@ -123,6 +129,20 @@ export function stopCornerBackendPolling() {
 let pollingPaused = false;
 let pollingFirstDone = false;
 let pauseTime = null;
+
+// ======================== P+P6K2m5o2f54q25oCB ========================
+let consecutiveFailures = 0;
+const ALERT_THRESHOLD = 5;
+let lastAlertTime = null;
+
+export function getAlertStatus() {
+  return {
+    consecutiveFailures,
+    alertActive: consecutiveFailures >= ALERT_THRESHOLD,
+    lastAlertTime,
+    threshold: ALERT_THRESHOLD
+  };
+}
 
 export function pauseCornerBackendPolling() {
   if (!pollingActive) {
@@ -176,6 +196,7 @@ export function resumeCornerBackendPolling() {
       }
 
       cachedMatches = matches;
+      consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛");
         if (matches.length > 0 && !pollingFirstDone) {
           pollingFirstDone = true;
@@ -190,6 +211,11 @@ export function resumeCornerBackendPolling() {
       }
     } catch (e) {
       console.error("[cornerService] 轮询错误:", e.message);
+      consecutiveFailures++;
+      if (consecutiveFailures >= ALERT_THRESHOLD) {
+        console.error("[cornerService] 告警: 连续 " + consecutiveFailures + " 次爬取失败!");
+        lastAlertTime = new Date().toISOString();
+      }
     }
     if (pollingActive && !pollingPaused) {
       pollingInterval = setTimeout(poll, POLL_INTERVAL);
@@ -212,10 +238,6 @@ export function getBackendPollingStatus() {
 
 // ======================== 数据格式映射 ========================
 function mapMatchToCornerFormat(match) {
-  // 爬虫返回的数据已经是扁平格式，直接透传并补全字段
-  const ou = match.cornerOverUnder || {};
-  const nc = match.nextCorner || {};
-  const oe = match.cornerOddEven || {};
   return {
     matchId: match.matchId || "",
     matchName: match.matchName || (match.homeTeam + " vs " + match.awayTeam),
@@ -231,9 +253,7 @@ function mapMatchToCornerFormat(match) {
     awayCorners: match.awayCorners || 0,
     cornerHandicap: match.cornerHandicap != null ? parseFloat(match.cornerHandicap) : 0,
     cornerOdds: match.cornerOdds != null ? parseFloat(match.cornerOdds) : 0,
-    cornerOverUnder: ou.line != null ? { line: ou.line, overOdds: ou.overOdds, underOdds: ou.underOdds } : null,
-    nextCorner: nc.corner ? nc : null,
-    cornerOddEven: oe.oddOdds ? oe : null,
+    handicaps: match.handicaps || [],
     timestamp: match.timestamp || Date.now(),
     triggeredStrategies: match.triggeredStrategies || []
   };

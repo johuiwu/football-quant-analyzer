@@ -4,6 +4,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 puppeteer.use(StealthPlugin());
 
 import { getSharedBrowser, getSharedPage, setSharedPage, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
+import { parseAllMarkets, handlePopups } from "./crawlerShared.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -856,10 +857,8 @@ function mergeMatchWithCornerOdds(matches, cornerOdds) {
     }
 
     if (co) {
-      match.cornerOU = co.cornerOU || match.cornerOU;
-      match.cornerHDP = co.cornerHDP || match.cornerHDP;
-      match.nextCorner = co.nextCorner || match.nextCorner;
-      match.cornerOE = co.cornerOE || match.cornerOE;
+      // 使用 handicaps 数组替代旧的单独字段
+      match.handicaps = co.handicaps || match.handicaps || [];
       match.totalCorners = co.totalCorners || match.totalCorners;
       if (co.elapsedMinutes) match.elapsedMinutes = co.elapsedMinutes;
       if (co.time) match.time = co.time;
@@ -963,11 +962,11 @@ export async function fetchAllLiveMatches() {
     } catch (e) {}
 
     // Step 5: 解析角球盘口
-    const cornerOdds = await parseCornerOdds(mainPage);
+    const cornerOdds = await parseAllMarkets(mainPage);
 
-    // Step 6: 合并（如果 Soccer 解析无结果，直接用 CORNERS 数据）
+    // Step 6: 使用 parseAllMarkets 结果构建比赛列表（含全部 8 种盘口）
     if (matches.length === 0 && cornerOdds.length > 0) {
-      console.log("[HgCrawler] Soccer页解析无结果，直接使用 CORNERS 数据作为比赛列表");
+      console.log("[HgCrawler] Soccer页解析无结果，使用 CORNERS 数据");
       matches = cornerOdds.map((co, idx) => ({
         league: co.league || "",
         homeTeam: co.homeTeam,
@@ -976,11 +975,8 @@ export async function fetchAllLiveMatches() {
         homeScore: co.homeScore || 0,
         awayScore: co.awayScore || 0,
         elapsedMinutes: co.elapsedMinutes || 0,
-        cornerOU: co.cornerOU || null,
-        cornerHDP: co.cornerHDP || null,
-        nextCorner: co.nextCorner || null,
-        cornerOE: co.cornerOE || null,
         totalCorners: co.totalCorners || 0,
+        handicaps: co.handicaps || [],
         matchName: (co.homeTeam || "") + " vs " + (co.awayTeam || ""),
         matchId: "corner_" + idx + "_" + Date.now(),
         timestamp: Date.now()
@@ -1049,7 +1045,7 @@ export async function fetchSchedule() {
     } catch (e) {}
 
     // Step 3: 解析角球盘口
-    const cornerOdds = await parseCornerOdds(mainPage);
+    const cornerOdds = await parseAllMarkets(mainPage);
 
     // 转为赛程格式
     const scheduleData = cornerOdds.map((co, idx) => ({
@@ -1059,10 +1055,7 @@ export async function fetchSchedule() {
       awayTeam: co.awayTeam,
       time: co.time || "--:--",
       date: new Date().toLocaleDateString(),
-      cornerOU: co.cornerOU || null,
-      cornerHDP: co.cornerHDP || null,
-      nextCorner: co.nextCorner || null,
-      cornerOE: co.cornerOE || null
+      handicaps: co.handicaps || []
     }));
 
     crawlerStatus.lastUpdate = Date.now();

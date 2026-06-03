@@ -1,6 +1,6 @@
 ﻿import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
-import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "../services/cornerService.js";
+import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance } from "../services/cornerCrawler.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
@@ -282,6 +282,16 @@ router.post("/corner/bets/execute", async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error("[cornerRoutes] /corner/bets/execute error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/alert-status ========================
+router.get("/corner/alert-status", async (req, res) => {
+  try {
+    const status = getAlertStatus();
+    res.json({ success: true, data: status });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });

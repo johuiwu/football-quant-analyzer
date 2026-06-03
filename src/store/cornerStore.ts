@@ -17,6 +17,25 @@ export interface CornerStrategy {
   targetOdds: number;
 }
 
+/** 盘口条目 */
+export interface HandicapEntry {
+  order: number;
+  category: "O/U" | "HDP" | "1X2" | "O/E";
+  categoryLabel: string;
+  period: "full" | "half";
+  line?: number | string;
+  odds?: {
+    home?: number;
+    away?: number;
+    draw?: number;
+    over?: number;
+    under?: number;
+    odd?: number;
+    even?: number;
+  };
+  source: "dom" | "xhr" | "fallback";
+}
+
 /** 实时比赛角球数据 */
 export interface CornerLiveMatch {
   matchId: string;
@@ -29,6 +48,7 @@ export interface CornerLiveMatch {
   awayCorners: number;
   cornerHandicap: number;
   cornerOdds: number;
+  handicaps: HandicapEntry[];
   triggeredStrategies: number[];
 }
 
@@ -373,6 +393,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         awayCorners: m.awayCorners || 0,
         cornerHandicap: m.cornerHandicap || 0,
         cornerOdds: m.cornerOdds || 0,
+        handicaps: m.handicaps || [],
         triggeredStrategies: evaluateMatchForStrategies(
           { currentMinute: m.elapsedMinutes || 0, cornerHandicap: m.cornerHandicap || 0, odds: m.cornerOdds || 0, homeScore: m.homeScore || 0, awayScore: m.awayScore || 0 },
           get().strategies
