@@ -1,0 +1,3 @@
+﻿interface:
+  display_name: "代码审查"
+  short_description: "提交前代码审查：逻辑风险、安全隐患、性能问题"

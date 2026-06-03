@@ -1,0 +1,3 @@
+﻿interface:
+  display_name: "质量验收"
+  short_description: "上线前功能验收、回归校验、迭代验证"

@@ -1,0 +1,3 @@
+﻿interface:
+  display_name: "视觉校验"
+  short_description: "前端页面与设计稿比对、样式还原度验证"

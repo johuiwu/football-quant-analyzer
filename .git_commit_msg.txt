@@ -1,0 +1,11 @@
+feat(corner): 完善角球爬虫系统 — Soccer页比分解析 + 中文翻译 + 数据持久化
+
+- 重写 parseSoccerMatches: 基于比分锚点定位球队和联赛，替代行分组方案
+- CORNERS 页解析: 三种策略提取 O/U/HDP/Next/OE 盘口，CSS选择器提取比分
+- fetchAllLiveMatches 流程: In-Play → Soccer → 比赛列表 → CORNERS → 合并
+- fetchSchedule 流程: Today → CORNERS → 赛程角球盘口
+- 新增轮询机制: 10s间隔自动刷新
+- CrawlerControlPanel: 数据迁移到 Zustand cornerStore 持久化
+- 中文翻译表: 100+ 国家、150+ 俱乐部、59 联赛，U21 后缀自动识别
+- 新增 browserPool.js: 共享 Puppeteer 浏览器实例管理
+- 路由扩展: /api/crawler/matches/poll/start|stop

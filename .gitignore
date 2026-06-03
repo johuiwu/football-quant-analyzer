@@ -1,0 +1,27 @@
+node_modules/
+build/
+dist/
+release/
+output/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+database/
+*.db
+# 调试产物
+debug-*.png
+debug-*.json
+debug-*.html
+debug_screenshots/
+test-crawler.js
+test-corner-crawler.js
+test-page.html
+test-raw-data.json
+test-screenshot.png
+
+# 探索/测试脚本
+src/crawler/
+.trae/
+docs/

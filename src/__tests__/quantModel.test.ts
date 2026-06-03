@@ -1,0 +1,419 @@
+import { describe, it, expect } from 'vitest';
+import { calculateBetsModel, BetsModelInput, AsianHandicapFeatures } from '../utils/quantModel';
+
+const mockHomeTeam = {
+  id: 'mancity',
+  name: 'Manchester City',
+  nameCn: '曼彻斯特城',
+  league: 'EPL',
+  leagueCn: '英超',
+  rank: 1,
+  homeXg: 2.2,
+  awayXg: 1.8,
+  homeStats: {
+    played: 18,
+    wins: 14,
+    draws: 3,
+    losses: 1,
+    goalsFor: 45,
+    goalsAgainst: 12,
+    xgFor: 42,
+    xgAgainst: 11
+  },
+  awayStats: {
+    played: 18,
+    wins: 12,
+    draws: 4,
+    losses: 2,
+    goalsFor: 38,
+    goalsAgainst: 15,
+    xgFor: 35,
+    xgAgainst: 14
+  },
+  form: ['W', 'W', 'D', 'W', 'W'],
+  cleanSheets: 12,
+  shotsPerGame: 15.2,
+  shotAccuracy: 42
+};
+
+const mockAwayTeam = {
+  id: 'arsenal',
+  name: 'Arsenal',
+  nameCn: '阿森纳',
+  league: 'EPL',
+  leagueCn: '英超',
+  rank: 2,
+  homeXg: 2.0,
+  awayXg: 1.6,
+  homeStats: {
+    played: 18,
+    wins: 12,
+    draws: 4,
+    losses: 2,
+    goalsFor: 38,
+    goalsAgainst: 14,
+    xgFor: 36,
+    xgAgainst: 13
+  },
+  awayStats: {
+    played: 18,
+    wins: 10,
+    draws: 5,
+    losses: 3,
+    goalsFor: 32,
+    goalsAgainst: 18,
+    xgFor: 30,
+    xgAgainst: 17
+  },
+  form: ['W', 'D', 'W', 'L', 'W'],
+  cleanSheets: 10,
+  shotsPerGame: 14.1,
+  shotAccuracy: 38
+};
+
+const defaultAsianFeatures: AsianHandicapFeatures = {
+  handicapValue: 0.25,
+  homeWater: 0.85,
+  awayWater: 0.95,
+  waterDiff: -0.10,
+  isSharpMove: false,
+  handicapAdjustRate: 0,
+  homeWaterChange: 0,
+  awayWaterChange: 0,
+  marketPressure: 'NORMAL',
+  bookmakerBias: 'NEUTRAL'
+};
+
+describe('calculateBetsModel', () => {
+  it('should return valid prediction results with normal input', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result).toBeDefined();
+    expect(result.fusedHomeProb).toBeDefined();
+    expect(result.fusedDrawProb).toBeDefined();
+    expect(result.fusedAwayProb).toBeDefined();
+    expect(result.marketConfidence).toBeDefined();
+  });
+
+  it('should return probabilities that sum to 1', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+    const probSum = result.fusedHomeProb + result.fusedDrawProb + result.fusedAwayProb;
+
+    expect(probSum).toBeCloseTo(1, 2);
+  });
+
+  it('should handle extreme odds - heavy favorite', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.20, draw: 6.00, away: 10.00 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -1.5 },
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.fusedHomeProb).toBeGreaterThan(0.6);
+    expect(result.fusedAwayProb).toBeLessThan(0.2);
+  });
+
+  it('should handle extreme odds - underdog', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockAwayTeam,
+      awayTeam: mockHomeTeam,
+      odds1X2: { home: 8.00, draw: 5.00, away: 1.30 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 1.5 },
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.fusedAwayProb).toBeGreaterThan(0.5);
+    expect(result.fusedHomeProb).toBeLessThan(0.2);
+  });
+
+  it('should handle Asian handicap conversions', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.90, draw: 3.40, away: 3.50 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -0.25, homeWater: 0.65, awayWater: 1.15 },
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.asianHomeProb).toBeDefined();
+    expect(result.asianDrawProb).toBeDefined();
+    expect(result.asianAwayProb).toBeDefined();
+    expect(result.fusedHomeProb).toBeGreaterThan(result.oddsHomeProb);
+  });
+
+  it('should detect market deviation', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.80, draw: 3.60, away: 4.00 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -1.0, homeWater: 0.70, awayWater: 1.10 },
+      goalsLine: 3.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.marketDeviation).toBeDefined();
+    expect(result.marketConfidence).toBeDefined();
+  });
+
+  it('should handle different goal lines', () => {
+    const input25: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5
+    };
+
+    const input35: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 3.5
+    };
+
+    const result25 = calculateBetsModel(input25);
+    const result35 = calculateBetsModel(input35);
+
+    expect(result25.overUnderProb).toBeDefined();
+    expect(result35.overUnderProb).toBeDefined();
+    expect(result25.expectedHomeGoals).toBeDefined();
+    expect(result25.expectedAwayGoals).toBeDefined();
+  });
+
+  it('should return valid recommendation', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.recommendedDirection).toBeDefined();
+    expect(typeof result.recommendedDirection).toBe('string');
+    expect(result.recommendedDirection.length).toBeGreaterThan(0);
+  });
+
+  it('should handle Kelly criterion calculations', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.80, draw: 3.60, away: 4.00 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.kellyHome).toBeDefined();
+    expect(result.kellyDraw).toBeDefined();
+    expect(result.kellyAway).toBeDefined();
+    expect(result.kellyHome).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should return defensive metrics', () => {
+    const input: BetsModelInput = {
+      homeTeam: mockHomeTeam,
+      awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5
+    };
+
+    const result = calculateBetsModel(input);
+
+    expect(result.expectedHomeCorners).toBeDefined();
+    expect(result.expectedAwayCorners).toBeDefined();
+    expect(result.expectedHomeCards).toBeDefined();
+    expect(result.expectedAwayCards).toBeDefined();
+  });
+
+  // ===== ???????? =====
+  it('bookmakerBias HOME + ??', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.45, draw: 4.50, away: 7.00 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -1.25, bookmakerBias: 'HOME', homeWater: 0.85, awayWater: 1.00 },
+      goalsLine: 3.0,
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThan(0.5);
+  });
+
+  it('bookmakerBias AWAY + ??', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockAwayTeam, awayTeam: mockHomeTeam,
+      odds1X2: { home: 7.00, draw: 4.50, away: 1.45 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 1.25, bookmakerBias: 'AWAY', homeWater: 1.00, awayWater: 0.85, isStrongHomeHandicap: false, isStrongAwayHandicap: true },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedAwayProb).toBeGreaterThan(0.5);
+  });
+
+  it('marketPressure HIGH + isSharpMove', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.20, draw: 3.10, away: 3.20 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -0.5, marketPressure: 'HIGH', isSharpMove: true, waterDiff: -0.25, homeWater: 0.75, awayWater: 1.05 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThan(0);
+  });
+
+  it('??????? + ?????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.00, draw: 3.40, away: 3.60 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+      advancedParams: { fatigue: 0.5, injury: 0.3, morale: 0.2, weather: 0.1, travelDistance: 0.3, restDays: 1, scheduleDensity: 0.5, injuryImpactHome: 0.2, injuryImpactAway: 0.1 },
+      weights: { odds: 0.3, strength: 0.4, homeAway: 0.2, h2h: 0.05, form: 0.05 },
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThanOrEqual(0);
+    expect(result.fusedAwayProb).toBeGreaterThanOrEqual(0);
+    expect(result.fusedHomeProb + result.fusedDrawProb + result.fusedAwayProb).toBeCloseTo(1, 2);
+  });
+
+  it('goalsLine=2.0 ????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.50, draw: 2.80, away: 3.00 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0 },
+      goalsLine: 2.0,
+    } as BetsModelInput);
+    expect(result.expectedHomeGoals).toBeGreaterThanOrEqual(0);
+    expect(result.expectedAwayGoals).toBeGreaterThanOrEqual(0);
+  });
+
+  it('goalsLine=4.0 ????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.80, draw: 3.80, away: 4.50 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 4.0,
+    } as BetsModelInput);
+    expect(result.expectedHomeGoals).toBeGreaterThanOrEqual(0);
+    expect(result.expectedAwayGoals).toBeGreaterThanOrEqual(0);
+  });
+
+  it('??? handicap=0', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.50, draw: 3.10, away: 2.80 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0, isStrongHomeHandicap: false, homeWater: 0.93, awayWater: 0.93 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThan(0.2);
+    expect(result.fusedAwayProb).toBeGreaterThan(0.2);
+  });
+
+  it('????? handicap=-0.25', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.20, away: 3.40 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -0.25, homeWater: 0.88, awayWater: 0.98 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedHomeProb + result.fusedDrawProb + result.fusedAwayProb).toBeCloseTo(1, 2);
+  });
+
+  it('????? handicap=0.25', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockAwayTeam, awayTeam: mockHomeTeam,
+      odds1X2: { home: 3.40, draw: 3.20, away: 2.10 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0.25, homeWater: 0.98, awayWater: 0.88, isStrongHomeHandicap: false, isStrongAwayHandicap: true },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedAwayProb).toBeGreaterThan(0.3);
+  });
+
+
+  it('waterDiff>0.05 ????????????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.50, draw: 3.20, away: 2.70 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0, waterDiff: 0.12, homeWater: 1.05, awayWater: 0.82, isStrongHomeHandicap: false, isStrongAwayHandicap: false },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThanOrEqual(0);
+    expect(result.fusedAwayProb).toBeGreaterThanOrEqual(0);
+  });
+
+  it('????????????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockAwayTeam, awayTeam: mockHomeTeam,
+      odds1X2: { home: 3.00, draw: 3.20, away: 2.30 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0.25, waterDiff: 0.15, homeWater: 1.05, awayWater: 0.80, isStrongHomeHandicap: false, isStrongAwayHandicap: true },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedAwayProb).toBeGreaterThan(0.2);
+  });
+
+
+  it('competitionType=Cup??????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+      competitionType: 'Cup',
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThan(0);
+    expect(result.fusedHomeProb + result.fusedDrawProb + result.fusedAwayProb).toBeCloseTo(1, 2);
+  });
+
+  it('competitionType=Friendly???????', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+      competitionType: 'Friendly',
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThan(0);
+    expect(result.fusedDrawProb).toBeGreaterThan(0);
+  });
+
+
+  it('??????? vs ???teamId=6:1?', () => {
+    const result = calculateBetsModel({
+      homeTeamId: 6,
+      awayTeamId: 1,
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.fusedHomeProb).toBeGreaterThan(0);
+    expect(result.fusedDrawProb).toBeGreaterThan(0);
+    expect(result.fusedHomeProb + result.fusedDrawProb + result.fusedAwayProb).toBeCloseTo(1, 2);
+  });
+
+});

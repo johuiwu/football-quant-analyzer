@@ -1,0 +1,289 @@
+﻿import { Router } from "express";
+import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
+import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "../services/cornerService.js";
+import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance } from "../services/cornerCrawler.js";
+import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
+
+import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
+
+const router = Router();
+
+// DEFAULT_STRATEGIES 从 cornerService 导入（统一策略源）
+// 使用见下方 parsedStrategies 兜底逻辑
+
+// ======================== GET /api/corner/live ========================
+router.get("/corner/live", async (req, res) => {
+  try {
+    const matchId = req.query.matchId || null;
+    const result = await getLiveCornerData(matchId);
+    const matchList = (result && Array.isArray(result.data)) ? result.data : [];
+    res.json({ success: true, data: matchList, generatedAt: (result && result.generatedAt) || new Date().toISOString(), count: matchList.length });
+  } catch (err) {
+    const msg = err.message || String(err);
+    console.error("[cornerRoutes] /corner/live error:", msg);
+    if (msg.includes("browser") || msg.includes("isConnected") || msg.includes("launch")) {
+      return res.status(503).json({ success: false, error: "爬虫浏览器未就绪，请稍后重试", detail: msg });
+    }
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// ======================== GET /api/corner/strategies/check ========================
+router.get("/corner/strategies/check", async (req, res) => {
+  try {
+    const { strategies, matchId } = req.query;
+    const parsedStrategies = strategies ? JSON.parse(strategies) : DEFAULT_STRATEGIES;
+    const result = await getLiveCornerData(matchId || null);
+    const matchList = (result && Array.isArray(result.data)) ? result.data : [];
+    const checked = matchList.map((match) => {
+      const triggered = evaluateStrategies(match, parsedStrategies);
+      return { ...match, triggeredStrategies: triggered, signalCount: triggered.length };
+    });
+    res.json({ success: true, data: checked, generatedAt: result.generatedAt, count: checked.length });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/strategies/check error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== PUT /api/corner/strategies ========================
+router.put("/corner/strategies", async (req, res) => {
+  try {
+    const { strategies } = req.body || {};
+    if (!strategies || !Array.isArray(strategies) || strategies.length === 0) {
+      return res.status(400).json({ success: false, error: "请提供有效的策略列表" });
+    }
+    setCornerStrategies(strategies);
+    console.log("[cornerRoutes] 策略已同步，数量:", strategies.length);
+    res.json({ success: true, count: strategies.length });
+  } catch (err) {
+    console.error("[cornerRoutes] PUT /corner/strategies error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+// ======================== GET /api/corner/history ========================
+router.get("/corner/history", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 20;
+    const rows = await getCornerHistory(limit);
+    res.json({ success: true, data: rows, count: rows.length });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/history error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/history ========================
+router.post("/corner/history", validateTypes({ matchId: "string", matchName: "string", homeTeam: "string", awayTeam: "string" }), async (req, res) => {
+  try {
+    const record = req.body || {};
+    const result = await saveCornerHistory(record);
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] POST /corner/history error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/login ========================
+router.post("/corner/login", requireFields(["username", "password"]), validateLength({ username: { min: 1, max: 100 }, password: { min: 1, max: 100 } }), async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: "请提供用户名和密码" });
+    }
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("登录超时，请重试")), 30000)
+    );
+
+    const result = await Promise.race([
+      loginToHG(username, password),
+      timeoutPromise
+    ]);
+
+    if (!result || typeof result !== "object") {
+      return res.status(500).json({ success: false, error: "登录服务返回异常数据" });
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/login error:", err.message);
+    res.status(500).json({ success: false, error: err.message || "登录服务内部错误" });
+  }
+});
+
+// ======================== GET /api/corner/status ========================
+router.get("/corner/status", async (req, res) => {
+  try {
+    const crawlerStatus = getPollingStatus();
+    const backendStatus = getBackendPollingStatus();
+    res.json({ success: true, data: { crawler: crawlerStatus, backend: backendStatus, balance: getBalance() } });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/status error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/start ========================
+router.post("/corner/start", async (req, res) => {
+  try {
+    // 启动后端轮询
+    const result = startCornerBackendPolling();
+    console.log("[cornerRoutes] 后端轮询已启动");
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/start error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/stop ========================
+router.post("/corner/stop", async (req, res) => {
+  try {
+    const result = stopCornerBackendPolling();
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/stop error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/pause ========================
+router.post("/corner/pause", async (req, res) => {
+  try {
+    const result = pauseCornerBackendPolling();
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/pause error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/resume ========================
+router.post("/corner/resume", async (req, res) => {
+  try {
+    const result = resumeCornerBackendPolling();
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/resume error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/stats/:strategyId ========================
+router.get("/corner/stats/:strategyId", async (req, res) => {
+  try {
+    const stats = await getStrategyStats(req.params.strategyId);
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/stats error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/backtest ========================
+router.post("/corner/backtest", async (req, res) => {
+  try {
+    const { strategies } = req.body || {};
+    if (!strategies || !Array.isArray(strategies) || strategies.length === 0) {
+      return res.status(400).json({ success: false, error: "请提供策略列表" });
+    }
+    const result = await runBacktest(strategies);
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/backtest error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/simulation-records ========================
+router.get("/corner/simulation-records", async (req, res) => {
+  try {
+    const { matchId, strategyId, limit } = req.query;
+    const rows = await getSimulationRecords({
+      matchId: matchId || null,
+      strategyId: strategyId || null,
+      limit: parseInt(limit) || 50
+    });
+    res.json({ success: true, data: rows, count: rows.length });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/simulation-records error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/diagnose ========================
+router.get("/corner/diagnose", async (req, res) => {
+  try {
+    console.log("[cornerRoutes] 启动爬虫诊断...");
+    const report = await diagnoseCrawler();
+    console.log("[cornerRoutes] 诊断完成, status=" + report.status + " XHR=" + report.interceptedXHRCount + " matches=" + report.matchesFound + " domCorners=" + report.domCornerCount);
+    res.json({ success: true, data: report });
+  } catch (err) {
+    const msg = err.message || String(err);
+    console.error("[cornerRoutes] /corner/diagnose error:", msg);
+    res.status(500).json({ success: false, error: "诊断失败，请检查爬虫状态", detail: msg });
+  }
+});
+
+// ======================== GET /api/corner/debug ========================
+router.get("/corner/debug", async (req, res) => {
+  try {
+    const info = getDebugInfo();
+    res.json({ success: true, data: info });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/debug error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/close ========================
+router.post("/corner/close", async (req, res) => {
+  try {
+    stopCornerBackendPolling();
+    const result = await closeCrawler();
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/close error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/bet-config ========================
+router.post("/corner/bet-config", async (req, res) => {
+  try {
+    const { amount, isRealMode } = req.body || {};
+    setBetConfig({ amount, isRealMode });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/bet-config error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/bets ========================
+router.get("/corner/bets", async (req, res) => {
+  try {
+    const { status, limit } = req.query;
+    const rows = await getCornerBets({ status: status || null, limit: parseInt(limit) || 50 });
+    res.json({ success: true, data: rows, count: rows.length });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/bets error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/bets/execute ========================
+router.post("/corner/bets/execute", async (req, res) => {
+  try {
+    const result = await executePendingBets();
+    res.json(result);
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/bets/execute error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+export default router;

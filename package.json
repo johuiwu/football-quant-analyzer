@@ -1,0 +1,142 @@
+{
+  "name": "football-quant-analyzer",
+  "private": true,
+  "version": "2.7.0",
+  "description": "足球竞彩量化分析系统 - Electron 桌面版",
+  "author": "Football Quant Team",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "dev:electron": "concurrently \"vite --host 0.0.0.0\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:electron": "npm run build && node scripts/build-setup.cjs && electron-builder --win --config.extraMetadata.main=electron/main.cjs",
+    "build:electron:dir": "npm run build && node scripts/build-setup.cjs && electron-builder --win --dir",
+    "start": "node dist/server.cjs",
+    "preview": "vite preview",
+    "clean": "rm -rf dist release",
+    "lint": "tsc --noEmit",
+    "validate:data": "python python/validate_team_data.py",
+    "precheck": "npm run validate:data && npm run lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "migrate:up": "knex migrate:latest --knexfile knexfile.cjs",
+    "migrate:down": "knex migrate:rollback --knexfile knexfile.cjs",
+    "gen-icon": "node scripts/generate_icon.cjs"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "cors": "^2.8.6",
+    "d3": "^7.9.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "lru-cache": "^11.5.1",
+    "lucide-react": "^0.546.0",
+    "openai": "^6.39.0",
+    "puppeteer": "^25.0.4",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-router-dom": "^7.16.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1",
+    "tiny-pinyin": "^1.3.2",
+    "vite": "^6.2.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/cors": "^2.8.19",
+    "@types/d3": "^7.4.3",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/puppeteer": "^5.4.7",
+    "@types/sqlite3": "^3.1.11",
+    "@vitejs/plugin-react": "^5.0.4",
+    "@vitest/coverage-v8": "^4.1.7",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.0",
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.25.0",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vitest": "^4.1.7",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.football.quant.analyzer",
+    "productName": "足球竞彩量化分析系统",
+    "directories": {
+      "output": "release",
+      "buildResources": "public"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!database/*.db",
+      "!database/*.db-shm",
+      "!database/*.db-wal"
+    ],
+    "extraResources": [
+      {
+        "from": "build_resources/database/",
+        "to": "database/",
+        "filter": ["*.db", "*.db-shm", "*.db-wal"]
+      },
+      {
+        "from": "config/",
+        "to": "config/"
+      },
+      {
+        "from": "output/",
+        "to": "output/"
+      },
+      {
+        "from": "migrations/",
+        "to": "migrations/"
+      },
+      {
+        "from": "python/",
+        "to": "python/"
+      },
+      {
+        "from": "build_resources/chrome/",
+        "to": "chrome/"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/sqlite/**",
+      "node_modules/sqlite3/**",
+      "node_modules/@puppeteer/browsers/**"
+    ],
+    "win": {
+      "icon": "public/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "足球量化分析系统",
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico"
+    }
+  }
+}
