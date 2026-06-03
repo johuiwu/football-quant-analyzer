@@ -17,6 +17,8 @@ interface ScheduleItem {
   awayTeam: string;
   time: string;
   date: string;
+  handicaps: any[];
+  hasCornerOdds: boolean;
 }
 
 export default function CrawlerControlPanel() {
@@ -57,6 +59,8 @@ export default function CrawlerControlPanel() {
     homeScore: item.homeScore ?? 0,
     awayScore: item.awayScore ?? 0,
     totalCorners: item.totalCorners ?? 0,
+    handicaps: item.handicaps || [],
+    _dataSource: item._dataSource || "",
   });
 
 
@@ -232,6 +236,12 @@ export default function CrawlerControlPanel() {
         const matchCount = Array.isArray(rawMatches) ? rawMatches.length : (rawMatches?.matches?.length || 0);
         
         if (matchCount > 0 || !apiData.cacheEmpty) {
+          // 检查数据来源
+          const firstDataSource = rawMatches.length > 0 ? (rawMatches[0]._dataSource || "") : "";
+          if (firstDataSource === "today" && !isMonitoring) {
+            showMessage("info", "当前无实时比赛，展示赛程数据");
+          }
+          
           setCrawlerData({
             matches: (Array.isArray(rawMatches) ? rawMatches : (rawMatches?.matches || [])).map(normalizeMatchForRender),
             allText: apiData.data?.allText || [],
@@ -295,6 +305,8 @@ export default function CrawlerControlPanel() {
             awayTeam: typeof match.awayTeam === "string" ? match.awayTeam : "",
             time: typeof match.time === "string" ? match.time : "",
             date: new Date().toLocaleDateString(),
+            handicaps: match.handicaps || [],
+            hasCornerOdds: match.hasCornerOdds || (match.handicaps && match.handicaps.length > 0),
           }));
           setScheduleData(scheduleItems);
         }
@@ -804,6 +816,17 @@ export default function CrawlerControlPanel() {
                 {item.time && (
                   <div className="mt-2 text-center text-xs text-amber-400">
                     时间：{translateTime(item.time)}
+                  </div>
+                )}
+                {item.hasCornerOdds && item.handicaps.length > 0 && (
+                  <div className="mt-2 text-center text-xs text-slate-500">
+                    角球盘口：{item.handicaps.length}条
+                    {item.handicaps.filter((h: any) => h.category === "HDP").length > 0 && (
+                      <span className="ml-2 text-emerald-400">含亚盘</span>
+                    )}
+                    {item.handicaps.filter((h: any) => h.category === "O/U").length > 0 && (
+                      <span className="ml-2 text-blue-400">含大小球</span>
+                    )}
                   </div>
                 )}
               </div>

@@ -2,7 +2,7 @@ import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./corn
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 
 // ======================== 数据源配置 ========================
-const USE_REAL_DATA = process.env.USE_REAL_DATA === "true";
+const USE_REAL_DATA = process.env.USE_REAL_DATA !== "false";
 
 // ======================== 后端轮询缓存 ========================
 let cachedMatches = [];
@@ -289,13 +289,36 @@ export async function getLiveCornerData(filterMatchId) {
     return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true };
   }
 
-  // 无缓存时，根据 USE_REAL_DATA 决定返回空还是 cacheEmpty 标志
-  if (!USE_REAL_DATA) {
-    return { data: [], generatedAt, count: 0 };
+  // 无缓存时，尝试即时爬取一次（USE_REAL_DATA 默认 true）
+  if (USE_REAL_DATA) {
+    console.log("[cornerService] 缓存为空，尝试即时爬取...");
+    try {
+      const result = await crawlCornerMatches();
+      if (result.success && result.data?.matches?.length > 0) {
+        const rawMatches = result.data.matches;
+        const matches = rawMatches.map(mapMatchToCornerFormat);
+        // 策略评估
+        for (const match of matches) {
+          match.triggeredStrategies = evaluateStrategies(match, activeStrategies);
+        }
+        cachedMatches = matches;
+        lastFetchTime = Date.now();
+        consecutiveFailures = 0;
+        const filtered = filterMatchId
+          ? matches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
+          : matches;
+        console.log(`[cornerService] 即时爬取成功，返回 ${filtered.length} 场`);
+        return { data: filtered, generatedAt, count: filtered.length, source: "live-fetch", cacheAge: 0 };
+      } else {
+        console.log("[cornerService] 即时爬取无数据: " + (result.error || "0 matches"));
+      }
+    } catch (err) {
+      console.warn("[cornerService] 即时爬取失败:", err.message);
+    }
   }
 
-  // 无缓存：返回空，不触发爬取（由轮询系统负责填充缓存）
-  console.log("[cornerService] 缓存为空，等待轮询系统填充...");
+  // 无缓存：返回空，标记 cacheEmpty 让前端知道需要等待轮询
+  console.log("[cornerService] 无有效数据，返回空");
   return { data: [], generatedAt, count: 0, cacheEmpty: true };
 }
 

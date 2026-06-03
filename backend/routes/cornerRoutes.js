@@ -17,7 +17,15 @@ router.get("/corner/live", async (req, res) => {
     const matchId = req.query.matchId || null;
     const result = await getLiveCornerData(matchId);
     const matchList = (result && Array.isArray(result.data)) ? result.data : [];
-    res.json({ success: true, data: matchList, generatedAt: (result && result.generatedAt) || new Date().toISOString(), count: matchList.length });
+    res.json({
+      success: true,
+      data: matchList,
+      generatedAt: (result && result.generatedAt) || new Date().toISOString(),
+      count: matchList.length,
+      cacheAge: (result && result.cacheAge != null) ? result.cacheAge : null,
+      cacheEmpty: (result && result.cacheEmpty) ? true : false,
+      source: (result && result.source) || "cache"
+    });
   } catch (err) {
     const msg = err.message || String(err);
     console.error("[cornerRoutes] /corner/live error:", msg);
