@@ -1134,6 +1134,19 @@ export async function fetchSchedule() {
       );
     }
 
+    // 恢复页面到 In-Play 状态，避免污染后续实时监控
+    try {
+      console.log("[HgCrawler] 恢复浏览器到 In-Play 视图...");
+      for (const name of ["In-Play", "滚球", "inplay", "INPLAY"]) {
+        const clicked = await clickTab(mainPage, name, 1500);
+        if (clicked) { console.log("[HgCrawler] In-Play tab clicked: " + name); break; }
+      }
+      await new Promise(r => setTimeout(r, 2000));
+      await handlePopups(mainPage);
+    } catch (e) {
+      console.log("[HgCrawler] 恢复 In-Play 视图失败（无影响）:", e.message);
+    }
+
     return {
       success: true,
       data: { matches: scheduleData },

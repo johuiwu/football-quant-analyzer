@@ -85,10 +85,9 @@ export default function CrawlerControlPanel() {
       if (data.success) {
         setIsMonitoring(true);
         showMessage("success", "启动成功，后台将自动获取数据");
-        // 等待 8 秒后触发首次即时数据获取并开启自动刷新（给爬虫足够的初始爬取时间）
+        // 等待 8 秒后触发首次即时数据获取
         setTimeout(async () => {
           await fetchMatches(true); // forceCorner=true，走 /api/corner/fetch 即时爬取
-          setAutoRefresh(true);
         }, 8000);
       } else {
         showMessage("error", data.error || "启动失败");
@@ -126,7 +125,6 @@ export default function CrawlerControlPanel() {
       const data = await res.json();
       if (data.success) {
         setIsPaused(false);
-        setAutoRefresh(true);
         fetchMatches(true);
         showMessage("success", "监控已恢复");
       } else {
