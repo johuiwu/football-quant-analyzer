@@ -85,9 +85,11 @@ export default function CrawlerControlPanel() {
       if (data.success) {
         setIsMonitoring(true);
         showMessage("success", "启动成功，后台将自动获取数据");
-        setTimeout(() => {
+        // 等待 8 秒后触发首次即时数据获取并开启自动刷新（给爬虫足够的初始爬取时间）
+        setTimeout(async () => {
+          await fetchMatches(true); // forceCorner=true，走 /api/corner/fetch 即时爬取
           setAutoRefresh(true);
-        }, 5000);
+        }, 8000);
       } else {
         showMessage("error", data.error || "启动失败");
       }
@@ -272,7 +274,7 @@ export default function CrawlerControlPanel() {
         }
         
         if (apiData.cacheEmpty) {
-          // 禁用提示: showMessage("info", "数据准备中，请稍后...");
+          showMessage("info", "数据采集中，请稍后刷新...");
         } else if (matchCount > 0) {
           // 禁用提示: showMessage("info", `获取到 ${matchCount} 场比赛`);
         }
@@ -674,6 +676,7 @@ export default function CrawlerControlPanel() {
                           "1X2_half":{bg: "from-purple-800/30 to-slate-800/50",text: "text-purple-300/70",border: "border-purple-700/20" },
                           "O/E":   { bg: "from-green-900/50 to-slate-800/50", text: "text-green-300",   border: "border-green-800/30" },
                           "O/E_half":{bg: "from-green-800/30 to-slate-800/50", text: "text-green-300/70", border: "border-green-700/20" },
+                          "NEXT": { bg: "from-teal-900/50 to-slate-800/50", text: "text-teal-300", border: "border-teal-800/30" },
                         };
 
                         return (
@@ -736,6 +739,21 @@ export default function CrawlerControlPanel() {
                                       <div className="text-center mt-2 pt-2 border-t border-slate-700">
                                         <div className="text-xs text-slate-400">双</div>
                                         <div className="text-lg font-bold text-white">{(h.odds?.even || 0).toFixed(2)}</div>
+                                      </div>
+                                    </>
+                                  )}
+                                  {h.category === "NEXT" && (
+                                    <>
+                                      <div className="text-center">
+                                        <div className="text-xs text-slate-400">{translateTeam(match.homeTeam)}</div>
+                                        <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                      </div>
+                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                        <div className="text-xs text-slate-400">第{h.line}个角球</div>
+                                      </div>
+                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                        <div className="text-xs text-slate-400">{translateTeam(match.awayTeam)}</div>
+                                        <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
                                       </div>
                                     </>
                                   )}

@@ -100,8 +100,23 @@ export async function parseAllMarkets(page) {
             var cat=cm[ml];if(!cat)continue;
             var btns=bl.querySelectorAll('div.btn_lebet_odd:not(.lock)');if(!btns.length)continue;
             var cl=ih?('上半场 '+ml):ml;
+            // 检查是否在 CORNERS 标签页上下文（父容器包含 cn 类或 tab_cn 处于激活态）
+            var isCornerContext = (function() {
+              var cnTab = document.getElementById('tab_cn');
+              if (cnTab && (cnTab.classList.contains('active') || cnTab.classList.contains('on'))) return true;
+              var p = box;
+              while (p) {
+                if (p.className && typeof p.className === 'string') {
+                  if (p.className.indexOf('bet_type_cn') >= 0) return true;
+                }
+                p = p.parentElement;
+                if (p === document.body) break;
+              }
+              return false;
+            })();
             var mg = 'main';
-            if (ml.indexOf('\u89D2\u7403') >= 0 || cat === 'O/E') {
+            // CORNERS 标签页下所有盘口都视为角球盘口
+            if (isCornerContext || ml.indexOf('\u89D2\u7403') >= 0 || cat === 'O/E') {
               mg = 'corner';
             } else if (cat === 'HDP' || cat === 'O/U') {
               mg = 'main';

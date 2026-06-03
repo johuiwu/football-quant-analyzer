@@ -1087,8 +1087,12 @@ export async function fetchSchedule() {
 
     try { await mainPage.screenshot({ path: "debug/schedule-corners.png", fullPage: true }); console.log("[HgCrawler] 截图: debug/schedule-corners.png"); } catch (e) {}
 
-    // 解析 CORNERS 盘口
-    const cornerOdds = await parseAllMarkets(mainPage);
+    // 解析 CORNERS 盘口（优先 parseAllMarkets，回退到 parseCornerOdds）
+    let cornerOdds = await parseAllMarkets(mainPage);
+    if (cornerOdds.length === 0) {
+      console.log("[HgCrawler] parseAllMarkets 无结果，尝试 parseCornerOdds 直接解析...");
+      cornerOdds = await parseCornerOdds(mainPage);
+    }
     console.log("[HgCrawler] CORNERS 盘口: " + cornerOdds.length + " 条");
 
     // ========== 阶段三：合并 Today 比赛 + CORNERS 盘口 ==========
