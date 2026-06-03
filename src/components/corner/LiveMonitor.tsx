@@ -1,4 +1,4 @@
-﻿﻿import React from "react";
+﻿import React from "react";
 import { ExternalLink, History } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
@@ -38,6 +38,19 @@ export default function LiveMonitor() {
     );
   }
 
+  // 判断数据来源
+  const firstMatch = displayData.length > 0 ? displayData[0] : null;
+  const dataSource = firstMatch?._dataSource || "unknown";
+
+  const dataSourceBadge = () => {
+    if (dataSource === "inplay") {
+      return <span className="text-[10px] text-green-400 bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">实时 In-Play</span>;
+    } else if (dataSource === "today") {
+      return <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">赛程 Today</span>;
+    }
+    return null;
+  };
+
   return (
     <div key={selectedMatchId || "default"} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -48,6 +61,7 @@ export default function LiveMonitor() {
               实时监控 {displayData.length > 0 && "(" + displayData.length + "场)"}
             </h3>
           </div>
+          {dataSourceBadge()}
           {trackedMatchIds.length > 0 && (
             <span className="text-[10px] text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
               追踪 {trackedMatchIds.length} 场比赛

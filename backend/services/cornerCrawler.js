@@ -335,6 +335,7 @@ async function ensureLogin() {
 // ======================== 导航到角球页面 ========================
 async function navigateToCorners(page) {
   console.log("[cornerCrawler] ===== Navigating to Corner page =====");
+  let contentSource = "unknown"; // "inplay", "today", "worldcup", "unknown"
 
   // Helper: check if page has match rows
   async function hasMatches() {
@@ -370,6 +371,7 @@ async function navigateToCorners(page) {
   try {
     await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 12000 });
     contentLoaded = true;
+    contentSource = "inplay";
     console.log("[cornerCrawler] Match content loaded (In-Play)");
   } catch (e) {
     console.log("[cornerCrawler] In-Play empty: " + e.message);
@@ -379,7 +381,6 @@ async function navigateToCorners(page) {
   if (!contentLoaded) {
     console.log("[cornerCrawler] In-Play has no matches, trying Today...");
     await trySwitchView("Today");
-    // Also try clicking the league/sport name to refresh
     try {
       await page.evaluate(() => {
         const leagueBtn = document.getElementById('league_title') || document.getElementById('goToLegPage');
@@ -392,6 +393,7 @@ async function navigateToCorners(page) {
     try {
       await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 12000 });
       contentLoaded = true;
+      contentSource = "today";
       console.log("[cornerCrawler] Match content loaded (Today)");
     } catch (e) {
       console.log("[cornerCrawler] Today also empty: " + e.message);
@@ -410,6 +412,7 @@ async function navigateToCorners(page) {
       try {
         await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 10000 });
         contentLoaded = true;
+        contentSource = "unknown";
         console.log("[cornerCrawler] Match content loaded via league click");
       } catch (e) {}
     } catch (e) {}
@@ -422,6 +425,7 @@ async function navigateToCorners(page) {
     try {
       await page.waitForSelector('div.box_lebet[class*="bet_type_"]', { timeout: 10000 });
       contentLoaded = true;
+      contentSource = "worldcup";
       console.log("[cornerCrawler] Match content loaded (World Cup 2026)");
     } catch (e) {
       console.log("[cornerCrawler] World Cup 2026 also empty: " + e.message);
@@ -463,16 +467,30 @@ async function navigateToCorners(page) {
     console.warn("[cornerCrawler] 角球 tab not found, using current page");
   }
 
-  // 3. Wait for corner market data to render
+  // 3. Wait for corner market data to render (smart wait for actual odds values)
   if (clicked) {
-    console.log("[cornerCrawler] Step 3: Waiting for corner markets...");
+    console.log("[cornerCrawler] Step 3: Waiting for corner markets (smart wait)...");
+    let oddsReady = false;
     try {
-      await page.waitForSelector('div.box_lebet_odd', { timeout: 10000 });
-      console.log("[cornerCrawler] Corner markets loaded");
+      oddsReady = await page.waitForFunction(() => {
+        const oddsEls = document.querySelectorAll('div.box_lebet_odd');
+        if (oddsEls.length === 0) return false;
+        for (const od of oddsEls) {
+          const text = od.textContent || '';
+          if (text.includes('*')) continue;
+          const oddsSpan = od.querySelector('span.text_odds');
+          if (oddsSpan) {
+            const val = parseFloat(oddsSpan.textContent || '0');
+            if (val > 0 && val < 100) return true;
+          }
+        }
+        return false;
+      }, { timeout: 25000 });
+      console.log("[cornerCrawler] Corner markets loaded " + (oddsReady ? "(smart wait)" : "(timeout)"));
     } catch (e) {
       console.log("[cornerCrawler] Corner markets wait timeout: " + e.message);
     }
-    await new Promise(r => setTimeout(r, 2000));
+    if (!oddsReady) await new Promise(r => setTimeout(r, 5000));
   }
 
   await handlePopups(page);
@@ -481,16 +499,8 @@ async function navigateToCorners(page) {
     await page.screenshot({ path: "debug/corner-step2-corners.png", fullPage: false });
   } catch(e) {}
 
-  try {
-    const sample = await page.evaluate(() => {
-      const body = document.body;
-      if (!body) return "(empty)";
-      return (body.textContent || "").replace(/\s+/g, " ").trim().substring(0, 300);
-    });
-    console.log("[cornerCrawler] Page sample: " + sample);
-  } catch(e) {}
-
-  console.log("[cornerCrawler] ===== Navigation done =====");
+  console.log("[cornerCrawler] Content source: " + contentSource);
+  return { success: contentLoaded, source: contentSource };
 }
 
 // ======================== DOM 解析角球盘口 ========================
@@ -1223,7 +1233,8 @@ export async function crawlCornerMatches() {
 
     // 导航到角球页面（反爬随机延迟）
     await randomDelay(1000, 3000);
-    await navigateToCorners(page);
+    const navResult = await navigateToCorners(page);
+    const dataSource = navResult?.source || "unknown";
     await randomDelay(1000, 3000);
 
     // 等待数据加载 - 延长以等待 Betradar 组件
@@ -1337,6 +1348,11 @@ export async function crawlCornerMatches() {
     try {
       await page.screenshot({ path: "debug/corner-final.png", fullPage: false });
     } catch(e) {}
+
+    // Add data source info to each match
+    for (const m of matches) {
+      m._dataSource = dataSource;
+    }
 
     return {
       success: true,

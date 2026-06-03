@@ -4,7 +4,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 puppeteer.use(StealthPlugin());
 
 import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
-import { parseAllMarkets, handlePopups, clickTab } from "./crawlerShared.js";
+import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -993,24 +993,20 @@ export async function fetchSchedule() {
   try {
     await navigateToInPlay(mainPage);
 
-    // Step 1: 点击 Today 标签
+    // ========== 阶段一：提取 Today 比赛列表 ==========
     console.log("[HgCrawler] 点击 Today 标签...");
     await clickTab(mainPage, "Today");
-    // 智能等待：等待实际比赛数据渲染完成
     console.log("[HgCrawler] 等待 Today 比赛数据渲染...");
     try {
       await mainPage.waitForFunction(() => {
         const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
         if (containers.length === 0) return false;
-        // 检查是否有至少一个容器包含实际球队名（非模板）
         for (const c of containers) {
           const text = c.textContent || '';
-          if (text.includes('*')) continue; // 跳过模板占位符
+          if (text.includes('*')) continue;
           const ht = c.querySelector('div.box_team.teamH span.text_team, div.team_home, [class*="team_h"]');
           const at = c.querySelector('div.box_team.teamC span.text_team, div.team_away, [class*="team_a"]');
-          if (ht && at && (ht.textContent || '').trim().length > 2 && (at.textContent || '').trim().length > 2) {
-            return true;
-          }
+          if (ht && at && (ht.textContent || '').trim().length > 2 && (at.textContent || '').trim().length > 2) return true;
         }
         return false;
       }, { timeout: 20000 });
@@ -1020,7 +1016,41 @@ export async function fetchSchedule() {
     }
     await new Promise(r => setTimeout(r, 2000));
 
-    // Step 2: 点击 CORNERS 标签
+    // 提取 Today 比赛列表
+    const todayMatches = await mainPage.evaluate(() => {
+      const results = [];
+      const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+      for (const box of containers) {
+        const text = box.textContent || '';
+        if (text.includes('*')) continue;
+        let league = '';
+        let prev = box.previousElementSibling;
+        while (prev && !league) {
+          const pt = (prev.textContent || '').trim();
+          if (pt && pt.length < 40 && pt.indexOf('\n') < 0 && !/^\d/.test(pt)) league = pt;
+          prev = prev.previousElementSibling;
+        }
+        const htEl = box.querySelector('div.box_team.teamH span.text_team, div.team_home, [class*="team_h"]');
+        const atEl = box.querySelector('div.box_team.teamC span.text_team, div.team_away, [class*="team_a"]');
+        const ht = htEl ? (htEl.textContent || '').trim() : '';
+        const at = atEl ? (atEl.textContent || '').trim() : '';
+        if (!ht || !at) continue;
+        const timeEl = box.querySelector('tt.text_time i, .text_time, [class*="timer"], [class*="minute"]');
+        const time = timeEl ? (timeEl.textContent || '').trim() : '';
+        const scoreEls = box.querySelectorAll('div.box_score span.text_point, .score, [class*="score"] span, [class*="point"]');
+        const hs = scoreEls.length >= 2 ? parseInt((scoreEls[0].textContent || '0').trim(), 10) : 0;
+        const as2 = scoreEls.length >= 2 ? parseInt((scoreEls[1].textContent || '0').trim(), 10) : 0;
+        results.push({
+          homeTeam: ht, awayTeam: at, league, time,
+          homeScore: isNaN(hs) ? 0 : hs,
+          awayScore: isNaN(as2) ? 0 : as2
+        });
+      }
+      return results;
+    });
+    console.log("[HgCrawler] Today 比赛列表: " + todayMatches.length + " 场");
+
+    // ========== 阶段二：提取 CORNERS 盘口 ==========
     console.log("[HgCrawler] 点击 CORNERS 标签...");
     await clickTab(mainPage, "CORNERS");
 
@@ -1031,12 +1061,9 @@ export async function fetchSchedule() {
       oddsReady = await mainPage.waitForFunction(() => {
         const oddsEls = document.querySelectorAll('div.box_lebet_odd');
         if (oddsEls.length === 0) return false;
-        // 检查是否有至少一个 odds 块包含实际数值（非模板占位符）
         for (const od of oddsEls) {
           const oddsText = od.textContent || '';
-          // 跳过含有模板占位符的块（如 *FANTASYGAME*, *MAIN_SHOW*）
           if (oddsText.includes('*')) continue;
-          // 检查是否有实际赔率数值
           const oddsSpan = od.querySelector('span.text_odds');
           if (oddsSpan) {
             const val = parseFloat(oddsSpan.textContent || '0');
@@ -1049,107 +1076,49 @@ export async function fetchSchedule() {
     } catch (e) {
       console.log("[HgCrawler] CORNERS 盘口等待超时: " + e.message);
     }
-
-    // 额外等待确保所有数据渲染完成
-    if (!oddsReady) {
-      await new Promise(r => setTimeout(r, 5000));
-    }
+    if (!oddsReady) await new Promise(r => setTimeout(r, 5000));
     await new Promise(r => setTimeout(r, 2000));
 
     // 滚动触发懒加载
     try {
-      await mainPage.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight);
-        setTimeout(() => window.scrollTo(0, 0), 1000);
-      });
+      await mainPage.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); setTimeout(() => window.scrollTo(0, 0), 1000); });
       await new Promise(r => setTimeout(r, 3000));
     } catch (e) {}
 
-    try {
-      await mainPage.screenshot({ path: "debug/schedule-corners.png", fullPage: true });
-      console.log("[HgCrawler] 截图: debug/schedule-corners.png");
-    } catch (e) {}
+    try { await mainPage.screenshot({ path: "debug/schedule-corners.png", fullPage: true }); console.log("[HgCrawler] 截图: debug/schedule-corners.png"); } catch (e) {}
 
-    // === DOM诊断：确认CORNERS视图下的页面结构 ===
-    try {
-      const domDiag = await mainPage.evaluate(() => {
-        const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
-        const oddsEls = document.querySelectorAll('div.box_lebet_odd');
-        const betBoxes = document.querySelectorAll('div.bet_box');
-        const stadiumRows = document.querySelectorAll('[class*="row"],[class*="game"],[class*="match"]');
-        
-        // 找前3个 odds 元素的父容器
-        const oddsParents = [];
-        for (let i = 0; i < Math.min(3, oddsEls.length); i++) {
-          const p = oddsEls[i].parentElement;
-          const pp = p ? p.parentElement : null;
-          oddsParents.push({
-            tag: oddsEls[i].tagName,
-            className: oddsEls[i].className,
-            parentTag: p ? p.tagName : '',
-            parentClass: p ? p.className : '',
-            grandParentTag: pp ? pp.tagName : '',
-            grandParentClass: pp ? (pp.className || '') : ''
-          });
-        }
-        
-        // 前5个容器信息
-        const containerSamples = [];
-        for (let i = 0; i < Math.min(5, containers.length); i++) {
-          const c = containers[i];
-          const ht = c.querySelector('div.box_team.teamH span.text_team, div.team_home, [class*="team_h"]');
-          const at = c.querySelector('div.box_team.teamC span.text_team, div.team_away, [class*="team_a"]');
-          const oddsInContainer = c.querySelectorAll('div.box_lebet_odd').length;
-          containerSamples.push({
-            className: c.className,
-            homeTeam: ht ? (ht.textContent || '').trim() : '(none)',
-            awayTeam: at ? (at.textContent || '').trim() : '(none)',
-            oddsInside: oddsInContainer
-          });
-        }
+    // 解析 CORNERS 盘口
+    const cornerOdds = await parseAllMarkets(mainPage);
+    console.log("[HgCrawler] CORNERS 盘口: " + cornerOdds.length + " 条");
 
-        return {
-          boxLebetCount: containers.length,
-          betBoxCount: betBoxes.length,
-          oddsCount: oddsEls.length,
-          stadiumRowCount: stadiumRows.length,
-          oddsParents: oddsParents,
-          containerSamples: containerSamples
-        };
-      });
-      console.log("[HgCrawler] === DOM诊断 (CORNERS视图) ===");
-      console.log("  box_lebet[class*=bet_type_] 容器: " + domDiag.boxLebetCount);
-      console.log("  div.bet_box: " + domDiag.betBoxCount);
-      console.log("  div.box_lebet_odd: " + domDiag.oddsCount);
-      console.log("  [class*=row]/[class*=game] 行: " + domDiag.stadiumRowCount);
-      if (domDiag.oddsParents.length > 0) {
-        console.log("  odds 父容器示例:");
-        domDiag.oddsParents.forEach((op, i) => console.log("    [" + i + "] odds className=" + op.className + " → parent=" + op.parentTag + "." + op.parentClass + " → grandParent=" + op.grandParentTag + "." + op.grandParentClass));
-      }
-      if (domDiag.containerSamples.length > 0) {
-        console.log("  容器示例:");
-        domDiag.containerSamples.forEach((cs, i) => console.log("    [" + i + "] " + cs.className + " | " + cs.homeTeam + " vs " + cs.awayTeam + " | oddsInside=" + cs.oddsInside));
-      } else {
-        console.log("  (无容器样本)");
-      }
-      console.log("[HgCrawler] ===============================");
-    } catch (diagErr) {
-      console.log("[HgCrawler] DOM诊断异常: " + diagErr.message);
+    // ========== 阶段三：合并 Today 比赛 + CORNERS 盘口 ==========
+    const cornersByTeam = {};
+    for (const co of cornerOdds) {
+      const key = (co.homeTeam + "_" + co.awayTeam).toLowerCase().replace(/[^a-z0-9_]/g, "");
+      cornersByTeam[key] = co;
     }
 
-    // Step 3: 解析角球盘口
-    const cornerOdds = await parseAllMarkets(mainPage);
-
-    // 转为赛程格式
-    const scheduleData = cornerOdds.map((co, idx) => ({
-      id: "sched_" + idx,
-      league: co.league || "",
-      homeTeam: co.homeTeam,
-      awayTeam: co.awayTeam,
-      time: co.time || "--:--",
-      date: new Date().toLocaleDateString(),
-      handicaps: co.handicaps || []
-    }));
+    const scheduleData = todayMatches.map((tm, idx) => {
+      const key = (tm.homeTeam + "_" + tm.awayTeam).toLowerCase().replace(/[^a-z0-9_]/g, "");
+      const co = cornersByTeam[key];
+      const handicaps = co ? (co.handicaps || []) : [];
+      const hdpEntry = handicaps.find(h => h.category === "HDP" && h.period === "full");
+      const ouEntry = handicaps.find(h => h.category === "O/U" && h.period === "full");
+      return {
+        id: "sched_" + idx,
+        league: tm.league || (co ? co.league : "") || "",
+        homeTeam: tm.homeTeam,
+        awayTeam: tm.awayTeam,
+        time: tm.time || (co ? co.time : "") || "--:--",
+        date: new Date().toLocaleDateString(),
+        homeScore: tm.homeScore,
+        awayScore: tm.awayScore,
+        handicaps,
+        cornerHandicap: hdpEntry ? parseAsianHandicap(hdpEntry.line) : 0,
+        cornerOdds: (hdpEntry && hdpEntry.odds) ? (hdpEntry.odds.home || 0) : (ouEntry ? (ouEntry.odds?.over || 0) : 0),
+        hasCornerOdds: handicaps.length > 0
+      };
+    });
 
     crawlerStatus.lastUpdate = Date.now();
     crawlerStatus.matchesCount = scheduleData.length;
@@ -1157,7 +1126,7 @@ export async function fetchSchedule() {
     console.log("[HgCrawler] === 赛程完成: " + scheduleData.length + " 场 ===");
     if (scheduleData.length > 0) {
       scheduleData.slice(0, 5).forEach((m, i) =>
-        console.log(`  [${i}] ${m.league} | ${m.homeTeam} vs ${m.awayTeam} | HDP=${JSON.stringify(m.cornerHDP)}`)
+        console.log("  [" + i + "] " + m.league + " | " + m.homeTeam + " vs " + m.awayTeam + " | HDP=" + m.cornerHandicap + " odds=" + m.cornerOdds + " hdpCount=" + m.handicaps.length)
       );
     }
 
