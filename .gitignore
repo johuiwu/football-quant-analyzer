@@ -15,6 +15,8 @@ debug-*.png
 debug-*.json
 debug-*.html
 debug_screenshots/
+debug/
+debug-crawl.js
 test-crawler.js
 test-corner-crawler.js
 test-page.html
