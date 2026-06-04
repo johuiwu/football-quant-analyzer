@@ -247,10 +247,40 @@ export function resumeCornerBackendPolling() {
         console.log("[cornerService] 首次爬取完成，缓存已就绪");
       }
 
-      // 检查是否需要执行自动投注
+      // 自动投注：策略触发后入队处理（与主poll函数逻辑一致）
       if (betConfig.isRealMode && betConfig.autoBetEnabled) {
+        for (const match of matches) {
+          // 白名单检查：仅投注用户追踪的比赛（空白名单=不投注）
+          if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
+          const triggeredIds = evaluateStrategies(match, activeStrategies);
+          match.triggeredStrategies = triggeredIds;
+          for (const sid of triggeredIds) {
+            try {
+              const isDup = await checkDuplicateBet(match.matchId, sid);
+              if (isDup) {
+                console.log("[cornerService] 跳过重复投注: " + match.matchId + " 策略" + sid);
+                continue;
+              }
+              const genResult = await generatePendingBet(match, sid);
+              if (genResult.success && !genResult.skipped) {
+                betQueue.push({
+                  betId: genResult.id,
+                  historyId: null,
+                  matchId: match.matchId,
+                  matchName: match.matchName || "",
+                  strategyId: sid,
+                  odds: match.cornerOdds || 0,
+                  amount: betConfig.amount,
+                  handicap: match.cornerHandicap || 0
+                });
+              }
+            } catch (e) {
+              console.error("[cornerService] 投注入队失败:", e.message);
+            }
+          }
+        }
         processBetQueue().catch(e =>
-          console.error("[cornerService] 自动投注失败:", e.message)
+          console.error("[cornerService] 投注队列处理失败:", e.message)
         );
       }
     } catch (e) {
