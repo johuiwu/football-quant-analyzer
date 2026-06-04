@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
-import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
+import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
+import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
@@ -137,6 +138,7 @@ router.post("/corner/history", validateTypes({ matchId: "string", matchName: "st
 });
 
 // ======================== POST /api/corner/login ========================
+// ★ 复用 hgCrawlerService 的登录实现（已验证可用）
 router.post("/corner/login", requireFields(["username", "password"]), validateLength({ username: { min: 1, max: 100 }, password: { min: 1, max: 100 } }), async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -149,7 +151,7 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     );
 
     const result = await Promise.race([
-      loginToHG(username, password),
+      hgLoginToHG({ username, password }),
       timeoutPromise
     ]);
 
@@ -157,18 +159,16 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
       return res.status(500).json({ success: false, error: "登录服务返回异常数据" });
     }
 
-    // 根据失败原因提供友好建议
+    // 根据失败原因提供友好建议（hgCrawler 返回 error 字段）
     if (!result.success) {
-      const reason = result.reason || "";
+      const errorMsg = result.error || "";
       let suggestion = "";
-      if (reason.includes("browser_launch_failed")) {
-        suggestion = "请确认 Chromium 已安装（npm install puppeteer 自动安装），或尝试设置环境变量 CRAWLER_HEADLESS=false";
-      } else if (reason.includes("login_timeout")) {
+      if (errorMsg.includes("超时")) {
         suggestion = "网站可能暂时无法访问或被屏蔽，请检查网络或尝试设置 CRAWLER_HEADLESS=false 打开可见浏览器排查";
-      } else if (reason.includes("login_wrong_password")) {
-        suggestion = "请检查用户名和密码是否正确，或账号是否被锁定";
-      } else if (reason.includes("login_exception")) {
-        suggestion = "登录过程发生异常，请查看终端日志排查";
+      } else if (errorMsg.includes("浏览器")) {
+        suggestion = "请确认 Chromium 已安装（npm install puppeteer 自动安装），或尝试设置环境变量 CRAWLER_HEADLESS=false";
+      } else if (errorMsg.includes("无法连接")) {
+        suggestion = "浏览器页面连接失败，请重启服务后重试";
       } else {
         suggestion = "请检查网络连接和凭据是否正确，终端日志可查看详细信息";
       }
@@ -436,7 +436,7 @@ router.post("/corner/bet/manual", async (req, res) => {
     });
 
     if (result.success) {
-      res.json({ success: true, betId: result.betId, message: "?????????" });
+      res.json({ success: true, betId: result.betId, message: "投注已提交" });
     } else {
       res.status(400).json({ success: false, error: result.error });
     }
