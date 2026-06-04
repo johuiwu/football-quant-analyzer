@@ -1,4 +1,4 @@
-﻿import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
+import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 
@@ -90,8 +90,9 @@ export function startCornerBackendPolling() {
         }
       }
 
+      const mainMk = result.mainMarkets || {};
       cachedMatches = matches;
-        cachedMainMarkets = mainMk || {};
+        cachedMainMarkets = mainMk;
       lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
@@ -341,8 +342,9 @@ export async function getLiveCornerData(filterMatchId) {
         for (const match of matches) {
           match.triggeredStrategies = evaluateStrategies(match, activeStrategies);
         }
+        const mainMk = result.mainMarkets || {};
         cachedMatches = matches;
-        cachedMainMarkets = mainMk || {};
+        cachedMainMarkets = mainMk;
         lastFetchTime = Date.now();
         consecutiveFailures = 0;
         const filtered = filterMatchId
