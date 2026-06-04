@@ -1,4 +1,4 @@
-﻿import puppeteer from "puppeteer-extra";
+import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import {
@@ -174,90 +174,15 @@ async function ensureLogin() {
 const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
   const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
   
-  // 登录表单元素诊断已移除（生产环境优化）
-
-  // 更智能的选择器策略
-  const usernameSelectors = [
-    "input#usr",
-    "input#username",
-    'input[name="username"]',
-    'input[type="text"]'
-  ];
-  
-  const passwordSelectors = [
-    "input#pwd",
-    "input#password",
-    'input[name="password"]',
-    'input[type="password"]'
-  ];
-
-  const loginButtonSelectors = [
-    "#btn_login",
-    "input#btn_login",
-    '[value="\u767b\u5165"]'
-  ];
-
-  // 填入用户名
-  let usernameFilled = false;
-  for (const selector of usernameSelectors) {
-    try {
-      const el = await page.$(selector);
-      if (el) {
-        console.log("[cornerCrawler] 使用用户名选择器成功:", selector);
-        await el.click({ clickCount: 3 });
-        await el.type(username, { delay: 30 });
-        usernameFilled = true;
-        break;
-      }
-    } catch(e) {}
-  }
-  
-  // 备选方案：直接找所有可见的 text 输入框
-  if (!usernameFilled) {
-    console.log("[cornerCrawler] 使用备选策略：查找所有文本输入框...");
-    const allInputs = await page.$$('input[type="text"], input:not([type])');
-    for (const el of allInputs) {
-      try {
-        const isVisible = await page.evaluate(e => {
-          const rect = e.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        }, el);
-        if (isVisible) {
-          await el.click({ clickCount: 3 });
-          await el.type(username, { delay: 30 });
-          usernameFilled = true;
-          break;
-        }
-      } catch(e) {}
-    }
-  }
-
-  // 填入密码
-  let passwordFilled = false;
-  for (const selector of passwordSelectors) {
-    try {
-      const el = await page.$(selector);
-      if (el) {
-        console.log("[cornerCrawler] 使用密码选择器成功:", selector);
-        await el.click({ clickCount: 3 });
-        await el.type(password, { delay: 30 });
-        passwordFilled = true;
-        break;
-      }
-    } catch(e) {}
-  }
-
-  if (!passwordFilled) {
-    console.log("[cornerCrawler] 使用备选策略：查找所有密码输入框...");
-    const allPwds = await page.$$('input[type="password"]');
-    if (allPwds.length > 0) {
-      await allPwds[0].click({ clickCount: 3 });
-      await allPwds[0].type(password, { delay: 30 });
-      passwordFilled = true;
-    }
-  }
-
-  // 保存填写后的截图
+  // 使用 page.evaluate 直接赋值凭据（快速，不依赖 typing delay）
+  console.log("[cornerCrawler] 填入用户名密码...");
+  await page.evaluate((usr, pw) => {
+    const u = document.getElementById('usr') || document.querySelector('input[type="text"]');
+    if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
+    const p = document.getElementById('pwd') || document.querySelector('input[type="password"]');
+    if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+  }, username, password);
+// 保存填写后的截图
 // 勾选「记住我」延长 Cookie 有效期
   try {
     const rememberCheckbox = await page.$('#remember');
@@ -270,94 +195,89 @@ const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERN
     }
   } catch (e) {}
 
-  // 点击登录按钮（等待 HG 网站登录重定向完成）
+  // 点击登录按钮（HG 网站是 AJAX 登录，不使用 waitForNavigation）
   await new Promise(r => setTimeout(r, 500));
-  let loginSuccess = false;
-  for (const selector of loginButtonSelectors) {
-    try {
-      const el = await page.$(selector);
-      if (el) {
-        console.log("[cornerCrawler] 使用登录按钮选择器:", selector);
-        // ★ 同时点击登录按钮 + 等待 HG 网站重定向完成
-        await Promise.all([
-          el.click({ delay: 100 }),
-          page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 12000 })
-        ]);
-        loginSuccess = true;
-        break;
-      }
-    } catch(e) {
-      // waitForNavigation 超时或失败，继续尝试下一个选择器
-      console.log("[cornerCrawler] waitForNavigation failed, trying next selector: " + e.message);
-    }
-  }
-
-  if (!loginSuccess) {
-    // 回退：无 waitForNavigation 的点击
-    console.log("[cornerCrawler] waitForNavigation 路径失败，回退到普通点击...");
-    for (const selector of loginButtonSelectors) {
-      try {
-        const el = await page.$(selector);
-        if (el) {
-          await el.click({ delay: 150 });
-          loginSuccess = true;
-          console.log("[cornerCrawler] 普通点击成功:", selector);
-          break;
-        }
-      } catch(e) {}
-    }
-    if (!loginSuccess) {
-      const allButtons = await page.$$('button, [role="button"], [onclick]');
-      for (const btn of allButtons) {
-        try {
-          const text = await page.evaluate(el => (el.textContent || '').toLowerCase(), btn);
-          if (text.includes('login') || text.includes('登入')) {
-            await btn.click({ delay: 150 });
-            loginSuccess = true;
-            break;
-          }
-        } catch(e) {}
-      }
-    }
-  }
-
-  // ★ 导航已完成，直接检测登录结果（不再轮询）
-  await new Promise(r => setTimeout(r, 1500));
-  await handlePopups(page);
-
-  const status = await page.evaluate(() => {
-    const body = document.body;
-    const bodyText = body ? body.textContent || "" : "";
-    const accShow = document.getElementById("acc_show");
-    const loginHidden = !accShow || accShow.style.display === "none" || accShow.offsetParent === null;
-    const errEl = document.getElementById("text_error");
-    const hasError = errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0;
-    return {
-      hasInPlay: bodyText.includes("In-Play"),
-      loginHidden, hasError,
-      hasSportSelector: !!(document.getElementById("symbol_ft")?.offsetParent),
-      hasGameLive: !!(document.getElementById("old_game_live")?.offsetParent),
-      currentUrl: window.location.href,
-      bodyTextSample: bodyText.substring(0, 200)
-    };
+  console.log("[cornerCrawler] 点击登录按钮...");
+  await page.evaluate(() => {
+    const btn = document.getElementById('btn_login') || document.querySelector('input[type="button"]');
+    if (btn) btn.click();
   });
 
-  if (status.hasError) {
-    console.error("[cornerCrawler] 登录失败: " + (await page.evaluate(() => document.getElementById("text_error")?.textContent || "未知错误")));
+  // 轮询检测登录结果（最多 20 秒）
+  console.log("[cornerCrawler] 轮询等待登录结果...");
+  let loginResult = null;
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    await handlePopups(page);
+
+    const status = await page.evaluate(() => {
+      const body = document.body;
+      const bodyText = body ? body.textContent || "" : "";
+      const accShow = document.getElementById("acc_show");
+      const loginHidden = !accShow || accShow.style.display === "none" || accShow.offsetParent === null;
+      const errEl = document.getElementById("text_error");
+      const hasError = errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0;
+      const hasMyEvents = bodyText.includes("My Events") || bodyText.includes("My Bets");
+      const hasInPlaySoccer = bodyText.includes("In-Play") && bodyText.includes("Soccer");
+      const hasSportSelector = !!(document.getElementById("symbol_ft")?.offsetParent);
+      return {
+        loginHidden, hasError, hasMyEvents, hasInPlaySoccer, hasSportSelector,
+        hasPasscode: bodyText.includes("Passcode Login") || bodyText.includes("简易密码"),
+        hasTwoFactor: bodyText.includes("普通登入"),
+        currentUrl: window.location.href,
+        bodyTextSample: bodyText.substring(0, 200)
+      };
+    });
+
+    // 密码错误
+    if (status.hasError) {
+      const errMsg = await page.evaluate(() => document.getElementById("text_error")?.textContent || "未知错误");
+      console.error("[cornerCrawler] 登录失败: " + errMsg);
+      loginResult = { success: false, error: errMsg };
+      break;
+    }
+
+    // 登录成功条件
+    if (status.loginHidden || status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector) {
+      console.log("[cornerCrawler] ✅ 登录成功！（轮次 " + (i + 1) + "）");
+      loginResult = { success: true };
+      break;
+    }
+
+    // 弹窗处理
+    if (status.hasPasscode) {
+      console.log("[cornerCrawler] 检测到密码弹窗，尝试关闭...");
+      await page.evaluate(() => {
+        const btn = document.querySelector("#C_no_btn, #no_btn, .btn_cancel");
+        if (btn) btn.click();
+      });
+    }
+
+    // 2FA 页面
+    if (status.hasTwoFactor) {
+      console.log("[cornerCrawler] 检测到二次验证页面，返回登录...");
+      await page.evaluate(() => {
+        const btn = document.querySelector("#back_login");
+        if (btn) btn.click();
+      });
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    if (i % 5 === 4) {
+      console.log("[cornerCrawler] 登录轮询中... (" + (i + 1) + "/20) " + status.bodyTextSample.substring(0, 80));
+    }
+  }
+
+  if (!loginResult) {
+    console.error("[cornerCrawler] 登录超时（20s）");
+    return null;
+  }
+  if (!loginResult.success) {
     return null;
   }
 
-  if (status.loginHidden || status.hasSportSelector || status.hasGameLive) {
-    console.log("[cornerCrawler] [耗时] 登录+导航完成: " + (Date.now() - _loginStart) + "ms");
-    console.log("[cornerCrawler] ✅ 登录成功！当前页面:", status.currentUrl);
-  } else if (status.hasInPlay) {
-    console.log("[cornerCrawler] [耗时] 登录完成(In-Play): " + (Date.now() - _loginStart) + "ms");
-    console.log("[cornerCrawler] ✅ 登录成功（In-Play内容检测）");
-  } else {
-    console.error("[cornerCrawler] 登录后页面异常:", status.bodyTextSample);
-    return null;
-  }
-
+  console.log("[cornerCrawler] [耗时] 登录完成: " + (Date.now() - _loginStart) + "ms");
+  console.log("[cornerCrawler] ✅ 登录成功！");
   try {
     const saved = await page.cookies();
     setLoginCookies(saved);
