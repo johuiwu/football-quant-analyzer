@@ -294,7 +294,9 @@ export default function CornerHistoryChart() {
                 row.status === 'failed' ? 'bg-rose-500/15 text-rose-400' :
                 'bg-amber-500/15 text-amber-400'
               }`}>
-                {row.status === 'executed' ? '已执行' : row.status === 'failed' ? '失败' : '待执行'}
+                {row.status === 'executed' ? '已执行' : row.status === 'failed' ? (
+                  <span title={row.error_message || "未知错误"}>失败</span>
+                ) : '待执行'}
               </span>
             </div>
             <div className="col-span-2 text-center text-slate-500 text-[10px]">{row.executed_at?.slice(0, 19) || "—"}</div>

@@ -1,8 +1,22 @@
-﻿import React from "react";
-import { ExternalLink, History } from "lucide-react";
+import React, { useState } from "react";
+import { ExternalLink, History, DollarSign, X } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
+/** 投注弹窗数据 */
+interface BetPopupData {
+  matchId: string;
+  matchName: string;
+  odds: number;
+  handicap: number;
+  strategyId: string;
+}
+
+/** 投注结果 */
+interface BetResult {
+  success: boolean;
+  message: string;
+}
 import { REAL_TEAMS } from "../../data/realTeamsData";
 
 export default function LiveMonitor() {
@@ -16,6 +30,8 @@ export default function LiveMonitor() {
   const displayData = useCornerStore((s) => s.liveMatches);
   const isLoading = useCornerStore((s) => s.isLoading);
   const pollInterval = useCornerStore((s) => s.settings.pollInterval);
+  const isRealMode = useCornerStore((s) => s.settings.isRealMode);
+  const betAmount = useCornerStore((s) => s.settings.betAmount);
 
   const findTeamInfo = (nameCn: string) => {
     const team = REAL_TEAMS.find((t) => t.nameCn === nameCn);
@@ -27,6 +43,56 @@ export default function LiveMonitor() {
   const handleViewHistory = (matchId: string) => {
     setHistoryFilterMatchId(matchId);
     setActiveCornerTab("history");
+  };
+
+  // 手动投注状态
+  const [betPopup, setBetPopup] = useState<BetPopupData | null>(null);
+  const [betInputAmount, setBetInputAmount] = useState(betAmount);
+  const [betSubmitting, setBetSubmitting] = useState(false);
+  const [betResult, setBetResult] = useState<BetResult | null>(null);
+
+  const handleManualBet = async () => {
+    if (!betPopup) return;
+    setBetSubmitting(true);
+    setBetResult(null);
+    try {
+      const resp = await fetch("/api/corner/bet/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          matchId: betPopup.matchId,
+          matchName: betPopup.matchName,
+          strategyId: betPopup.strategyId,
+          odds: betPopup.odds,
+          handicap: betPopup.handicap,
+          amount: betInputAmount
+        })
+      });
+      const json = await resp.json();
+      if (json.success) {
+        setBetResult({ success: true, message: "投注已提交！betId: " + json.betId });
+        setTimeout(() => { setBetPopup(null); setBetResult(null); }, 2000);
+      } else {
+        setBetResult({ success: false, message: json.error || "投注失败" });
+      }
+    } catch (err: any) {
+      setBetResult({ success: false, message: err.message || "网络错误" });
+    } finally {
+      setBetSubmitting(false);
+    }
+  };
+
+  const openBetPopup = (row: any) => {
+    const trig = Array.isArray(row.triggeredStrategies) ? row.triggeredStrategies : [];
+    setBetInputAmount(betAmount);
+    setBetResult(null);
+    setBetPopup({
+      matchId: String(row.matchId),
+      matchName: row.homeTeam + " vs " + row.awayTeam,
+      odds: row.cornerOdds || 0,
+      handicap: row.cornerHandicap || 0,
+      strategyId: trig.length > 0 ? String(trig[0]) : "manual"
+    });
   };
 
   if (isLoading && displayData.length === 0) {
@@ -197,6 +263,15 @@ export default function LiveMonitor() {
                     >
                       <History className="w-2.5 h-2.5" />
                     </button>
+                    {isRealMode && (
+                      <button type="button"
+                        onClick={() => openBetPopup(row)}
+                        className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-400 hover:text-amber-300 transition-all"
+                        title="手动投注"
+                      >
+                        <DollarSign className="w-2.5 h-2.5" />
+                      </button>
+                    )}
                     {hi.id && ai.id ? (
                       <button type="button"
                         onClick={() => navigateToDashboard(hi.id, ai.id, hi.league, ai.league)}
@@ -213,6 +288,56 @@ export default function LiveMonitor() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {betPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1f36] rounded-2xl border border-slate-700 w-96 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-200">{`手动投注`}</h3>
+              <button onClick={() => setBetPopup(null)} className="text-slate-500 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="text-[10px] text-slate-500">{`比赛`}</label>
+                <p className="text-xs text-slate-200 truncate">{betPopup.matchName}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-slate-500">{`盘口`}</label>
+                  <p className="text-xs text-amber-400 font-mono">{betPopup.handicap}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500">{`赔率`}</label>
+                  <p className="text-xs text-amber-400 font-mono">{betPopup.odds.toFixed(2)}</p>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500">{`策略`}</label>
+                <p className="text-xs text-emerald-400 font-mono">{betPopup.strategyId}</p>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500">{`投注金额`}</label>
+                <input type="number" className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500/50" value={betInputAmount} min={10} max={100000} onChange={(e) => setBetInputAmount(Number(e.target.value))} />
+              </div>
+            </div>
+            {betResult && (
+              <p className={"text-xs mb-3 px-3 py-2 rounded " + (betResult.success ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400")}>
+                {betResult.message}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setBetPopup(null)} className="flex-1 px-4 py-2 text-xs rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
+                {`取消`}
+              </button>
+              <button onClick={handleManualBet} disabled={betSubmitting || betInputAmount <= 0} className="flex-1 px-4 py-2 text-xs rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {betSubmitting ? "提交中..." : "确认投注 楼" + betInputAmount}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

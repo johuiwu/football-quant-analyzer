@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
+import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
@@ -348,6 +348,48 @@ router.get("/corner/alert-log", async (req, res) => {
     res.json({ success: true, data: entries, count: entries.length });
   } catch (err) {
     console.error("[cornerRoutes] /corner/alert-log error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/bet/manual ========================
+router.post("/corner/bet/manual", async (req, res) => {
+  try {
+    const { matchId, matchName, strategyId, odds, handicap, amount } = req.body || {};
+
+    // ????
+    if (!matchId) {
+      return res.status(400).json({ success: false, error: "?? matchId" });
+    }
+    if (!strategyId) {
+      return res.status(400).json({ success: false, error: "?? strategyId" });
+    }
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, error: "??????" });
+    }
+
+    // ??????
+    const maxAmount = getMaxBetAmount();
+    if (amount > maxAmount) {
+      return res.status(400).json({ success: false, error: "???????? (" + maxAmount + ")" });
+    }
+
+    const result = await addManualBet({
+      matchId,
+      matchName: matchName || "",
+      strategyId: String(strategyId),
+      odds: odds || 0,
+      handicap: handicap || 0,
+      amount
+    });
+
+    if (result.success) {
+      res.json({ success: true, betId: result.betId, message: "?????????" });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/bet/manual error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
