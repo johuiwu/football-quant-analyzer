@@ -343,6 +343,10 @@ export async function getLiveCornerData(filterMatchId) {
   const isCacheValid = cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_EXPIRE_MS;
 
   if (isCacheValid) {
+    // ★ 返回前重新评估策略（确保使用最新的 activeStrategies）
+    for (const m of cachedMatches) {
+      m.triggeredStrategies = evaluateCornerStrategies(m, activeStrategies);
+    }
     const filtered = filterMatchId
       ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
       : cachedMatches;
@@ -352,6 +356,10 @@ export async function getLiveCornerData(filterMatchId) {
 
   // 缓存无效或为空，检查是否正在轮询中
   if (pollingActive && cachedMatches.length > 0) {
+    // ★ 返回前重新评估策略（确保使用最新的 activeStrategies）
+    for (const m of cachedMatches) {
+      m.triggeredStrategies = evaluateCornerStrategies(m, activeStrategies);
+    }
     // 轮询正在进行中，返回旧缓存但标记为过期
     console.log(`[cornerService] 返回即将刷新的缓存数据（${cachedMatches.length}场），等待轮询更新...`);
     const filtered = filterMatchId

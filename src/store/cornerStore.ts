@@ -212,44 +212,8 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
 ];
 
 // ==================== 策略评估 ====================
-// 【同步提醒】此处逻辑与 backend/services/cornerEvaluator.js:evaluateSingleStrategy 保持一致
-// 修改任一处时请同步更新另一处
-
-export function evaluateMatchForStrategies(
-  match: { currentMinute: number; cornerHandicap: number; odds: number; homeScore: number; awayScore: number },
-  strategies: CornerStrategy[]
-): number[] {
-  const triggered: number[] = [];
-  const goalDiff = Math.abs(match.homeScore - match.awayScore);
-  for (const strategy of strategies) {
-    if (!strategy.enabled) continue;
-    if (match.currentMinute < strategy.playTimeStart) continue;
-    if (match.currentMinute > strategy.playTimeEnd) continue;
-    // handicap range check (direction-aware: betDirection=auto uses abs value)
-    if (strategy.betDirection === "auto" || strategy.betDirection == null) {
-      const absHcp = Math.abs(match.cornerHandicap);
-      if (absHcp < strategy.cornerHandicapLower || absHcp > strategy.cornerHandicapUpper) continue;
-    } else {
-      if (match.cornerHandicap < strategy.cornerHandicapLower || match.cornerHandicap > strategy.cornerHandicapUpper) continue;
-    }
-    if (match.odds < strategy.targetOdds) continue;
-
-    // 比赛时间合理性校验（与后端 cornerEvaluator.js 一致）
-    if (match.currentMinute > 99) continue;             // 超过最大比赛时间
-    if (match.currentMinute >= 45 && match.currentMinute <= 46) continue; // 半场休息
-
-    // 比分条件（与后端 cornerEvaluator.js 严格一致）
-    // 1) leadGoals >= 20 → 哨兵值，不做比分限制
-    if (strategy.leadGoals >= 20) { triggered.push(strategy.id); continue; }
-    // 2) leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
-    if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) { triggered.push(strategy.id); continue; }
-    // 3) leadGoalsWeak > 0 → 弱队领先：至少差N球
-    if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) { triggered.push(strategy.id); continue; }
-    // 4) leadGoals === 0 且 leadGoalsWeak === 0 → 平局检查：goalDiff 必须为 0
-    if (strategy.leadGoals === 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff === 0) { triggered.push(strategy.id); continue; }
-  }
-  return triggered;
-}
+// 策略评估统一由后端 cornerEvaluator.js 执行，前端直接使用 API 返回的 triggeredStrategies
+// 修改策略逻辑请编辑 backend/services/cornerEvaluator.js
 
 // ==================== 策略同步到后端 ====================
 
@@ -422,7 +386,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       const json = await response.json();
       const rawMatches = json?.success && Array.isArray(json.data) ? json.data : [];
 
-      // 映射到前端 CornerLiveMatch 格式
+      // 映射到前端 CornerLiveMatch 格式（triggeredStrategies 由后端评估）
       const liveMatches: CornerLiveMatch[] = rawMatches.map((m: any) => ({
         matchId: String(m.matchId || ""),
         homeTeam: m.homeTeam || "",
@@ -436,10 +400,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         cornerOdds: m.cornerOdds || 0,
         handicaps: m.handicaps || [],
         _dataSource: m._dataSource,
-        triggeredStrategies: evaluateMatchForStrategies(
-          { currentMinute: m.elapsedMinutes || 0, cornerHandicap: m.cornerHandicap || 0, odds: m.cornerOdds || 0, homeScore: m.homeScore || 0, awayScore: m.awayScore || 0 },
-          get().strategies
-        )
+        triggeredStrategies: m.triggeredStrategies || []
       }));
 
 
