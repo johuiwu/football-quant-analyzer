@@ -61,6 +61,74 @@ export function getBetConfig() {
 }
 
 // ======================== 后端轮询 ========================
+
+/**
+ * 单次轮询核心逻辑（内部函数，消除 start/resume 中的重复代码）
+ */
+async function pollOnce() {
+  const result = await crawlCornerMatches();
+  const rawMatches = result.success ? (result.data?.matches || []) : [];
+  const mainMk = result.mainMarkets || {};
+  const matches = rawMatches.map(mapMatchToCornerFormat);
+
+  // 策略评估：对每场比赛评估所有活跃策略
+  for (const match of matches) {
+    const triggeredIds = evaluateStrategies(match, activeStrategies);
+    match.triggeredStrategies = triggeredIds;
+    for (const sid of triggeredIds) {
+      saveCornerTrigger(match, sid).catch(e =>
+        console.error("[cornerService] 保存触发记录失败:", e.message)
+      );
+    }
+  }
+
+  cachedMatches = matches;
+  cachedMainMarkets = mainMk || {};
+  lastFetchTime = Date.now();
+  consecutiveFailures = 0;
+  console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
+  if (matches.length > 0 && !pollingFirstDone) {
+    pollingFirstDone = true;
+    console.log("[cornerService] 首次爬取完成，缓存已就绪");
+  }
+
+  // 自动投注：策略触发后入队处理（需 UI开关 + 白名单非空）
+  if (betConfig.isRealMode && betConfig.autoBetEnabled) {
+    for (const match of matches) {
+      if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
+      const triggeredIds = evaluateStrategies(match, activeStrategies);
+      match.triggeredStrategies = triggeredIds;
+      for (const sid of triggeredIds) {
+        try {
+          const isDup = await checkDuplicateBet(match.matchId, sid);
+          if (isDup) {
+            console.log("[cornerService] 跳过重复投注: " + match.matchId + " 策略" + sid);
+            continue;
+          }
+          const genResult = await generatePendingBet(match, sid);
+          if (genResult.success && !genResult.skipped) {
+            betQueue.push({
+              betId: genResult.id,
+              historyId: null,
+              matchId: match.matchId,
+              matchName: match.matchName || "",
+              strategyId: sid,
+              odds: match.cornerOdds || 0,
+              amount: betConfig.amount,
+              handicap: match.cornerHandicap || 0
+            });
+          }
+        } catch (e) {
+          console.error("[cornerService] 投注入队失败:", e.message);
+        }
+      }
+    }
+    processBetQueue().catch(e =>
+      console.error("[cornerService] 投注队列处理失败:", e.message)
+    );
+  }
+}
+
 export function startCornerBackendPolling() {
   if (pollingActive) {
     console.log("[cornerService] 轮询已在运行中");
@@ -69,73 +137,12 @@ export function startCornerBackendPolling() {
 
   console.log("[cornerService] 启动后端轮询 (间隔=" + POLL_INTERVAL + "ms)...");
   pollingActive = true;
+  pollingPaused = false;
 
   const poll = async () => {
-    if (!pollingActive) return;
+    if (!pollingActive || pollingPaused) return;
     try {
-      const result = await crawlCornerMatches();
-      const rawMatches = result.success ? (result.data?.matches || []) : [];
-      const mainMk = result.mainMarkets || {};
-      const matches = rawMatches.map(mapMatchToCornerFormat);
-
-      // 策略评估：对每场比赛评估所有活跃策略
-      for (const match of matches) {
-        const triggeredIds = evaluateStrategies(match, activeStrategies);
-        match.triggeredStrategies = triggeredIds;
-        // 写入触发记录到 corner_history 表
-        for (const sid of triggeredIds) {
-          saveCornerTrigger(match, sid).catch(e =>
-            console.error("[cornerService] 保存触发记录失败:", e.message)
-        );
-        }
-      }
-
-      cachedMatches = matches;
-        cachedMainMarkets = mainMk || {};
-      lastFetchTime = Date.now(); // 更新缓存时间戳
-      consecutiveFailures = 0;
-      console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
-        if (matches.length > 0 && !pollingFirstDone) {
-          pollingFirstDone = true;
-          console.log("[cornerService] 首次爬取完成，缓存已就绪");
-        }
-
-      // 自动投注：策略触发后入队处理（需 UI开关 + 白名单非空）
-      if (betConfig.isRealMode && betConfig.autoBetEnabled) {
-        for (const match of matches) {
-          // 白名单检查：仅投注用户追踪的比赛（空白名单=不投注）
-          if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
-          const triggeredIds = evaluateStrategies(match, activeStrategies);
-          match.triggeredStrategies = triggeredIds;
-          for (const sid of triggeredIds) {
-            try {
-              const isDup = await checkDuplicateBet(match.matchId, sid);
-              if (isDup) {
-                console.log("[cornerService] 跳过重复投注: " + match.matchId + " 策略" + sid);
-                continue;
-              }
-              const genResult = await generatePendingBet(match, sid);
-              if (genResult.success && !genResult.skipped) {
-                betQueue.push({
-                  betId: genResult.id,
-            historyId: null,  // auto-bet不跟踪单个history记录
-                  matchId: match.matchId,
-                  matchName: match.matchName || "",
-                  strategyId: sid,
-                  odds: match.cornerOdds || 0,
-                  amount: betConfig.amount,
-                  handicap: match.cornerHandicap || 0
-                });
-              }
-            } catch (e) {
-              console.error("[cornerService] 投注入队失败:", e.message);
-            }
-          }
-        }
-        processBetQueue().catch(e =>
-          console.error("[cornerService] 投注队列处理失败:", e.message)
-        );
-      }
+      await pollOnce();
     } catch (e) {
       console.error("[cornerService] 轮询错误:", e.message);
       consecutiveFailures++;
@@ -144,12 +151,11 @@ export function startCornerBackendPolling() {
         lastAlertTime = new Date().toISOString();
       }
     }
-    if (pollingActive) {
+    if (pollingActive && !pollingPaused) {
       pollingInterval = setTimeout(poll, POLL_INTERVAL);
     }
   };
 
-  // 首次立即执行一次
   poll();
   return { success: true, interval: POLL_INTERVAL };
 }
@@ -216,73 +222,11 @@ export function resumeCornerBackendPolling() {
   pollingPaused = false;
   const pausedDuration = pauseTime ? Date.now() - pauseTime : 0;
   pauseTime = null;
-  // 立即执行一次轮询
+
   const poll = async () => {
     if (!pollingActive || pollingPaused) return;
     try {
-      const result = await crawlCornerMatches();
-      const rawMatches = result.success ? (result.data?.matches || []) : [];
-      const matches = rawMatches.map(mapMatchToCornerFormat);
-
-      // 策略评估：对每场比赛评估所有活跃策略
-      for (const match of matches) {
-        const triggeredIds = evaluateStrategies(match, activeStrategies);
-        match.triggeredStrategies = triggeredIds;
-        // 写入触发记录到 corner_history 表
-        for (const sid of triggeredIds) {
-          saveCornerTrigger(match, sid).catch(e =>
-            console.error("[cornerService] 保存触发记录失败:", e.message)
-        );
-        }
-      }
-
-      const mainMk = result.mainMarkets || {};
-      cachedMatches = matches;
-      cachedMainMarkets = mainMk;
-      lastFetchTime = Date.now(); // 更新缓存时间戳
-      consecutiveFailures = 0;
-      console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
-      if (matches.length > 0 && !pollingFirstDone) {
-        pollingFirstDone = true;
-        console.log("[cornerService] 首次爬取完成，缓存已就绪");
-      }
-
-      // 自动投注：策略触发后入队处理（与主poll函数逻辑一致）
-      if (betConfig.isRealMode && betConfig.autoBetEnabled) {
-        for (const match of matches) {
-          // 白名单检查：仅投注用户追踪的比赛（空白名单=不投注）
-          if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
-          const triggeredIds = evaluateStrategies(match, activeStrategies);
-          match.triggeredStrategies = triggeredIds;
-          for (const sid of triggeredIds) {
-            try {
-              const isDup = await checkDuplicateBet(match.matchId, sid);
-              if (isDup) {
-                console.log("[cornerService] 跳过重复投注: " + match.matchId + " 策略" + sid);
-                continue;
-              }
-              const genResult = await generatePendingBet(match, sid);
-              if (genResult.success && !genResult.skipped) {
-                betQueue.push({
-                  betId: genResult.id,
-                  historyId: null,
-                  matchId: match.matchId,
-                  matchName: match.matchName || "",
-                  strategyId: sid,
-                  odds: match.cornerOdds || 0,
-                  amount: betConfig.amount,
-                  handicap: match.cornerHandicap || 0
-                });
-              }
-            } catch (e) {
-              console.error("[cornerService] 投注入队失败:", e.message);
-            }
-          }
-        }
-        processBetQueue().catch(e =>
-          console.error("[cornerService] 投注队列处理失败:", e.message)
-        );
-      }
+      await pollOnce();
     } catch (e) {
       console.error("[cornerService] 轮询错误:", e.message);
       consecutiveFailures++;
@@ -413,7 +357,7 @@ export async function getLiveCornerData(filterMatchId) {
 }
 
 // ======================== 策略评估引擎（委托给共享模块 cornerEvaluator.js） ========================
-// 前端 cornerStore.ts 独立实现以支持实时响应，逻辑须与此模块保持一致
+// 前端统一使用后端 API 返回的 triggeredStrategies，不再本地评估
 export function evaluateStrategies(match, strategies) {
   return evaluateCornerStrategies(match, strategies);
 }
