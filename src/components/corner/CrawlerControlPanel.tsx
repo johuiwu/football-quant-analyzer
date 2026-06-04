@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
@@ -193,10 +193,20 @@ export default function CrawlerControlPanel() {
         await fetchStatus();
         setLoginStatus(true, credentials.username);
       } else {
-        showMessage("error", data.error || "登录失败");
+        // 显示详细错误原因和建议
+        const errorText = data.error || "登录失败";
+        const reason = data.reason || "";
+        const detail = data.detail || "";
+        const suggestion = data.suggestion || "";
+        let fullMsg = errorText;
+        if (detail && detail !== errorText) fullMsg += " - " + detail;
+        if (suggestion) fullMsg += " (" + suggestion + ")";
+        showMessage("error", fullMsg);
+        console.error("[登录失败]", { error: errorText, reason, detail, suggestion });
       }
-    } catch (err) {
-      showMessage("error", "登录失败");
+    } catch (err: any) {
+      const errMsg = err.message || "登录请求失败";
+      showMessage("error", "登录失败：" + errMsg + "（请确认后端服务已启动）");
     } finally {
       setLoading(false);
     }
@@ -562,7 +572,7 @@ export default function CrawlerControlPanel() {
             disabled={!isBackendPolling}
             className="rounded border-slate-600 text-emerald-500 focus:ring-emerald-500"
           />
-          <span>自动刷新 (10s)</span>
+          <span>自动刷新 (5s)</span>
         </label>
       </div>
 
