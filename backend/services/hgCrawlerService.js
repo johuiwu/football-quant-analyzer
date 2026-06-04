@@ -5,6 +5,7 @@ puppeteer.use(StealthPlugin());
 
 import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
+import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -990,6 +991,15 @@ export async function fetchSchedule() {
   if (!(await ensurePageReady())) {
     return { success: false, error: "无法连接到浏览器页面" };
   }
+
+  // 暂停角球后端轮询，避免竞态条件（fetchSchedule 和 crawlCornerMatches 共用同一浏览器页面）
+  const pollStatus = getBackendPollingStatus();
+  const wasPolling = pollStatus.isPolling && !pollStatus.isPaused;
+  if (wasPolling) {
+    pauseCornerBackendPolling();
+    console.log("[HgCrawler] 已暂停角球轮询");
+  }
+
   try {
     await navigateToInPlay(mainPage);
 
@@ -1160,6 +1170,12 @@ export async function fetchSchedule() {
       if (loginResult.success) return await fetchSchedule();
     } catch (e) {}
     return { success: false, error: err.message };
+  } finally {
+    if (wasPolling) {
+      await new Promise(r => setTimeout(r, 2000));
+      resumeCornerBackendPolling();
+      console.log("[HgCrawler] 已恢复角球轮询");
+    }
   }
 }
 

@@ -627,9 +627,9 @@ export default function CrawlerControlPanel() {
                           <div className="text-lg font-bold text-slate-300">
                             {match.homeScore ?? 0} - {match.awayScore ?? 0}
                           </div>
-                          {match.totalCorners > 0 && (
+                          {(match.homeCorners > 0 || match.awayCorners > 0) && (
                             <div className="text-xs text-amber-400">
-                              角球：{match.totalCorners}
+                              角球 {match.homeCorners ?? 0} - {match.awayCorners ?? 0}
                             </div>
                           )}
                         </div>

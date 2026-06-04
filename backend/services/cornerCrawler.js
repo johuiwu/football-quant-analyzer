@@ -387,7 +387,7 @@ async function navigateToCorners(page) {
     console.log("[cornerCrawler] CORNERS tab already active on In-Play, skipping navigation");
     await new Promise(r => setTimeout(r, 2000));
     await handlePopups(page);
-    return { success: true, source: "corner-inplay-active" };
+    return { success: true, source: "corner-inplay-active", matchScores: {} };
   }
 
   // 0.5: 确保在 In-Play 视图（而非 Today）
@@ -504,6 +504,34 @@ async function navigateToCorners(page) {
   }
   await handlePopups(page);
 
+  // 捕获比赛比分（在 CORNERS 切换之前，Soccer 页面显示真实比赛比分）
+  console.log("[cornerCrawler] Capturing match scores from Soccer view...");
+  let matchScores = {};
+  try {
+    matchScores = await page.evaluate(() => {
+      const scores = {};
+      const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+      for (const box of containers) {
+        const htEl = box.querySelector('div.box_team.teamH span.text_team, [class*="team_h"] span');
+        const atEl = box.querySelector('div.box_team.teamC span.text_team, [class*="team_c"] span');
+        if (!htEl || !atEl) continue;
+        const homeTeam = (htEl.textContent || '').trim();
+        const awayTeam = (atEl.textContent || '').trim();
+        if (!homeTeam || !awayTeam) continue;
+        const scoreEls = box.querySelectorAll('div.box_score span.text_point');
+        const homeScore = scoreEls.length >= 2 ? parseInt((scoreEls[0].textContent || '0').trim(), 10) || 0 : 0;
+        const awayScore = scoreEls.length >= 2 ? parseInt((scoreEls[1].textContent || '0').trim(), 10) || 0 : 0;
+        const key = (homeTeam + '|' + awayTeam).toLowerCase();
+        scores[key] = { homeScore, awayScore };
+      }
+      return scores;
+    });
+    console.log("[cornerCrawler] Captured scores for " + Object.keys(matchScores).length + " teams");
+  } catch (e) {
+    console.log("[cornerCrawler] Score capture failed:", e.message);
+    matchScores = {};
+  }
+
   // 2. Click 角球 tab
   console.log("[cornerCrawler] Step 2: Click 角球 tab...");
   let clicked = false;
@@ -591,7 +619,7 @@ async function navigateToCorners(page) {
   } catch(e) {}
 
   console.log("[cornerCrawler] Content source: " + contentSource);
-  return { success: contentLoaded, source: contentSource };
+  return { success: contentLoaded, source: contentSource, matchScores };
 }
 
 // ======================== DOM 解析角球盘口 ========================
@@ -911,6 +939,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
               results.push({
                 homeTeam, awayTeam, league, time: timeStr, elapsedMinutes,
                 homeScore, awayScore, totalCorners,
+                cornerHomeCount, cornerAwayCount,
                 cornerOU, cornerHDP, nextCorner, cornerOE
               });
             } catch (e) { /* skip broken match */ }
@@ -1384,6 +1413,8 @@ export async function crawlCornerMatches() {
     await randomDelay(1000, 3000);
     const navResult = await navigateToCorners(page);
     const dataSource = navResult?.source || "unknown";
+    const matchScores = navResult?.matchScores || {};
+    console.log("[cornerCrawler] Navigation result: source=" + dataSource + " scores=" + Object.keys(matchScores).length);
     await randomDelay(1000, 3000);
 
     // 等待数据加载
@@ -1400,7 +1431,7 @@ export async function crawlCornerMatches() {
     await new Promise(r => setTimeout(r, 2000));
 
     // 解析 DOM 获取角球盘口（使用专用 parseCornerMarkets 替代通用 parseAllMarkets）
-    const domData = await parseCornerMarkets(page);
+    const domData = await parseCornerMarkets(page, matchScores);
     console.log("[cornerCrawler] DOM corner markets: " + domData.length);
 
     // 尝试从 XHR 捕获中提取比赛列表
@@ -1439,7 +1470,7 @@ export async function crawlCornerMatches() {
       elapsedMinutes: m.elapsedMinutes || 0,
       homeScore: m.homeScore || 0, awayScore: m.awayScore || 0,
       totalCorners: m.totalCorners || 0,
-      homeCorners: 0, awayCorners: 0,
+      homeCorners: m.cornerHomeCount || 0, awayCorners: m.cornerAwayCount || 0,
       _cornerSource: "dom",
       cornerHandicap: m.cornerHDP ? parseAsianHandicap(m.cornerHDP.line) : 0,
       cornerOdds: m.cornerHDP ? (m.cornerHDP.homeOdds || 0) : 0,
