@@ -327,13 +327,13 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     set((state) => ({
       settings: { ...state.settings, ...partial }
     }));
-    // isRealMode 或 betAmount 变更时同步到后端
-    if ('isRealMode' in partial || 'betAmount' in partial) {
+    // 配置变更时同步到后端
+    if ('isRealMode' in partial || 'betAmount' in partial || 'autoBetEnabled' in partial) {
       const s = get().settings;
       fetch('/api/corner/bet-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isRealMode: s.isRealMode, amount: s.betAmount })
+        body: JSON.stringify({ isRealMode: s.isRealMode, amount: s.betAmount, autoBetEnabled: s.autoBetEnabled })
       }).catch(() => {});
     }
   },
