@@ -445,7 +445,7 @@ export async function navigateToCorners(page) {
 
   if (!isInPlay) {
     console.log("[cornerCrawler] Not on In-Play view, switching from Today...");
-    const inplayNames = ["滚球", "In-Play", "INPLAY"];
+    const inplayNames = ["滚球"];
     for (const name of inplayNames) {
       if (await clickTab(page, name, 1500)) {
         console.log("[cornerCrawler] Switched to In-Play: " + name);
@@ -683,7 +683,7 @@ export async function navigateToCorners(page) {
 
   if (!clicked) {
     clicked = await clickTab(page, "角球", 2000);
-    if (!clicked) clicked = await clickTab(page, "CORNERS", 2000);
+    if (!clicked) clicked = await clickTab(page, "角球", 2000);
   }
 
   if (!clicked) {
@@ -708,7 +708,7 @@ export async function navigateToCorners(page) {
   if (!cornerTabActive) {
     console.warn("[cornerCrawler] 角球 tab 可能未成功激活，尝试强制刷新...");
     try {
-      await clickTab(page, "Soccer", 2000);
+      await clickTab(page, "足球", 2000);
       await new Promise(r => setTimeout(r, 1500));
       await page.evaluate(() => {
         const tab = document.getElementById('tab_cn');

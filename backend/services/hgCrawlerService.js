@@ -262,7 +262,6 @@ async function navigateToInPlay(page) {
       return false;
     });
     if (!clicked) clicked = await clickTab(page, "滚球", NAV_WAIT_MS);
-    if (!clicked) clicked = await clickTab(page, "In-Play", NAV_WAIT_MS);
     if (!clicked) {
       console.log("[HgCrawler]   未找到 In-Play Tab，尝试模糊匹配...");
       try {
@@ -917,7 +916,7 @@ export async function fetchAllLiveMatches() {
 
     // Step 4: 点击 CORNERS 标签
     console.log("[HgCrawler] 点击 CORNERS 标签...");
-    await clickTab(mainPage, "CORNERS");
+    await clickTab(mainPage, "角球");
     await new Promise(r => setTimeout(r, 4000));
 
     // 滚动触发懒加载
@@ -999,7 +998,13 @@ export async function fetchSchedule() {
 
     // ========== 阶段一：提取 Today 比赛列表 ==========
     console.log("[HgCrawler] 点击 Today 标签...");
-    await clickTab(mainPage, "Today");
+    // 桌面版：优先通过 #today_page 直点
+    let todayClicked = await mainPage.evaluate(() => {
+      const tab = document.getElementById("today_page");
+      if (tab) { tab.click(); return true; }
+      return false;
+    });
+    if (!todayClicked) await clickTab(mainPage, "今日");
     console.log("[HgCrawler] 等待 Today 比赛数据渲染...");
     try {
       await mainPage.waitForFunction(() => {
@@ -1056,7 +1061,7 @@ export async function fetchSchedule() {
 
     // ========== 阶段二：提取 CORNERS 盘口 ==========
     console.log("[HgCrawler] 点击 CORNERS 标签...");
-    await clickTab(mainPage, "CORNERS");
+    await clickTab(mainPage, "角球");
 
     // 智能等待：等待实际盘口数据渲染完成（而非仅 DOM 存在）
     console.log("[HgCrawler] 等待 CORNERS 盘口数据渲染...");
@@ -1141,7 +1146,7 @@ export async function fetchSchedule() {
     // 恢复页面到 In-Play 状态，避免污染后续实时监控
     try {
       console.log("[HgCrawler] 恢复浏览器到 In-Play 视图...");
-      for (const name of ["In-Play", "滚球", "inplay", "INPLAY"]) {
+      for (const name of ["滚球"]) {
         const clicked = await clickTab(mainPage, name, 1500);
         if (clicked) { console.log("[HgCrawler] In-Play tab clicked: " + name); break; }
       }
