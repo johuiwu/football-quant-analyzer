@@ -1,7 +1,7 @@
----
+﻿---
 name: Dependency-Expert｜项目依赖管理专家
-description: - 包安装失败，版本冲突;  依赖升级导致报错，环境不一致;  lock 文件异常，模块缺失或冗余
-trigger phrases: ['依赖问题']
+description: "- 包安装失败，版本冲突;  依赖升级导致报错，环境不一致;  lock 文件异常，模块缺失或冗余"
+trigger_phrases: ['依赖问题']
 ---
 ### 适用场景
 - 包安装失败，版本冲突

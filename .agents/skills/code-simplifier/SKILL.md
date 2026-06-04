@@ -1,7 +1,7 @@
----
+﻿---
 name: Code-Simplifier｜复杂代码重构精简师
-description: - 函数体庞大、嵌套过深（超过3层if/for）;  逻辑繁琐臃肿，维护成本高;  祖传代码，需提升可读性和可维护性
-trigger phrases: ['精简代码']
+description: "- 函数体庞大、嵌套过深（超过3层if/for）;  逻辑繁琐臃肿，维护成本高;  祖传代码，需提升可读性和可维护性"
+trigger_phrases: ['精简代码']
 ---
 ### 适用场景
 - 函数体庞大、嵌套过深（超过3层if/for）

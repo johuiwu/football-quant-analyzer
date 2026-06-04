@@ -1,7 +1,7 @@
----
+﻿---
 name: Prompt Optimizer｜需求优化师
-description: - 用户需求口语化、模糊、零散;  描述笼统，无法直接形成开发任务;  想法较多但不成体系
-trigger phrases: ['优化需求']
+description: "- 用户需求口语化、模糊、零散;  描述笼统，无法直接形成开发任务;  想法较多但不成体系"
+trigger_phrases: ['优化需求']
 ---
 ### 适用场景
 - 用户需求口语化、模糊、零散

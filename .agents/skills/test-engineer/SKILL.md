@@ -1,7 +1,7 @@
----
+﻿---
 name: Test-Engineer｜自动化测试工程师
-description: - 新功能开发后，缺少测试用例;  旧逻辑修改，需回归验证;  Bug 修复后需防止再次出现
-trigger phrases: ['补测试']
+description: "- 新功能开发后，缺少测试用例;  旧逻辑修改，需回归验证;  Bug 修复后需防止再次出现"
+trigger_phrases: ['补测试']
 ---
 ### 适用场景
 - 新功能开发后，缺少测试用例
