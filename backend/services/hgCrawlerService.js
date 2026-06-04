@@ -554,6 +554,21 @@ async function parseCornerOdds(page) {
       const num = parseFloat(t);
       return (!isNaN(num) && num > 0) ? num : 0;
     }
+    function extractCornerCount(root) {
+      if (!root) return 0;
+      const totalEl = root.querySelector("span.game_total, [class*='corner'] span, [class*='total']");
+      if (totalEl) {
+        const val = parseInt((totalEl.textContent || "").trim(), 10);
+        if (!isNaN(val) && val >= 0 && val <= 30) return val;
+      }
+      const scoreEls = root.querySelectorAll("div.box_score span.text_point");
+      if (scoreEls.length >= 2) {
+        const ch = parseInt((scoreEls[0].textContent || "0").trim(), 10);
+        const ca = parseInt((scoreEls[1].textContent || "0").trim(), 10);
+        if (!isNaN(ch) && !isNaN(ca) && ch >= 0 && ca >= 0) return ch + ca;
+      }
+      return 0;
+    }
 
     // ====== 策略1: div.bet_box ======
     let containers = document.querySelectorAll("div.bet_box");
