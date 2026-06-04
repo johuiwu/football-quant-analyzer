@@ -1,6 +1,7 @@
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
+import path from "path";
 import {
   getSharedBrowser, getSharedPage, setSharedPage,
   getLoginCookies, setLoginCookies,
@@ -24,6 +25,7 @@ const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "5000", 10);
 let runtimeCredentials = null;
 let loginInProgress = false;
 let crawlingLock = false;
+let lastLoginErrorDetail = null;
 let pollingActive = false;
 let pollingStopFn = null;
 
@@ -62,6 +64,24 @@ async function extractBalance(page) {
 }
 
 // ======================== 登录流程 ========================
+
+// ======================== 截图辅助 ========================
+let screenshotDirCreated = false;
+async function saveDebugScreenshot(page, label) {
+  try {
+    if (!screenshotDirCreated) {
+      fs.mkdirSync(path.resolve("debug_screenshots"), { recursive: true });
+      screenshotDirCreated = true;
+    }
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const filePath = path.resolve("debug_screenshots", "login_" + label + "_" + ts + ".png");
+    await page.screenshot({ path: filePath, fullPage: false });
+    console.log("[cornerCrawler] 截图已保存: " + filePath);
+  } catch (e) {
+    console.warn("[cornerCrawler] 截图失败:", e.message);
+  }
+}
+
 async function ensureLogin() {
   const _loginStart = Date.now();
   // 登录并发保护
@@ -88,6 +108,13 @@ async function ensureLogin() {
 
   const bi = await getSharedBrowser(false);
   console.log("[cornerCrawler] [耗时] getSharedBrowser: " + (Date.now() - _loginStart) + "ms");
+
+  // ✗ 浏览器启动失败
+  if (!bi) {
+    lastLoginErrorDetail = "browser_launch_failed:浏览器启动失败，请检查 Chromium 是否安装，或设置 CRAWLER_HEADLESS=false 试试";
+    console.error("[cornerCrawler] 浏览器未启动，登录中止");
+    return null;
+  }
 
   // ★ Cookie 快速登录：尝试从磁盘恢复会话
   const savedCookies = loadCookiesFromDisk();
@@ -143,8 +170,8 @@ async function ensureLogin() {
     const page = await bi.newPage();
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
     await page.setViewport({ width: 1920, height: 1400 });
-    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 12000 });
-    await new Promise(r => setTimeout(r, 2000));
+    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await new Promise(r => setTimeout(r, 4000));
     setSharedPage(page);
     console.log("[cornerCrawler] 新页面创建完成");
     return page;
@@ -167,8 +194,8 @@ async function ensureLogin() {
     Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
   });
 
-  await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 12000 });
-  await new Promise(r => setTimeout(r, 2000));
+  await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await new Promise(r => setTimeout(r, 4000));
   
   // 保存初始页面截图
 const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
@@ -203,10 +230,10 @@ const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERN
     if (btn) btn.click();
   });
 
-  // 轮询检测登录结果（最多 20 秒）
-  console.log("[cornerCrawler] 轮询等待登录结果...");
+  // 轮询检测登录结果（最多 80 秒，与 hgCrawlerService 保持一致）
+  console.log("[cornerCrawler] 轮询等待登录结果（最多 80s）...");
   let loginResult = null;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 80; i++) {
     await new Promise(r => setTimeout(r, 1000));
     await handlePopups(page);
 
@@ -269,15 +296,21 @@ const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERN
   }
 
   if (!loginResult) {
-    console.error("[cornerCrawler] 登录超时（20s）");
+    console.error("[cornerCrawler] 登录超时（80s）");
+    lastLoginErrorDetail = "login_timeout:登录超时（80s），网站可能无响应或被屏蔽";
+    await saveDebugScreenshot(page, "timeout");
     return null;
   }
   if (!loginResult.success) {
+    lastLoginErrorDetail = "login_wrong_password:" + (loginResult.error || "密码错误");
+    await saveDebugScreenshot(page, "error");
     return null;
   }
 
   console.log("[cornerCrawler] [耗时] 登录完成: " + (Date.now() - _loginStart) + "ms");
   console.log("[cornerCrawler] ✅ 登录成功！");
+  lastLoginErrorDetail = null;
+  await saveDebugScreenshot(page, "success");
   try {
     const saved = await page.cookies();
     setLoginCookies(saved);
@@ -349,7 +382,31 @@ export async function navigateToCorners(page) {
     console.log("[cornerCrawler] CORNERS tab already active on In-Play, skipping navigation");
     await new Promise(r => setTimeout(r, 2000));
     await handlePopups(page);
-    return { success: true, source: "corner-inplay-active", matchScores: {} };
+    // 即使已在角球Tab，也尝试从当前DOM提取比赛比分
+    let matchScores = {};
+    try {
+      matchScores = await page.evaluate(() => {
+        const scores = {};
+        const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+        for (const box of containers) {
+          const htEl = box.querySelector('div.box_team.teamH span.text_team, [class*="team_h"] span');
+          const atEl = box.querySelector('div.box_team.teamC span.text_team, [class*="team_c"] span');
+          if (!htEl || !atEl) continue;
+          const homeTeam = (htEl.textContent || '').trim();
+          const awayTeam = (atEl.textContent || '').trim();
+          if (!homeTeam || !awayTeam) continue;
+          const scoreEls = box.querySelectorAll('div.box_score span.text_point');
+          const homeScore = scoreEls.length >= 2 ? parseInt((scoreEls[0].textContent || '0').trim(), 10) || 0 : 0;
+          const awayScore = scoreEls.length >= 2 ? parseInt((scoreEls[1].textContent || '0').trim(), 10) || 0 : 0;
+          const key = (homeTeam + '|' + awayTeam).toLowerCase();
+          scores[key] = { homeScore, awayScore };
+        }
+        return scores;
+      });
+    } catch (e) {
+      console.log("[cornerCrawler] Score capture from corner tab failed:", e.message);
+    }
+    return { success: true, source: "corner-inplay-active", matchScores };
   }
 
   // 0.5: 检查是否在 In-Play（而非 Today）
@@ -1700,8 +1757,10 @@ export function getPollingStatus() {
 export async function loginToHG(username, password) {
   console.log("[cornerCrawler] 设置登录凭据...");
   runtimeCredentials = { username, password };
+  lastLoginErrorDetail = null;
   const MAX_RETRIES = 3;
   let lastError = null;
+  let lastReason = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const page = await ensureLogin();
@@ -1709,15 +1768,23 @@ export async function loginToHG(username, password) {
         return { success: true, message: "登录成功", balance: getBalance(), attempts: attempt };
       }
       lastError = "登录返回空页面";
+      lastReason = lastLoginErrorDetail || "login_unknown";
     } catch (err) {
       lastError = err.message;
+      lastReason = "login_exception:" + (err.message || "未知异常");
       console.warn("[cornerCrawler] 登录失败 " + attempt + "/" + MAX_RETRIES + " 次尝试: " + lastError);
     }
     if (attempt < MAX_RETRIES) {
       await new Promise(r => setTimeout(r, attempt * 2000));
     }
   }
-  return { success: false, message: "登录失败超过" + MAX_RETRIES + "次重试: " + lastError, balance: getBalance() };
+  return {
+    success: false,
+    message: "登录失败(" + MAX_RETRIES + "次重试): " + lastError,
+    reason: lastReason || "login_unknown",
+    detail: lastLoginErrorDetail || lastError,
+    balance: getBalance()
+  };
 }
 
 // ======================== 关闭 ========================
