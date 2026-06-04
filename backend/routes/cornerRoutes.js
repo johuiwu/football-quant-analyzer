@@ -156,10 +156,34 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     if (!result || typeof result !== "object") {
       return res.status(500).json({ success: false, error: "登录服务返回异常数据" });
     }
+
+    // 根据失败原因提供友好建议
+    if (!result.success) {
+      const reason = result.reason || "";
+      let suggestion = "";
+      if (reason.includes("browser_launch_failed")) {
+        suggestion = "请确认 Chromium 已安装（npm install puppeteer 自动安装），或尝试设置环境变量 CRAWLER_HEADLESS=false";
+      } else if (reason.includes("login_timeout")) {
+        suggestion = "网站可能暂时无法访问或被屏蔽，请检查网络或尝试设置 CRAWLER_HEADLESS=false 打开可见浏览器排查";
+      } else if (reason.includes("login_wrong_password")) {
+        suggestion = "请检查用户名和密码是否正确，或账号是否被锁定";
+      } else if (reason.includes("login_exception")) {
+        suggestion = "登录过程发生异常，请查看终端日志排查";
+      } else {
+        suggestion = "请检查网络连接和凭据是否正确，终端日志可查看详细信息";
+      }
+      result.suggestion = suggestion;
+    }
+
     res.json(result);
   } catch (err) {
     console.error("[cornerRoutes] /corner/login error:", err.message);
-    res.status(500).json({ success: false, error: err.message || "登录服务内部错误" });
+    const errMsg = err.message || "登录服务内部错误";
+    let suggestion = "";
+    if (errMsg.includes("超时")) {
+      suggestion = "登录请求超时（90s），请检查 CRAWLER_HEADLESS 设置或尝试重启服务";
+    }
+    res.status(500).json({ success: false, error: errMsg, suggestion });
   }
 });
 
@@ -385,21 +409,21 @@ router.post("/corner/bet/manual", async (req, res) => {
   try {
     const { matchId, matchName, strategyId, odds, handicap, amount } = req.body || {};
 
-    // ????
+    // 参数校验
     if (!matchId) {
-      return res.status(400).json({ success: false, error: "?? matchId" });
+      return res.status(400).json({ success: false, error: "缺少 matchId" });
     }
     if (!strategyId) {
-      return res.status(400).json({ success: false, error: "?? strategyId" });
+      return res.status(400).json({ success: false, error: "缺少 strategyId" });
     }
     if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, error: "??????" });
+      return res.status(400).json({ success: false, error: "请填写有效金额" });
     }
 
-    // ??????
+    // 金额校验
     const maxAmount = getMaxBetAmount();
     if (amount > maxAmount) {
-      return res.status(400).json({ success: false, error: "???????? (" + maxAmount + ")" });
+      return res.status(400).json({ success: false, error: "投注金额超限 (" + maxAmount + ")" });
     }
 
     const result = await addManualBet({
