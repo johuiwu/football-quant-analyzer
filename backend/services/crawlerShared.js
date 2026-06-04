@@ -31,7 +31,7 @@ export async function clickTab(page, tabName, waitMs) {
   try {
     const result = await page.evaluate((name) => {
       var uname = name.toUpperCase();
-      var sels = ["div[id=\"tab_cn\"]","div[role=\"tab\"]","span[class*=\"tab\"]","a[class*=\"tab\"]","li[class*=\"nav\"]","span[class*=\"nav\"]","div[class*=\"tab\"]","div[class*=\"nav\"]","button[class*=\"tab\"]","div[id*=\"tab\"]","div.btn_filter"];
+      var sels = ["div[id=\"symbol_ft\"]","div[id=\"live_page\"]","div[id=\"today_page\"]","div[id=\"tab_cn\"]","div[id=\"tab_rnou\"]","div[role=\"tab\"]","span[class*=\"tab\"]","a[class*=\"tab\"]","li[class*=\"nav\"]","span[class*=\"nav\"]","div[class*=\"tab\"]","div[class*=\"nav\"]","button[class*=\"tab\"]","div[id*=\"tab\"]","div.btn_filter","div.btn_le_sport","div.btn_header"];
       for (var si = 0; si < sels.length; si++) {
         var els = document.querySelectorAll(sels[si]);
         for (var ei = 0; ei < els.length; ei++) {

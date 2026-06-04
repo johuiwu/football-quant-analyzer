@@ -115,6 +115,7 @@ export interface CornerStore {
   backtestResults: Record<number, BacktestStats>;
   crawlerData: any | null;
   scheduleData: any[];
+  mainMarketData: Record<string, { league?: string; time?: string; homeScore?: number | null; awayScore?: number | null; hdp?: { line: string; homeOdds: number; awayOdds: number } | null; ou?: { line: number; overOdds: number; underOdds: number } | null }>;
   betConfirmRequired: boolean;
   setStrategies: (strategies: CornerStrategy[]) => void;
   updateStrategy: (id: number, updates: Partial<CornerStrategy>) => void;
@@ -136,6 +137,7 @@ export interface CornerStore {
   clearError: () => void;
   setCrawlerData: (data: any | null) => void;
   setScheduleData: (data: any[]) => void;
+  setMainMarketData: (data: any) => void;
   setBetConfirmRequired: (required: boolean) => void;
 }
 
@@ -301,6 +303,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   backtestResults: {},
   crawlerData: null,
   scheduleData: [],
+  mainMarketData: {},
   betConfirmRequired: false,
 
   setStrategies: (strategies) => { set({ strategies }); syncStrategiesToBackend(strategies); },
@@ -398,12 +401,15 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       if (!loginSuccess) return;
     }
     set({ isMonitoring: true });
+    fetch('/api/corner/start', { method: 'POST' }).catch(() => {});
+    fetch('/api/corner/resume', { method: 'POST' }).catch(() => {});
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已启动", level: "info" });
     await get().refreshData();
     monitorInterval = setInterval(() => { get().refreshData(); }, get().settings.pollInterval);
   },
 
   stopMonitor: () => {
+    fetch('/api/corner/pause', { method: 'POST' }).catch(() => {});
     if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
     set({ isMonitoring: false });
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已停止", level: "info" });
@@ -457,6 +463,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   clearError: () => set({ error: null }),
   setCrawlerData: (data) => set({ crawlerData: data }),
   setScheduleData: (data) => set({ scheduleData: data }),
+  setMainMarketData: (data) => set({ mainMarketData: data }),
   setBetConfirmRequired: (required) => set({ betConfirmRequired: required }),
 }), {
   name: "corner-store",

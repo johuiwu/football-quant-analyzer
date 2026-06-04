@@ -255,8 +255,14 @@ export async function loginToHG(credentials, forceNew = false) {
 async function navigateToInPlay(page) {
   console.log("[HgCrawler] 导航到 In-Play...");
   try {
-    // SPA 页面，URL 不变是正常的，以 DOM 内容为准
-    const clicked = await clickTab(page, "In-Play", NAV_WAIT_MS);
+    // SPA 页面，URL 不变是正常的，以 DOM 内容为准（桌面版用 #live_page "滚球"）
+    let clicked = await page.evaluate(() => {
+      const tab = document.getElementById('live_page');
+      if (tab) { tab.click(); return true; }
+      return false;
+    });
+    if (!clicked) clicked = await clickTab(page, "滚球", NAV_WAIT_MS);
+    if (!clicked) clicked = await clickTab(page, "In-Play", NAV_WAIT_MS);
     if (!clicked) {
       console.log("[HgCrawler]   未找到 In-Play Tab，尝试模糊匹配...");
       try {
@@ -881,33 +887,21 @@ export async function fetchAllLiveMatches() {
     // Step 1: 导航到 In-Play
     await navigateToInPlay(mainPage);
 
-    // Step 2: 点击 Soccer 标签（尝试多种名称）
-    console.log("[HgCrawler] 点击 Soccer 标签...");
-    const soccerNames = ["Soccer", "FOOTBALL", "Football", "足球"];
-    let soccerClicked = false;
-    for (const name of soccerNames) {
-      if (await clickTab(mainPage, name)) { soccerClicked = true; break; }
-    }
+    // Step 2: 点击 足球 标签（桌面版 #symbol_ft）
+    console.log("[HgCrawler] 点击 足球 标签 via #symbol_ft...");
+    let soccerClicked = await mainPage.evaluate(() => {
+      const btn = document.getElementById('symbol_ft');
+      if (!btn) return false;
+      if (btn.classList.contains('on')) return true;
+      btn.scrollIntoView({block:'center'});
+      btn.click();
+      return true;
+    });
     if (!soccerClicked) {
-      console.log("[HgCrawler] ⚠ Soccer标签未找到，尝试匹配包含关键词的元素...");
-      // 万能匹配：搜索包含 "soccer" 或 "football" 或 "足球" 的可点击元素
-      try {
-        soccerClicked = await mainPage.evaluate(() => {
-          const keywords = ["soccer", "football", "足球"];
-          const els = document.querySelectorAll("div, span, a, li, button");
-          for (const el of els) {
-            const text = (el.textContent || "").toLowerCase();
-            const rect = el.getBoundingClientRect();
-            if (rect.width < 15 || rect.height < 10) continue;
-            for (const kw of keywords) {
-              if (text.includes(kw)) { el.click(); return true; }
-            }
-          }
-          return false;
-        });
-      } catch (e) {}
+      console.log("[HgCrawler] #symbol_ft 未找到，尝试文本匹配...");
+      if (await clickTab(mainPage, "足球")) { soccerClicked = true; }
     }
-    console.log("[HgCrawler] Soccer标签点击结果: " + (soccerClicked ? "成功" : "失败，跳过"));
+    console.log("[HgCrawler] 足球标签点击结果: " + (soccerClicked ? "成功" : "失败，跳过"));
     await new Promise(r => setTimeout(r, 4000));
 
     // 滚动触发懒加载
@@ -1171,6 +1165,14 @@ export async function fetchSchedule() {
     } catch (e) {}
     return { success: false, error: err.message };
   } finally {
+    // ★ 恢复角球轮询前，强制导航回 In-Play 视图，避免后续爬取读取 Today 数据
+    try {
+      await navigateToInPlay(mainPage);
+      await new Promise(r => setTimeout(r, 2000));
+      console.log("[HgCrawler] 赛程爬取完成，已恢复 In-Play 页面");
+    } catch (e) {
+      console.warn("[HgCrawler] 恢复 In-Play 失败:", e.message);
+    }
     if (wasPolling) {
       await new Promise(r => setTimeout(r, 2000));
       resumeCornerBackendPolling();

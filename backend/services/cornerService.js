@@ -7,6 +7,7 @@ const USE_REAL_DATA = process.env.USE_REAL_DATA !== "false";
 
 // ======================== 后端轮询缓存 ========================
 let cachedMatches = [];
+let cachedMainMarkets = {};
 let pollingInterval = null;
 let pollingActive = false;
 let lastFetchTime = 0;
@@ -42,7 +43,7 @@ let betConfig = {
   autoBetEnabled: false
 };
 
-export function getAutoBetConfig() { return { ...betConfig, autoBetMasterSwitch: AUTO_BET_ENABLED }; }
+export function getAutoBetConfig() { return { ...betConfig, autoBetMasterSwitch: true }; }
 
 export function setBetConfig(config) {
   if (config) {
@@ -51,10 +52,8 @@ export function setBetConfig(config) {
 }
 
 // ======================== 自动投注配置 ========================
-const AUTO_BET_ENABLED = process.env.AUTO_BET_ENABLED === "true";
 const MAX_BET_AMOUNT = parseInt(process.env.MAX_BET_AMOUNT || "1000", 10);
 
-export function getAutoBetEnabled() { return AUTO_BET_ENABLED; }
 export function getMaxBetAmount() { return MAX_BET_AMOUNT; }
 
 export function getBetConfig() {
@@ -76,6 +75,7 @@ export function startCornerBackendPolling() {
     try {
       const result = await crawlCornerMatches();
       const rawMatches = result.success ? (result.data?.matches || []) : [];
+      const mainMk = result.mainMarkets || {};
       const matches = rawMatches.map(mapMatchToCornerFormat);
 
       // 策略评估：对每场比赛评估所有活跃策略
@@ -91,16 +91,17 @@ export function startCornerBackendPolling() {
       }
 
       cachedMatches = matches;
+        cachedMainMarkets = mainMk || {};
       lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
-      console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛");
+      console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
         if (matches.length > 0 && !pollingFirstDone) {
           pollingFirstDone = true;
           console.log("[cornerService] 首次爬取完成，缓存已就绪");
         }
 
-      // 自动投注：策略触发后入队处理（需启用 AUTO_BET_ENABLED + UI开关 + 白名单非空）
-      if (AUTO_BET_ENABLED && betConfig.isRealMode && betConfig.autoBetEnabled) {
+      // 自动投注：策略触发后入队处理（需 UI开关 + 白名单非空）
+      if (betConfig.isRealMode && betConfig.autoBetEnabled) {
         for (const match of matches) {
           // 白名单检查：仅投注用户追踪的比赛（空白名单=不投注）
           if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
@@ -164,6 +165,7 @@ export function stopCornerBackendPolling() {
     pollingInterval = null;
   }
   cachedMatches = [];
+  cachedMainMarkets = {};
   return { success: true };
 }
 
@@ -235,16 +237,17 @@ export function resumeCornerBackendPolling() {
       }
 
       cachedMatches = matches;
+        cachedMainMarkets = mainMk || {};
       lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
-      console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛");
+      console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
         if (matches.length > 0 && !pollingFirstDone) {
           pollingFirstDone = true;
           console.log("[cornerService] 首次爬取完成，缓存已就绪");
         }
 
       // 检查是否需要执行自动投注
-      if (AUTO_BET_ENABLED && betConfig.isRealMode && betConfig.autoBetEnabled) {
+      if (betConfig.isRealMode && betConfig.autoBetEnabled) {
         processBetQueue().catch(e =>
           console.error("[cornerService] 自动投注失败:", e.message)
         );
@@ -270,6 +273,7 @@ export function getBackendPollingStatus() {
     isPolling: pollingActive,
     isPaused: pollingPaused,
     cachedCount: cachedMatches.length,
+    cachedMainMarketCount: Object.keys(cachedMainMarkets).length,
     lastPollInterval: POLL_INTERVAL,
     pausedAt: pauseTime ? new Date(pauseTime).toISOString() : null
   };
@@ -312,7 +316,7 @@ export async function getLiveCornerData(filterMatchId) {
       ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
       : cachedMatches;
     console.log(`[cornerService] 返回缓存数据（${filtered.length}场），缓存年龄: ${Math.floor((now - lastFetchTime) / 1000)}秒`);
-    return { data: filtered, generatedAt, count: filtered.length, cacheAge: now - lastFetchTime };
+    return { data: filtered, generatedAt, count: filtered.length, cacheAge: now - lastFetchTime, mainMarkets: cachedMainMarkets };
   }
 
   // 缓存无效或为空，检查是否正在轮询中
@@ -322,7 +326,7 @@ export async function getLiveCornerData(filterMatchId) {
     const filtered = filterMatchId
       ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
       : cachedMatches;
-    return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true };
+    return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true, mainMarkets: cachedMainMarkets };
   }
 
   // 无缓存时，尝试即时爬取一次（USE_REAL_DATA 默认 true）
@@ -338,13 +342,23 @@ export async function getLiveCornerData(filterMatchId) {
           match.triggeredStrategies = evaluateStrategies(match, activeStrategies);
         }
         cachedMatches = matches;
+        cachedMainMarkets = mainMk || {};
         lastFetchTime = Date.now();
         consecutiveFailures = 0;
         const filtered = filterMatchId
           ? matches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
           : matches;
         console.log(`[cornerService] 即时爬取成功，返回 ${filtered.length} 场`);
-        return { data: filtered, generatedAt, count: filtered.length, source: "live-fetch", cacheAge: 0 };
+        return { data: filtered, generatedAt, count: filtered.length, source: "live-fetch", cacheAge: 0, mainMarkets: cachedMainMarkets };
+      } else if (result.mainMarkets && Object.keys(result.mainMarkets).length > 0) {
+        // ★ 角球数据为空但主盘口有数据，仍缓存主盘口并返回
+        cachedMatches = [];
+        const mainMk = result.mainMarkets || {};
+        cachedMainMarkets = mainMk;
+        lastFetchTime = Date.now();
+        consecutiveFailures = 0;
+        console.log(`[cornerService] 即时爬取: 角球无数据，主盘口 ${Object.keys(mainMk).length} 场`);
+        return { data: [], generatedAt, count: 0, source: "live-fetch", cacheAge: 0, mainMarkets: mainMk };
       } else {
         console.log("[cornerService] 即时爬取无数据: " + (result.error || "0 matches"));
       }

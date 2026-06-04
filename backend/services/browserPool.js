@@ -1,5 +1,7 @@
-import puppeteer from "puppeteer-extra";
+﻿import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import fs from "fs";
+import { fileURLToPath } from "url";
 
 puppeteer.use(StealthPlugin());
 
@@ -19,7 +21,14 @@ async function launchBrowser() {
   // 防止重复启动
   if (isLaunching) {
     console.log("[browserPool] 浏览器正在启动中，等待...");
+    const _lwStart = Date.now();
+    const _lwMax = 30000;
     while (isLaunching) {
+      if (Date.now() - _lwStart > _lwMax) {
+        console.warn("[browserPool] isLaunching 超时(30s)，强制重置");
+        isLaunching = false;
+        break;
+      }
       await new Promise(r => setTimeout(r, 500));
     }
     return browser;
@@ -152,6 +161,36 @@ async function closeSharedBrowser() {
   return { success: true };
 }
 
+// ======================== Cookie 文件持久化 ========================
+const COOKIE_PATH = fileURLToPath(new URL("../cookies.json", import.meta.url));
+
+function saveCookiesToDisk(cookies) {
+  try {
+    fs.writeFileSync(COOKIE_PATH, JSON.stringify(cookies, null, 2), "utf8");
+    console.log("[browserPool] Cookie 已写入磁盘: " + COOKIE_PATH);
+    return true;
+  } catch (e) {
+    console.warn("[browserPool] Cookie 写入失败:", e.message);
+    return false;
+  }
+}
+
+function loadCookiesFromDisk() {
+  try {
+    if (fs.existsSync(COOKIE_PATH)) {
+      const raw = fs.readFileSync(COOKIE_PATH, "utf8");
+      const cookies = JSON.parse(raw);
+      if (Array.isArray(cookies) && cookies.length > 0) {
+        console.log("[browserPool] 从磁盘加载 Cookie (" + cookies.length + " 条)");
+        return cookies;
+      }
+    }
+  } catch (e) {
+    console.warn("[browserPool] Cookie 读取失败:", e.message);
+  }
+  return null;
+}
+
 export {
   getSharedBrowser,
   getSharedPage,
@@ -163,5 +202,7 @@ export {
   isLoggedIn,
   isBrowserActive,
   closeSharedBrowser,
-  HG_URL
+  HG_URL,
+  saveCookiesToDisk,
+  loadCookiesFromDisk
 };

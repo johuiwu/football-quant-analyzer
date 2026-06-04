@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
@@ -20,6 +20,7 @@ router.get("/corner/live", async (req, res) => {
     res.json({
       success: true,
       data: matchList,
+      mainMarkets: result.mainMarkets || {},
       generatedAt: (result && result.generatedAt) || new Date().toISOString(),
       count: matchList.length,
       cacheAge: (result && result.cacheAge != null) ? result.cacheAge : null,
@@ -53,7 +54,7 @@ router.post("/corner/fetch", async (req, res) => {
     }
     const matches = result.data?.matches || [];
     console.log("[cornerRoutes] /corner/fetch 完成:", matches.length, "场比赛");
-    res.json({ success: true, data: matches, count: matches.length, source: "live-fetch" });
+    res.json({ success: true, data: matches, mainMarkets: result.mainMarkets || {}, count: matches.length, source: "live-fetch" });
   } catch (err) {
     const msg = err.message || String(err);
     console.error("[cornerRoutes] /corner/fetch error:", msg);
@@ -144,7 +145,7 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     }
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("登录超时，请重试")), 120000)
+      setTimeout(() => reject(new Error("登录超时，请重试")), 90000)
     );
 
     const result = await Promise.race([

@@ -29,10 +29,12 @@ export default function CrawlerControlPanel() {
     matchesCount: 0,
   });
   const [loading, setLoading] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [crawlerData, setCrawlerData] = [useCornerStore((s) => s.crawlerData), useCornerStore((s) => s.setCrawlerData)];
   const [scheduleData, setScheduleData] = [useCornerStore((s) => s.scheduleData), useCornerStore((s) => s.setScheduleData)];
-  const [activeTab, setActiveTab] = useState<"matches" | "schedule" | "raw" | "settings">("matches");
+  const [mainMarketData, setMainMarketData] = [useCornerStore((s) => s.mainMarketData), useCornerStore((s) => s.setMainMarketData)];
+  const [activeTab, setActiveTab] = useState<"matches" | "main_markets" | "schedule" | "raw" | "settings">("matches");
   const [credentials, setCredentials] = useState({ username: "johui888", password: "aa123123" });
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [expandedMatches, setExpandedMatches] = useState<Set<string>>(new Set());
@@ -269,6 +271,13 @@ export default function CrawlerControlPanel() {
           } else {
             useCornerStore.getState().setLiveMatches([]);
           }
+          
+        }
+
+        // ★ 始终同步主盘口数据（无论角球数据是否存在）
+        const recvMainMarkets = apiData.mainMarkets || {};
+        if (Object.keys(recvMainMarkets).length > 0) {
+          setMainMarketData(recvMainMarkets);
         }
         
         if (apiData.cacheEmpty) {
@@ -292,7 +301,7 @@ export default function CrawlerControlPanel() {
 
   const fetchSchedule = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
-    setLoading(true);
+    setScheduleLoading(true);
     try {
       const res = await fetch("/api/crawler/schedule");
       const data = await res.json();
@@ -320,7 +329,7 @@ export default function CrawlerControlPanel() {
       console.error("获取失败:", err);
       showMessage("error", "获取失败");
     } finally {
-      setLoading(false);
+      setScheduleLoading(false);
     }
   };
 
@@ -388,6 +397,13 @@ export default function CrawlerControlPanel() {
   useEffect(() => {
     fetchStatus();
   }, []);
+
+  // scheduleData 有数据时自动切换到赛程子tab
+  useEffect(() => {
+    if (scheduleData && scheduleData.length > 0 && activeTab !== "schedule") {
+      setActiveTab("schedule");
+    }
+  }, [scheduleData]);
 
   useEffect(() => {
     let interval = null;
@@ -493,11 +509,11 @@ export default function CrawlerControlPanel() {
 
         <button key="btn-schedule" type="button"
           onClick={(e) => fetchSchedule(e)}
-          disabled={loading}
+          disabled={loading || scheduleLoading}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:opacity-50 text-white text-xs rounded-lg transition-colors"
         >
           <Calendar className="w-3.5 h-3.5" />
-          获取赛程
+          {scheduleLoading ? "获取中..." : "获取赛程"}
         </button>
         {isBackendPolling && (
           <button key="btn-pause-resume" type="button"
@@ -580,7 +596,8 @@ export default function CrawlerControlPanel() {
 
       <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
         {[
-          { id: "matches", icon: <Activity className="w-3.5 h-3.5" />, label: "实时比赛" },
+          { id: "matches", icon: <Activity className="w-3.5 h-3.5" />, label: "角球" },
+          { id: "main_markets", icon: <Trophy className="w-3.5 h-3.5" />, label: "让球和大小" },
           { id: "schedule", icon: <Calendar className="w-3.5 h-3.5" />, label: "赛程" },
           { id: "raw", icon: <Activity className="w-3.5 h-3.5" />, label: "原始数据" },
           { id: "settings", icon: <Settings className="w-3.5 h-3.5" />, label: "设置" },
@@ -627,11 +644,7 @@ export default function CrawlerControlPanel() {
                           <div className="text-lg font-bold text-slate-300">
                             {match.homeScore ?? 0} - {match.awayScore ?? 0}
                           </div>
-                          {(match.homeCorners > 0 || match.awayCorners > 0) && (
-                            <div className="text-xs text-amber-400">
-                              角球 {match.homeCorners ?? 0} - {match.awayCorners ?? 0}
-                            </div>
-                          )}
+                          {/* 角球数不展示，仅展示比分 */}
                         </div>
                         <div className="text-center">
                           <div className="text-sm font-medium text-slate-200">{translateTeam(match.awayTeam)}</div>
@@ -858,7 +871,85 @@ export default function CrawlerControlPanel() {
         </div>
       )}
 
-      {activeTab === "raw" && (
+      ﻿      {activeTab === "main_markets" && (
+        <div className="space-y-4 max-h-[600px] overflow-y-auto">
+          {(!mainMarketData || Object.keys(mainMarketData).length === 0) ? (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              暂无让球大小数据，请启动监控获取数据。
+            </div>
+          ) : (
+            Object.entries(mainMarketData).map(([key, val]: [string, any]) => {
+              const [home, away] = key.split("|");
+              const hasScore = typeof val.homeScore === 'number' && val.homeScore >= 0 && typeof val.awayScore === 'number' && val.awayScore >= 0;
+              return (
+                <div key={key} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="p-4">
+                    {/* 联赛 + 时间 */}
+                    <div className="flex items-center gap-3 mb-2">
+                      {val.league && (
+                        <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(val.league)}</span>
+                      )}
+                      {val.time && (
+                        <span className="text-xs text-slate-500">{translateTime(val.time)}</span>
+                      )}
+                    </div>
+                    {/* 队名 + 比分 */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex-1 text-center">
+                        <div className="text-sm font-medium text-slate-200">{translateTeam(home)}</div>
+                      </div>
+                      <div className="text-xs text-slate-500 px-2">
+                        {hasScore ? (
+                          <span className="text-lg font-bold text-slate-300">{val.homeScore} - {val.awayScore}</span>
+                        ) : "VS"}
+                      </div>
+                      <div className="flex-1 text-center">
+                        <div className="text-sm font-medium text-slate-200">{translateTeam(away)}</div>
+                      </div>
+                    </div>
+                    {/* 盘口卡片 */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {val.hdp && (
+                        <div className="bg-slate-800/50 rounded-lg p-3">
+                          <div className="text-xs text-orange-400 mb-2 font-medium">让球</div>
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="text-slate-300">{home}</div>
+                            <div className="text-orange-300 font-bold">{val.hdp.line}</div>
+                            <div className="text-emerald-400">{val.hdp.homeOdds}</div>
+                          </div>
+                          <div className="flex items-center justify-between text-sm mt-1">
+                            <div className="text-slate-300">{away}</div>
+                            <div className="text-slate-400">{val.hdp.awayLine || val.hdp.line}</div>
+                            <div className="text-emerald-400">{val.hdp.awayOdds}</div>
+                          </div>
+                        </div>
+                      )}
+                      {val.ou && (
+                        <div className="bg-slate-800/50 rounded-lg p-3">
+                          <div className="text-xs text-blue-400 mb-2 font-medium">得分大小</div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-500">大</span>
+                            <span className="text-blue-300 font-bold">{val.ou.line}</span>
+                            <span className="text-emerald-400">{val.ou.overOdds}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-sm mt-1">
+                            <span className="text-slate-500">小</span>
+                            <span className="text-slate-400">{val.ou.line}</span>
+                            <span className="text-emerald-400">{val.ou.underOdds}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+
+{activeTab === "raw" && (
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {!crawlerData ? (
             <div className="text-center py-8 text-slate-500 text-sm">
