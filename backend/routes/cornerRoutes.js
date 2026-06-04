@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount } from "../services/cornerService.js";
+import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/cornerCrawler.js";
@@ -338,12 +338,13 @@ router.get("/corner/bet-config", async (req, res) => {
 // ======================== POST /api/corner/bet-config ========================
 router.post("/corner/bet-config", async (req, res) => {
   try {
-    const { amount, isRealMode, trackedMatchIds, autoBetEnabled } = req.body || {};
+    const { amount, isRealMode, trackedMatchIds, autoBetEnabled, autoBetConfirmRequired } = req.body || {};
     const config = {};
     if (amount !== undefined) config.amount = amount;
     if (isRealMode !== undefined) config.isRealMode = isRealMode;
     if (trackedMatchIds !== undefined) config.trackedMatchIds = trackedMatchIds;
     if (autoBetEnabled !== undefined) config.autoBetEnabled = autoBetEnabled;
+    if (autoBetConfirmRequired !== undefined) config.autoBetConfirmRequired = autoBetConfirmRequired;
     setBetConfig(config);
     res.json({ success: true });
   } catch (err) {
@@ -442,6 +443,55 @@ router.post("/corner/bet/manual", async (req, res) => {
     }
   } catch (err) {
     console.error("[cornerRoutes] /corner/bet/manual error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/pending-confirms ========================
+router.get("/corner/pending-confirms", async (req, res) => {
+  try {
+    const rows = await getPendingConfirms();
+    res.json({ success: true, data: rows, count: rows.length });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/pending-confirms error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/confirm-bet/:id ========================
+router.post("/corner/confirm-bet/:id", async (req, res) => {
+  try {
+    const betId = parseInt(req.params.id);
+    if (!betId) {
+      return res.status(400).json({ success: false, error: "无效的投注ID" });
+    }
+    const result = await confirmBet(betId);
+    if (result.success) {
+      res.json({ success: true, betId: result.betId, message: "投注已确认执行" });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/confirm-bet error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== POST /api/corner/reject-bet/:id ========================
+router.post("/corner/reject-bet/:id", async (req, res) => {
+  try {
+    const betId = parseInt(req.params.id);
+    if (!betId) {
+      return res.status(400).json({ success: false, error: "无效的投注ID" });
+    }
+    const result = await rejectBet(betId);
+    if (result.success) {
+      res.json({ success: true, message: "投注已拒绝" });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/reject-bet error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

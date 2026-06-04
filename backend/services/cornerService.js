@@ -40,7 +40,8 @@ let betConfig = {
   amount: parseInt(process.env.CORNER_BET_AMOUNT || "100", 10),
   isRealMode: process.env.CORNER_BET_REAL_MODE === "true",
   trackedMatchIds: [],
-  autoBetEnabled: false
+  autoBetEnabled: false,
+  autoBetConfirmRequired: false  // ★ 二次确认：true 时投注需用户手动确认
 };
 
 export function getAutoBetConfig() { return { ...betConfig, autoBetMasterSwitch: true }; }
@@ -469,6 +470,29 @@ async function processBetQueue() {
 
   try {
     const task = betQueue.shift();
+
+    // ★ 二次确认：开启后投注进入 pending_confirm 状态，等待用户手动确认
+    if (betConfig.autoBetConfirmRequired) {
+      console.log("[cornerService] 二次确认模式: bet#" + task.betId + " " + task.matchName + " 等待用户确认");
+      await run(
+        "UPDATE corner_bets SET status = 'pending_confirm' WHERE id = ?",
+        [task.betId]
+      );
+      if (task.historyId) {
+        await run(
+          "UPDATE corner_history SET bet_status = 'pending_confirm' WHERE id = ?",
+          [task.historyId]
+        ).catch(() => {});
+      } else {
+        await run(
+          "UPDATE corner_history SET bet_status = 'pending_confirm' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'pending'",
+          [task.matchId, String(task.strategyId)]
+        ).catch(() => {});
+      }
+      isProcessing = false;
+      return;
+    }
+
     console.log("[cornerService] 执行投注: bet#" + task.betId + " " + task.matchName);
 
     const betData = {
@@ -487,7 +511,6 @@ async function processBetQueue() {
         "UPDATE corner_bets SET status = 'executed', executed_at = ? WHERE id = ?",
         [new Date().toISOString(), task.betId]
       );
-      // 同步更新 corner_history（通过 lastID 精确更新）
       if (task.historyId) {
         await run(
           "UPDATE corner_history SET bet_status = 'executed' WHERE id = ?",
@@ -504,7 +527,6 @@ async function processBetQueue() {
         "UPDATE corner_bets SET status = 'failed', error_message = ? WHERE id = ?",
         [result.error || "unknown", task.betId]
       );
-      // 同步更新 corner_history（通过 lastID 精确更新）
       if (task.historyId) {
         await run(
           "UPDATE corner_history SET bet_status = 'failed', error_message = ? WHERE id = ?",
@@ -688,6 +710,65 @@ export async function getCornerHistory(limit = 20) {
   await ensureTable();
   try { return await query("SELECT * FROM corner_history ORDER BY id DESC LIMIT ?", [limit]) || []; }
   catch (err) { return []; }
+}
+
+// ======================== 二次确认机制 ========================
+
+/**
+ * 获取待确认的投注列表
+ */
+export async function getPendingConfirms() {
+  await ensureBetTable();
+  try {
+    return await query(
+      "SELECT * FROM corner_bets WHERE status = 'pending_confirm' ORDER BY id ASC"
+    ) || [];
+  } catch (err) {
+    console.error("[cornerService] 查询待确认投注失败:", err.message);
+    return [];
+  }
+}
+
+/**
+ * 确认投注并执行
+ */
+export async function confirmBet(betId) {
+  await ensureBetTable();
+  try {
+    const [bet] = await query("SELECT * FROM corner_bets WHERE id = ? AND status = 'pending_confirm'", [betId]) || [];
+    if (!bet) {
+      return { success: false, error: "投注不存在或状态不是待确认" };
+    }
+    // 加入队列执行
+    betQueue.push({
+      betId: bet.id,
+      matchId: bet.match_id,
+      matchName: bet.match_name || "",
+      strategyId: bet.strategy_id,
+      odds: bet.odds,
+      amount: bet.amount,
+      handicap: 0
+    });
+    processBetQueue().catch(e =>
+      console.error("[cornerService] 确认投注执行失败:", e.message)
+    );
+    return { success: true, betId: bet.id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 拒绝投注
+ */
+export async function rejectBet(betId) {
+  await ensureBetTable();
+  try {
+    await run("UPDATE corner_bets SET status = 'rejected' WHERE id = ? AND status = 'pending_confirm'", [betId]);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 // ======================== 模拟记录管理（新增） ========================
