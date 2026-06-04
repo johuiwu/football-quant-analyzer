@@ -1,4 +1,4 @@
-﻿import { getSharedPage, isLoggedIn } from "./browserPool.js";
+import { getSharedPage, isLoggedIn } from "./browserPool.js";
 import { navigateToCorners } from "./cornerCrawler.js";
 import { handlePopups } from "./crawlerShared.js";
 
@@ -164,8 +164,7 @@ export async function executeBet(betData) {
     // 8. 点击确认投注按钮
     const confirmed = await page.evaluate(() => {
       const keywords = [
-        "bet", "place", "confirm", "submit", "确认", "下单", "投注",
-        "ok", "yes", "确定", "提交"
+        "下单", "投注", "place bet", "confirm bet"
       ];
       const btns = document.querySelectorAll("button, [class*='btn'], a[class*='btn'], input[type='submit'], input[type='button']");
       for (const btn of btns) {
