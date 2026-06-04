@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 // ==================== 类型定义 ====================
@@ -402,7 +402,6 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     }
     set({ isMonitoring: true });
     fetch('/api/corner/start', { method: 'POST' }).catch(() => {});
-    fetch('/api/corner/resume', { method: 'POST' }).catch(() => {});
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已启动", level: "info" });
     await get().refreshData();
     monitorInterval = setInterval(() => { get().refreshData(); }, get().settings.pollInterval);
