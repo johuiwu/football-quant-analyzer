@@ -1,5 +1,5 @@
 import { getSharedPage, isLoggedIn } from "./browserPool.js";
-import { navigateToCorners } from "./cornerCrawler.js";
+import { navigateToCornersFast } from "./cornerCrawler.js";
 import { handlePopups } from "./crawlerShared.js";
 
 // ======================== 工具函数 ========================
@@ -62,7 +62,7 @@ export async function executeBet(betData) {
     console.log(`[BetExecutor] 开始执行投注: ${matchName} (${matchId}) 策略${strategyId} 赔率${odds} 金额${amount}`);
 
     // 3. 导航到角球页面
-    await navigateToCorners(page);
+    await navigateToCornersFast(page);
     await sleep(3000);
     await handlePopups(page);
 

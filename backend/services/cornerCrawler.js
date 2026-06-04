@@ -1709,6 +1709,108 @@ export async function pollCornerMatches(onUpdate, intervalMs) {
   return () => { stopped = true; if (timer) clearInterval(timer); };
 }
 
+// ======================== 轻量级角球导航（投注专用） ========================
+/**
+ * 轻量级角球页面导航，仅用于投注执行，跳过数据爬取流程
+ * 与 navigateToCorners 相比，跳过盘口数据等待、页面诊断、懒加载滚动等
+ */
+export async function navigateToCornersFast(page) {
+  console.log("[cornerCrawler] ===== Fast navigate to Corner page (bet only) =====");
+
+  // 1. 检查是否已在 CORNERS tab（In-Play）
+  const alreadyOnCorners = await page.evaluate(() => {
+    const cnTab = document.getElementById('tab_cn');
+    if (!cnTab || !(cnTab.classList.contains('on') || cnTab.classList.contains('active'))) return false;
+    if (document.querySelectorAll('div.box_lebet').length === 0) return false;
+    const activeTabs = document.querySelectorAll('.btn_filter.on, .btn_filter.active');
+    for (const tab of activeTabs) {
+      const text = (tab.textContent || '').toLowerCase().trim();
+      if (text === 'today' || text === '今日') return false;
+    }
+    return true;
+  });
+  if (alreadyOnCorners) {
+    console.log("[cornerCrawler] Already on CORNERS tab, skipping navigation");
+    await new Promise(r => setTimeout(r, 1000));
+    await handlePopups(page);
+    return { success: true };
+  }
+
+  // 2. 检查是否在 In-Play
+  const isInPlay = await page.evaluate(() => {
+    const url = window.location.href.toLowerCase();
+    if (url.includes('inplay') || url.includes('in-play')) return true;
+    const activeFilters = document.querySelectorAll('.btn_filter.on, .btn_filter.active');
+    return Array.from(activeFilters).some(el => {
+      const text = (el.textContent || '').toLowerCase();
+      return text.includes('inplay') || text.includes('in-play') || text.includes('滚球');
+    });
+  });
+
+  if (!isInPlay) {
+    console.log("[cornerCrawler] Switching to In-Play...");
+    await page.evaluate(() => {
+      const all = document.querySelectorAll('#showtype_now, div.btn_filter, div.btn_title_le');
+      for (const el of all) {
+        const t = (el.textContent || '').trim();
+        if (t === '滚球' || t.includes('In-Play') || t.includes('inplay')) {
+          el.scrollIntoView({ block: 'center' });
+          el.click();
+          return;
+        }
+      }
+    });
+    await new Promise(r => setTimeout(r, 3000));
+    await handlePopups(page);
+  }
+
+  // 3. 点击 CORNERS tab
+  let cnClicked = false;
+  try {
+    cnClicked = await page.evaluate(() => {
+      const cnTab = document.getElementById('tab_cn');
+      if (cnTab && !cnTab.classList.contains('on') && !cnTab.classList.contains('active')) {
+        cnTab.scrollIntoView({ block: 'center' });
+        cnTab.click();
+        return true;
+      }
+      return false;
+    });
+  } catch (e) {}
+
+  if (!cnClicked) {
+    // 回退：通过文本查找 CORNERS tab
+    try {
+      await page.evaluate(() => {
+        const all = document.querySelectorAll('#league_name, div.btn_filter, div[id*="tab"], div.btn_title_le');
+        for (const el of all) {
+          const t = (el.textContent || '').trim();
+          if (t === 'CORNERS' || t === '角球' || t.includes('CORNERS')) {
+            el.scrollIntoView({ block: 'center' });
+            el.click();
+            return;
+          }
+        }
+      });
+    } catch (e) {}
+  }
+
+  // 4. 等待比赛行出现（不等待完整盘口数据）
+  await new Promise(r => setTimeout(r, 3000));
+  await handlePopups(page);
+
+  try {
+    await page.waitForFunction(
+      () => document.querySelectorAll('div.box_lebet').length > 0,
+      { timeout: 8000 }
+    );
+  } catch (e) {
+    console.log("[cornerCrawler] Fast nav: match rows not found, continuing anyway");
+  }
+
+  return { success: true };
+}
+
 // ======================== 全局轮询 ========================
 export function startCornerPolling(onUpdate) {
   if (pollingActive) {
