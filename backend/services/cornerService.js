@@ -563,15 +563,6 @@ export async function addManualBet(matchData) {
     [matchId, matchName || "", String(strategyId), odds || 0, amount]
   );
 
-  await saveCornerHistory({
-    match_id: matchId,
-    match_name: matchName || "",
-    strategy_id: String(strategyId),
-    odds: odds || 0,
-    amount: amount,
-    bet_status: "pending"
-  }).catch(() => {});
-
   const historyResult = await saveCornerHistory({
     match_id: matchId,
     match_name: matchName || "",
