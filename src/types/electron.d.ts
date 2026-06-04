@@ -32,6 +32,15 @@ declare global {
       onDownloadProgress: (callback: (progress: DownloadProgress) => void) => void;
       onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => void;
       removeUpdateListeners: () => void;
+      // ★ 角球系统 IPC 接口
+      corner?: {
+        getStatus: () => Promise<{ success: boolean; polling: any; alert: any; betConfig: any }>;
+        startPolling: () => Promise<{ success: boolean; interval?: number }>;
+        stopPolling: () => Promise<{ success: boolean }>;
+        getPendingConfirms: () => Promise<{ success: boolean; data: any[]; count: number }>;
+        confirmBet: (betId: number) => Promise<{ success: boolean; betId?: number; error?: string }>;
+        rejectBet: (betId: number) => Promise<{ success: boolean; error?: string }>;
+      };
     };
   }
 }

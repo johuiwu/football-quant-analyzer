@@ -22,9 +22,16 @@ function loadServerModule() {
       fs.mkdirSync(dbPath, { recursive: true });
     }
 
+    // Cookie 文件路径（必须是可写目录）
+    const userDataPath = path.join(process.env.APPDATA || process.env.HOME || '.', '足球竞彩量化分析系统');
+    const cookiePath = isDev
+      ? path.join(__dirname, "..", "backend", "cookies.json")
+      : path.join(userDataPath, "cookies.json");
+
     const staticDir = path.join(__dirname, "..", "dist");
 
     process.env.DB_DIR = dbPath;
+    process.env.COOKIE_PATH = cookiePath;
     process.env.STATIC_DIR = staticDir;
     // 禁用 qiumiwu 爬虫（其动态 import TS 文件在生产环境不可用）
     process.env.DISABLE_CRAWLER = "true";
@@ -69,7 +76,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: "足球量化分析系统",
-    icon: path.join(__dirname, "..", "public", "icon.ico"),
+    icon: isDev ? path.join(__dirname, "..", "public", "icon.ico") : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -115,6 +122,57 @@ app.whenReady().then(async () => {
   // IPC 处理器
   ipcMain.handle('get-app-version', () => app.getVersion());
   ipcMain.handle('get-is-packaged', () => app.isPackaged());
+
+  // ★ 角球系统 IPC 通道
+  ipcMain.handle('corner:get-status', async () => {
+    try {
+      const { getBackendPollingStatus, getAlertStatus, getBetConfig } = require('../backend/services/cornerService.js');
+      const polling = getBackendPollingStatus();
+      const alert = getAlertStatus();
+      const bet = getBetConfig();
+      return { success: true, polling, alert, betConfig: bet };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('corner:start-polling', async () => {
+    try {
+      const { startCornerBackendPolling } = require('../backend/services/cornerService.js');
+      const result = startCornerBackendPolling();
+      return { success: true, ...result };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('corner:stop-polling', async () => {
+    try {
+      const { stopCornerBackendPolling } = require('../backend/services/cornerService.js');
+      const result = stopCornerBackendPolling();
+      return { success: true, ...result };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('corner:pending-confirms', async () => {
+    try {
+      const { getPendingConfirms } = require('../backend/services/cornerService.js');
+      const rows = await getPendingConfirms();
+      return { success: true, data: rows, count: rows.length };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('corner:confirm-bet', async (_event, betId) => {
+    try {
+      const { confirmBet } = require('../backend/services/cornerService.js');
+      const result = await confirmBet(betId);
+      return result;
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('corner:reject-bet', async (_event, betId) => {
+    try {
+      const { rejectBet } = require('../backend/services/cornerService.js');
+      const result = await rejectBet(betId);
+      return result;
+    } catch (e) { return { success: false, error: e.message }; }
+  });
 
   if (!loadServerModule()) {
     console.error("[electron] 无法加载后端，退出");
