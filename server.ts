@@ -8,7 +8,7 @@ import rateLimit from "express-rate-limit";
 
 import apiRoutes from "./backend/routes/index.js";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 // ==================== 环境变量校验 ====================
 const recommendedEnvVars = [
