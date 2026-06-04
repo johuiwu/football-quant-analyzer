@@ -683,7 +683,7 @@ export async function executePendingBets() {
   return { success: true, executed: 0, queued };
 }
 
-export async function getCornerBets({ status, limit = 50 }) {
+export async function getCornerBets({ status, limit = 50, matchId = null }) {
   await ensureBetTable();
   try {
     let sql = "SELECT * FROM corner_bets WHERE 1=1";
@@ -691,6 +691,10 @@ export async function getCornerBets({ status, limit = 50 }) {
     if (status) {
       sql += " AND status = ?";
       params.push(status);
+    }
+    if (matchId) {
+      sql += " AND match_id = ?";
+      params.push(matchId);
     }
     sql += " ORDER BY id DESC LIMIT ?";
     params.push(limit);

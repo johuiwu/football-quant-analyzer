@@ -355,8 +355,8 @@ router.post("/corner/bet-config", async (req, res) => {
 // ======================== GET /api/corner/bets ========================
 router.get("/corner/bets", async (req, res) => {
   try {
-    const { status, limit } = req.query;
-    const rows = await getCornerBets({ status: status || null, limit: parseInt(limit) || 50 });
+    const { status, limit, matchId } = req.query;
+    const rows = await getCornerBets({ status: status || null, limit: parseInt(limit) || 50, matchId: matchId || null });
     res.json({ success: true, data: rows, count: rows.length });
   } catch (err) {
     console.error("[cornerRoutes] /corner/bets error:", err.message);
