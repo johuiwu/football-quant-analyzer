@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { Settings, RotateCcw, ChevronDown, ChevronUp, Power, BarChart3 } from "lucide-react";
 import { useCornerStore, CornerStrategy, BacktestStats } from "../../store/cornerStore";
 import SettingsPanel from "./SettingsPanel";
@@ -136,8 +136,8 @@ export default function StrategyConfigPanel() {
                         <div className="text-white font-semibold">{stats.triggered}</div>
                       </div>
                       <div className="bg-slate-800/50 p-2 rounded">
-                        <div className="text-slate-500 text-[10px]">胜率</div>
-                        <div className="text-emerald-400 font-semibold">{stats.winRate}%</div>
+                        <div className="text-slate-500 text-[10px]">执行成功率</div>
+                        <div className="text-emerald-400 font-semibold">{stats.successRate}%</div>
                       </div>
                       <div className="bg-slate-800/50 p-2 rounded">
                         <div className="text-slate-500 text-[10px]">总收益</div>
@@ -147,7 +147,7 @@ export default function StrategyConfigPanel() {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-1.5 text-[10px] text-slate-500">
-                      <span>胜 {stats.wins} / 负 {stats.losses}</span>
+                      <span>成功 {stats.executed} / 失败 {stats.failed}</span>
                       <span className="text-right">ROI {stats.roi}%</span>
                     </div>
                   </div>
@@ -229,7 +229,7 @@ export default function StrategyConfigPanel() {
                       </div>
                     </div>
                     <div>
-                       <label className={labelClass}>目标赔率（≥）<span className="text-[9px] text-amber-500 ml-1">马来盘</span></label>
+                       <label className={labelClass}>目标赔率（≥）<span className="text-[9px] text-amber-500 ml-1">HK盘</span></label>
                       <div className="w-24">
                         <input type="number" className={numInputClass} min={0.5} max={2.0} step={0.05}
                           value={s.targetOdds} onChange={(e) => handleChange(s.id, "targetOdds", Number(e.target.value))} />

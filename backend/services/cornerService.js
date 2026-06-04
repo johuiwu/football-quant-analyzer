@@ -717,20 +717,20 @@ export async function getStrategyStats(strategyId) {
   await ensureTable();
   try {
     const total = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ?", [strategyId]);
-    const wins = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ? AND bet_status = 'win'", [strategyId]);
-    const losses = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ? AND bet_status = 'lose'", [strategyId]);
+    const executed = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ? AND bet_status = 'executed'", [strategyId]);
+    const failed = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ? AND bet_status = 'failed'", [strategyId]);
     const profit = await query("SELECT SUM(profit_loss) as total FROM corner_history WHERE strategy_id = ?", [strategyId]);
     
     const totalCount = total[0]?.count || 0;
-    const winCount = wins[0]?.count || 0;
-    const lossCount = losses[0]?.count || 0;
+    const executedCount = executed[0]?.count || 0;
+    const failedCount = failed[0]?.count || 0;
     const totalProfit = profit[0]?.total || 0;
     
     return {
       triggered: totalCount,
-      wins: winCount,
-      losses: lossCount,
-      winRate: totalCount > 0 ? (winCount / totalCount) * 100 : 0,
+      executed: executedCount,
+      failed: failedCount,
+      successRate: totalCount > 0 ? (executedCount / totalCount) * 100 : 0,
       totalProfit,
       roi: totalCount > 0 ? (totalProfit / totalCount) * 100 : 0
     };
@@ -738,9 +738,9 @@ export async function getStrategyStats(strategyId) {
     console.error("[cornerService] 获取策略统计失败:", err.message);
     return {
       triggered: 0,
-      wins: 0,
-      losses: 0,
-      winRate: 0,
+      executed: 0,
+      failed: 0,
+      successRate: 0,
       totalProfit: 0,
       roi: 0
     };

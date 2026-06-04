@@ -91,9 +91,9 @@ export interface BacktestStats {
   strategyId: string;
   strategyName: string;
   triggered: number;
-  wins: number;
-  losses: number;
-  winRate: number;
+  executed: number;
+  failed: number;
+  successRate: number;
   totalProfit: number;
   roi: number;
 }
