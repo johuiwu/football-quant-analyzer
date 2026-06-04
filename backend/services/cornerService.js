@@ -90,9 +90,8 @@ export function startCornerBackendPolling() {
         }
       }
 
-      const mainMk = result.mainMarkets || {};
       cachedMatches = matches;
-        cachedMainMarkets = mainMk;
+        cachedMainMarkets = mainMk || {};
       lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
@@ -237,15 +236,16 @@ export function resumeCornerBackendPolling() {
         }
       }
 
+      const mainMk = result.mainMarkets || {};
       cachedMatches = matches;
-        cachedMainMarkets = mainMk || {};
+      cachedMainMarkets = mainMk;
       lastFetchTime = Date.now(); // 更新缓存时间戳
       consecutiveFailures = 0;
       console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
-        if (matches.length > 0 && !pollingFirstDone) {
-          pollingFirstDone = true;
-          console.log("[cornerService] 首次爬取完成，缓存已就绪");
-        }
+      if (matches.length > 0 && !pollingFirstDone) {
+        pollingFirstDone = true;
+        console.log("[cornerService] 首次爬取完成，缓存已就绪");
+      }
 
       // 检查是否需要执行自动投注
       if (betConfig.isRealMode && betConfig.autoBetEnabled) {
