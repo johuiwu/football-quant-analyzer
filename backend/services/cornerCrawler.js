@@ -11,26 +11,26 @@ import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDela
 
 puppeteer.use(StealthPlugin());
 
-// ======================== 閰嶇疆 ========================
+// ======================== 配置 ========================
 const HG_USERNAME = process.env.HG_USERNAME || "";
 const HG_PASSWORD = process.env.HG_PASSWORD || "";
 if (!process.env.HG_USERNAME || !process.env.HG_PASSWORD) {
-  console.warn("[cornerCrawler] 鐜鍙橀噺 HG_USERNAME / HG_PASSWORD 鏈缃紝灏嗕娇鐢ㄨ繍琛屾椂鍑嵁");
+  console.warn("[cornerCrawler] 环境变量 HG_USERNAME / HG_PASSWORD 未设置，将使用运行时凭据");
 }
 const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "5000", 10);
 
-// 杩愯鏃跺嚟鎹?
+// 运行时凭据
 let runtimeCredentials = null;
 let loginInProgress = false;
 let crawlingLock = false;
 let pollingActive = false;
 let pollingStopFn = null;
 
-// XHR 鎷︽埅缂撳瓨
+// XHR 拦截缓存
 let capturedResponses = [];
 const seenRequestUrls = new Set();
 
-// ======================== 浣欓鎻愬彇 ========================
+// ======================== 余额提取 ========================
 async function extractBalance(page) {
   try {
     const balance = await page.evaluate(() => {
@@ -38,10 +38,10 @@ async function extractBalance(page) {
       if (!body) return null;
       const text = body.textContent || "";
       const patterns = [
-        /Balance[:\s]*[楼$鈧琞?\s*([\d,]+\.?\d*)/i,
-        /浣欓[:\s]*[楼$鈧琞?\s*([\d,]+\.?\d*)/i,
-        /Credit[:\s]*[楼$鈧琞?\s*([\d,]+\.?\d*)/i,
-        /[楼$鈧琞\s*([\d,]+\.?\d{2})/
+        /Balance[:\s]*[$]?\s*([\d,]+\.?\d*)/i,
+        /余额[:\s]*[¥$€]?\s*([\d,]+\.?\d*)/i,
+        /Credit[:\s]*[$]?\s*([\d,]+\.?\d*)/i,
+        /[$]?\s*([\d,]+\.?\d{2})/
       ];
       for (const pattern of patterns) {
         const match = text.match(pattern);
@@ -51,20 +51,20 @@ async function extractBalance(page) {
     });
     if (balance !== null) {
       setBalance(balance);
-      console.log("[cornerCrawler] 浣欓: " + balance);
+      console.log("[cornerCrawler] 余额: " + balance);
     }
     return balance;
   } catch (e) {
-    console.log("[cornerCrawler] 浣欓鎻愬彇澶辫触:", e.message);
+    console.log("[cornerCrawler] 余额提取失败:", e.message);
     return null;
   }
 }
 
-// ======================== 鐧诲綍娴佺▼ ========================
+// ======================== 登录流程 ========================
 async function ensureLogin() {
-  // 鐧诲綍骞跺彂淇濇姢
+  // 登录并发保护
   if (loginInProgress) {
-    console.log("[cornerCrawler] 鐧诲綍姝ｅ湪杩涜涓紝绛夊緟...");
+    console.log("[cornerCrawler] 登录正在进行中，等待...");
     while (loginInProgress) {
       await new Promise(r => setTimeout(r, 1000));
     }
@@ -79,23 +79,23 @@ async function ensureLogin() {
 
   const bi = await getSharedBrowser(false);
 
-  // 濡傛灉宸叉湁娲昏穬椤甸潰涓斿凡鐧诲綍锛岀洿鎺ュ鐢?
+  // 如果已有活跃页面且已登录，直接复用
   const existingPage = getSharedPage();
   if (existingPage && isBrowserActive()) {
     try {
-      // 妫€鏌ラ〉闈㈡槸鍚︿粛鐒跺彲鐢?
+      // 检查页面是否仍然可用
       const url = await existingPage.url();
-      console.log("[cornerCrawler] 澶嶇敤宸叉湁鐧诲綍浼氳瘽锛屽綋鍓嶉〉闈?", url);
+      console.log("[cornerCrawler] 复用已有登录会话，当前页面:", url);
       return existingPage;
     } catch (e) {
-      console.warn("[cornerCrawler] 椤甸潰涓嶅彲鐢紝闇€瑕侀噸鏂扮櫥褰?", e.message);
+      console.warn("[cornerCrawler] 页面不可用，需要重新登录:", e.message);
       setSharedPage(null);
     }
   }
 
-  // 妫€鏌ユ槸鍚﹀凡鐧诲綍锛堟祻瑙堝櫒娲昏穬浣嗛〉闈㈠彲鑳藉凡鍏抽棴锛?
+  // 检查是否已登录（浏览器活跃但页面可能已关闭）
   if (isLoggedIn()) {
-    console.log("[cornerCrawler] 娴忚鍣ㄥ凡鐧诲綍浣嗛〉闈负绌猴紝鍒涘缓鏂伴〉闈?..");
+    console.log("[cornerCrawler] 浏览器已登录但页面为空，创建新页面...");
     loginInProgress = true;
     try {
     const page = await bi.newPage();
@@ -104,7 +104,7 @@ async function ensureLogin() {
     await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
     await new Promise(r => setTimeout(r, 5000));
     setSharedPage(page);
-    console.log("[cornerCrawler] 鏂伴〉闈㈠垱寤哄畬鎴?);
+    console.log("[cornerCrawler] 新页面创建完成");
     return page;
     } finally {
       loginInProgress = false;
@@ -113,7 +113,7 @@ async function ensureLogin() {
 
   loginInProgress = true;
   try {
-  console.log("[cornerCrawler] 姝ｅ湪鐧诲綍 hga050.com...");
+  console.log("[cornerCrawler] 正在登录 hga050.com...");
   const page = await bi.newPage();
 
   await page.setUserAgent(
@@ -128,7 +128,7 @@ async function ensureLogin() {
   await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
   await new Promise(r => setTimeout(r, 8000));
   
-  // 淇濆瓨鍒濆椤甸潰鎴浘
+  // 保存初始页面截图
   try {
     await page.screenshot({ path: "debug/login-page-1.png" });
   } catch(e) {}
@@ -136,7 +136,7 @@ async function ensureLogin() {
   const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
   const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
   
-  // 鍏堟煡鐪嬮〉闈㈡湁鍝簺琛ㄥ崟鍏冪礌
+  // 先查看页面有哪些表单元素
   const pageElements = await page.evaluate(() => {
     const inputs = Array.from(document.querySelectorAll('input')).map(i => ({
       type: i.type,
@@ -153,10 +153,10 @@ async function ensureLogin() {
     }));
     return { inputs, buttons };
   });
-  console.log("[cornerCrawler] 椤甸潰杈撳叆妗?", JSON.stringify(pageElements.inputs));
-  console.log("[cornerCrawler] 椤甸潰鎸夐挳:", JSON.stringify(pageElements.buttons));
+  console.log("[cornerCrawler] 页面输入框:", JSON.stringify(pageElements.inputs));
+  console.log("[cornerCrawler] 页面按钮:", JSON.stringify(pageElements.buttons));
 
-  // 鏇存櫤鑳界殑閫夋嫨鍣ㄧ瓥鐣?
+  // 更智能的选择器策略
   const usernameSelectors = [
     "input#usr",
     "input#username",
@@ -178,13 +178,13 @@ async function ensureLogin() {
     'button[type="submit"]'
   ];
 
-  // 濉叆鐢ㄦ埛鍚?
+  // 填入用户名
   let usernameFilled = false;
   for (const selector of usernameSelectors) {
     try {
       const el = await page.$(selector);
       if (el) {
-        console.log("[cornerCrawler] 浣跨敤鐢ㄦ埛鍚嶉€夋嫨鍣ㄦ垚鍔?", selector);
+        console.log("[cornerCrawler] 使用用户名选择器成功:", selector);
         await el.click({ clickCount: 3 });
         await el.type(username, { delay: 80 });
         usernameFilled = true;
@@ -193,9 +193,9 @@ async function ensureLogin() {
     } catch(e) {}
   }
   
-  // 澶囦唤鏂规锛氱洿鎺ユ壘鎵€鏈夊彲瑙佺殑 text 杈撳叆妗?
+  // 备选方案：直接找所有可见的 text 输入框
   if (!usernameFilled) {
-    console.log("[cornerCrawler] 浣跨敤澶囦唤绛栫暐锛氭煡鎵炬墍鏈夋枃鏈緭鍏ユ...");
+    console.log("[cornerCrawler] 使用备选策略：查找所有文本输入框...");
     const allInputs = await page.$$('input[type="text"], input:not([type])');
     for (const el of allInputs) {
       try {
@@ -213,13 +213,13 @@ async function ensureLogin() {
     }
   }
 
-  // 濉叆瀵嗙爜
+  // 填入密码
   let passwordFilled = false;
   for (const selector of passwordSelectors) {
     try {
       const el = await page.$(selector);
       if (el) {
-        console.log("[cornerCrawler] 浣跨敤瀵嗙爜閫夋嫨鍣ㄦ垚鍔?", selector);
+        console.log("[cornerCrawler] 使用密码选择器成功:", selector);
         await el.click({ clickCount: 3 });
         await el.type(password, { delay: 80 });
         passwordFilled = true;
@@ -229,7 +229,7 @@ async function ensureLogin() {
   }
 
   if (!passwordFilled) {
-    console.log("[cornerCrawler] 浣跨敤澶囦唤绛栫暐锛氭煡鎵炬墍鏈夊瘑鐮佽緭鍏ユ...");
+    console.log("[cornerCrawler] 使用备选策略：查找所有密码输入框...");
     const allPwds = await page.$$('input[type="password"]');
     if (allPwds.length > 0) {
       await allPwds[0].click({ clickCount: 3 });
@@ -238,19 +238,19 @@ async function ensureLogin() {
     }
   }
 
-  // 淇濆瓨濉啓鍚庣殑鎴浘
+  // 保存填写后的截图
   try {
     await page.screenshot({ path: "debug/login-page-2-filled.png" });
   } catch(e) {}
 
-  // 鐐瑰嚮鐧诲綍鎸夐挳
+  // 点击登录按钮
   await new Promise(r => setTimeout(r, 800));
   let loginButtonClicked = false;
   for (const selector of loginButtonSelectors) {
     try {
       const el = await page.$(selector);
       if (el) {
-        console.log("[cornerCrawler] 浣跨敤鐧诲綍鎸夐挳閫夋嫨鍣?", selector);
+        console.log("[cornerCrawler] 使用登录按钮选择器:", selector);
         await el.click({ delay: 150 });
         loginButtonClicked = true;
         break;
@@ -259,12 +259,12 @@ async function ensureLogin() {
   }
   
   if (!loginButtonClicked) {
-    console.log("[cornerCrawler] 灏濊瘯鐐瑰嚮鎵€鏈夊彲鑳界殑鎸夐挳...");
+    console.log("[cornerCrawler] 尝试点击所有可能的按钮...");
     const allButtons = await page.$$('button, [role="button"], [onclick]');
     for (const btn of allButtons) {
       try {
         const text = await page.evaluate(el => (el.textContent || '').toLowerCase(), btn);
-        if (text.includes('login') || text.includes('鐧诲綍')) {
+        if (text.includes('login') || text.includes('登录')) {
           await btn.click({ delay: 150 });
           loginButtonClicked = true;
           break;
@@ -273,20 +273,20 @@ async function ensureLogin() {
     }
   }
 
-  // 绛夊緟鐧诲綍鎴愬姛
+  // 等待登录成功
   let loginSuccess = false;
   for (let i = 0; i < 90; i++) {
     await new Promise(r => setTimeout(r, 1000));
 
-    // 澶勭悊寮圭獥
+    // 处理弹窗
     if (i % 5 === 0) await handlePopups(page);
 
     const status = await page.evaluate(() => {
       const body = document.body;
       const bodyText = body ? body.textContent || "" : "";
       return {
-        hasInPlay: (bodyText.includes("In-Play") || bodyText.includes("婊氱悆")) && (bodyText.includes("Soccer") || bodyText.includes("瓒崇悆")),
-        hasMyBets: bodyText.includes("My Bets") || bodyText.includes("My Events") || bodyText.includes("鎴戠殑鎶曟敞") || bodyText.includes("鎴戠殑璧涗簨"),
+        hasInPlay: (bodyText.includes("In-Play") || bodyText.includes("In-Play")) && (bodyText.includes("Soccer") || bodyText.includes("Soccer")),
+        hasMyBets: bodyText.includes("My Bets") || bodyText.includes("My Events") || bodyText.includes("我的投注") || bodyText.includes("我的赛事"),
         hasPasscode: bodyText.includes("Passcode Login"),
         currentUrl: window.location.href,
         bodyTextSample: bodyText.substring(0, 200)
@@ -294,18 +294,18 @@ async function ensureLogin() {
     });
     
     if (i % 10 === 0) {
-      console.log("[cornerCrawler] 褰撳墠椤甸潰:", status.currentUrl);
-      console.log("[cornerCrawler] 椤甸潰鍐呭:", status.bodyTextSample);
+      console.log("[cornerCrawler] 当前页面:", status.currentUrl);
+      console.log("[cornerCrawler] 页面内容:", status.bodyTextSample);
     }
 
     if (status.hasInPlay && status.hasMyBets) {
       loginSuccess = true;
-      console.log("[cornerCrawler] 鉁?鐧诲綍鎴愬姛锛?);
+      console.log("[cornerCrawler] ✅ 登录成功！");
       break;
     }
 
     if (status.hasPasscode) {
-      console.log("[cornerCrawler] 妫€娴嬪埌 Passcode 寮圭獥锛屾嫆缁?..");
+      console.log("[cornerCrawler] 检测到 Passcode 弹窗，拒绝...");
       await page.evaluate(() => {
         document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn")
           .forEach(btn => { try { btn.click(); } catch (e) {} });
@@ -313,26 +313,26 @@ async function ensureLogin() {
     }
   }
 
-  // 淇濆瓨鏈€缁堢櫥褰曞悗鐨勬埅鍥?
+  // 保存最终登录后的截图
   try {
     await page.screenshot({ path: "debug/login-page-3-final.png" });
   } catch(e) {}
 
   if (!loginSuccess) {
-    console.error("[cornerCrawler] 鐧诲綍瓒呮椂");
+    console.error("[cornerCrawler] 登录超时");
     return null;
   }
 
   setSharedPage(page);
   await extractBalance(page);
-  console.log("[cornerCrawler] 鐧诲綍瀹屾垚锛岄〉闈㈠凡灏辩华");
+  console.log("[cornerCrawler] 登录完成，页面已就绪");
   return page;
 } finally {
   loginInProgress = false;
 }
 }
 
-// ======================== 瀵艰埅鍒拌鐞冮〉闈?========================
+// ======================== 导航到角球页面 ========================
 export async function navigateToCorners(page) {
   console.log("[cornerCrawler] ===== Navigating to Corner page =====");
   let contentSource = "unknown"; // "inplay", "today", "worldcup", "unknown"
@@ -365,18 +365,20 @@ export async function navigateToCorners(page) {
     } catch (e) { return false; }
   }
 
-  // 0. 蹇€熸鏌ワ細CORNERS tab 鏄惁宸叉縺娲讳笖褰撳墠鍦?In-Play锛堥潪 Today锛夎鍥?  const alreadyOnCorners = await page.evaluate(() => {
+  // 0. 检查是否已在 CORNERS tab（In-Play 而非 Today）
+  const alreadyOnCorners = await page.evaluate(() => {
     const cnTab = document.getElementById('tab_cn');
     if (!cnTab || !(cnTab.classList.contains('on') || cnTab.classList.contains('active'))) return false;
     if (document.querySelectorAll('div.box_lebet_odd').length === 0) return false;
 
-    // 鎺掗櫎 Today/浠婃棩瑙嗗浘锛氶伩鍏嶅皢璧涚▼鏁版嵁褰撲綔瀹炴椂鏁版嵁
+    // 排除 Today/今日视图：避免将赛程数据当作实时数据
     const activeTabs = document.querySelectorAll('.btn_filter.on, .btn_filter.active, [class*="today"], [class*="filter"]');
     for (const tab of activeTabs) {
       const text = (tab.textContent || '').toLowerCase().trim();
-      if (text === 'today' || text === '浠婃棩') return false;
+      if (text === 'today' || text === '今日') return false;
     }
-    // URL 妫€娴?    const url = window.location.href.toLowerCase();
+    // 检查 URL
+    const url = window.location.href.toLowerCase();
     if (url.includes('today') && !url.includes('inplay') && !url.includes('in-play')) return false;
 
     return true;
@@ -388,19 +390,20 @@ export async function navigateToCorners(page) {
     return { success: true, source: "corner-inplay-active", matchScores: {} };
   }
 
-  // 0.5: 纭繚鍦?In-Play 瑙嗗浘锛堣€岄潪 Today锛?  const isInPlay = await page.evaluate(() => {
+  // 0.5: 检查是否在 In-Play（而非 Today）
+  const isInPlay = await page.evaluate(() => {
     const url = window.location.href.toLowerCase();
     if (url.includes('inplay') || url.includes('in-play')) return true;
     const activeFilters = document.querySelectorAll('.btn_filter.on, .btn_filter.active');
     return Array.from(activeFilters).some(el => {
       const text = (el.textContent || '').toLowerCase();
-      return text.includes('inplay') || text.includes('in-play') || text.includes('婊氱悆');
+      return text.includes('inplay') || text.includes('in-play') || text.includes('In-Play');
     });
   });
 
   if (!isInPlay) {
     console.log("[cornerCrawler] Not on In-Play view, switching from Today...");
-    const inplayNames = ["In-Play", "婊氱悆", "INPLAY", "inplay", "Inplay"];
+    const inplayNames = ["In-Play", "In-Play", "INPLAY", "inplay", "Inplay"];
     for (const name of inplayNames) {
       if (await clickTab(page, name, 1500)) {
         console.log("[cornerCrawler] Switched to In-Play: " + name);
@@ -411,19 +414,19 @@ export async function navigateToCorners(page) {
     }
   }
 
-  // 1. Detect In-Play page content - 澶氶€夋嫨鍣ㄥ洖閫€绮剧畝鐗?
+  // 1. Detect In-Play page content - 多选择器回退精简版
   console.log("[cornerCrawler] Step 1: Detecting In-Play page content...");
   let contentLoaded = false;
   contentSource = "inplay";
 
-  // 绛夊緟椤甸潰娓叉煋锛堜娇鐢ㄥ绉嶉€夋嫨鍣ㄥ洖閫€锛岀綉绔欑粨鏋勫彲鑳藉凡鍙樺寲锛?
+  // 等待页面渲染（使用多种选择器回退，网站结构可能已变化）
   try {
     await page.waitForFunction(() => {
       const selectors = [
         'div[class*="team"]',            // 鐞冮槦鐩稿叧瀹瑰櫒
         'div.bet_box',                   // 鎶曟敞瀹瑰櫒锛堟柊缁撴瀯锛?
         'div.box_lebet[class*="bet_type_"]', // 鏃х粨鏋?
-        'div[class*="inplay"]',          // In-Play 鐩稿叧鍏冪礌
+        'div[class*="inplay"]',          // In-Play 相关元素
         '[class*="box_score"]',          // 姣斿垎瀹瑰櫒
         'div[class*="game"]',            // 姣旇禌瀹瑰櫒
         'div.btn_filter',                // 鐩樺彛鏍囩瀹瑰櫒
@@ -432,9 +435,9 @@ export async function navigateToCorners(page) {
         const els = document.querySelectorAll(sel);
         if (els.length >= 2) return true;
       }
-      // 閫氱敤妫€娴嬶細椤甸潰鏂囨湰鏄惁鍖呭惈姣旇禌鐩稿叧鍐呭
+      // 通用检测：页面文本是否包含比赛相关内容
       const bodyText = document.body?.textContent || '';
-      const hasInPlay = /\bIn.?Play\b|\b婊氱悆\b/i.test(bodyText);
+      const hasInPlay = /\bIn.?Play\b/i.test(bodyText);
       const hasTeamNames = /[A-Z][a-z]+[\s-]+(?:FC|United|City|AC|Real|Inter|vs|VS|v\b)/i.test(bodyText);
       return hasInPlay || hasTeamNames;
     }, { timeout: 8000 });
@@ -442,11 +445,11 @@ export async function navigateToCorners(page) {
     console.log("[cornerCrawler] In-Play content detected");
   } catch (e) {
     console.log("[cornerCrawler] In-Play detection timeout: " + e.message);
-    // 涓嶈繑鍥?false 鈥?ensureLogin 宸插皢椤甸潰瀵艰埅鍒?In-Play锛岄€夋嫨鍣ㄥ彲鑳戒笉鍖归厤
-    // 缁х画鎵ц Soccer 鈫?CORNERS 瀵艰埅
+    // 不返回 false — ensureLogin 已将页面导航到 In-Play，选择器可能不匹配
+    // 继续执行 Soccer → CORNERS 导航
   }
 
-  // 杈撳嚭椤甸潰鐘舵€佽瘖鏂?
+  // 输出页面状态诊断
   try {
     const pageDiag = await page.evaluate(() => ({
       url: window.location.href,
@@ -464,9 +467,9 @@ export async function navigateToCorners(page) {
   await new Promise(r => setTimeout(r, 2000));
   await handlePopups(page);
 
-  // === 1.5: 鐐瑰嚮 Soccer 鏍囩锛堝繀椤诲厛鍒囧埌 Soccer 瑙嗗浘锛孋ORNERS 鎵嶆湁鏁版嵁锛?===
+  // === 1.5: 点击 Soccer 标签（必须先切换到 Soccer 视图，CORNERS 才有数据） ===
   console.log("[cornerCrawler] Step 1.5: Clicking Soccer tab...");
-  const soccerNames = ["Soccer", "FOOTBALL", "Football", "瓒崇悆"];
+  const soccerNames = ["Soccer", "FOOTBALL", "Football", "Soccer"];
   let soccerClicked = false;
   for (const name of soccerNames) {
     soccerClicked = await clickTab(page, name, 1500);
@@ -479,7 +482,7 @@ export async function navigateToCorners(page) {
   if (!soccerClicked) {
     try {
       soccerClicked = await page.evaluate(() => {
-        const keywords = ["soccer", "football", "瓒崇悆"];
+        const keywords = ["soccer", "football", "Soccer"];
         const els = document.querySelectorAll("div, span, a, li, button, [id*='tab'], [class*='tab']");
         for (const el of els) {
           const text = (el.textContent || "").trim().toLowerCase();
@@ -501,7 +504,7 @@ export async function navigateToCorners(page) {
   }
   await handlePopups(page);
 
-  // 鎹曡幏姣旇禌姣斿垎锛堝湪 CORNERS 鍒囨崲涔嬪墠锛孲occer 椤甸潰鏄剧ず鐪熷疄姣旇禌姣斿垎锛?
+  // 捕获比赛比分（在 CORNERS 切换之前，Soccer 页面显示真实比赛比分）
   console.log("[cornerCrawler] Capturing match scores from Soccer view...");
   let matchScores = {};
   try {
@@ -529,8 +532,8 @@ export async function navigateToCorners(page) {
     matchScores = {};
   }
 
-  // 2. Click 瑙掔悆 tab
-  console.log("[cornerCrawler] Step 2: Click 瑙掔悆 tab...");
+  // 2. 点击角球 tab
+  console.log("[cornerCrawler] Step 2: 点击角球 tab...");
   let clicked = false;
   try {
     clicked = await page.evaluate(() => {
@@ -539,7 +542,7 @@ export async function navigateToCorners(page) {
       return false;
     });
     if (clicked) {
-      console.log("[cornerCrawler] 瑙掔悆 tab clicked via id");
+      console.log("[cornerCrawler] 角球 tab clicked via id");
       await new Promise(r => setTimeout(r, 2000));
     }
   } catch (e) {
@@ -547,7 +550,7 @@ export async function navigateToCorners(page) {
   }
 
   if (!clicked) {
-    clicked = await clickTab(page, "瑙掔悆", 2000);
+    clicked = await clickTab(page, "角球", 2000);
     if (!clicked) clicked = await clickTab(page, "CORNERS", 2000);
   }
 
@@ -558,10 +561,10 @@ export async function navigateToCorners(page) {
       );
       console.log("[cornerCrawler] Available tabs: " + JSON.stringify(allTabs));
     } catch(e) {}
-    console.warn("[cornerCrawler] 瑙掔悆 tab not found, using current page");
+    console.warn("[cornerCrawler] 角球 tab not found, using current page");
   }
 
-  // 3. 纭瑙掔悆 tab 鏄惁宸叉縺娲?
+  // 3. 确认角球 tab 是否已激活
   console.log("[cornerCrawler] Step 3: Confirming corner tab activation...");
   const cornerTabActive = await page.evaluate(() => {
     const cnTab = document.getElementById('tab_cn');
@@ -571,7 +574,7 @@ export async function navigateToCorners(page) {
     return isActive || hasCornerOdds;
   });
   if (!cornerTabActive) {
-    console.warn("[cornerCrawler] 瑙掔悆 tab 鍙兘鏈垚鍔熸縺娲伙紝灏濊瘯寮哄埗鍒锋柊...");
+    console.warn("[cornerCrawler] 角球 tab 可能未成功激活，尝试强制刷新...");
     try {
       await clickTab(page, "Soccer", 2000);
       await new Promise(r => setTimeout(r, 1500));
@@ -619,7 +622,7 @@ export async function navigateToCorners(page) {
   return { success: contentLoaded, source: contentSource, matchScores };
 }
 
-// ======================== DOM 瑙ｆ瀽瑙掔悆鐩樺彛 ========================
+// ======================== DOM 解析角球盘口 ========================
 async function parseCornerMarkets(page, matchScores = {}) {
   console.log("[cornerCrawler] ===== DOM Parsing Corner Markets =====");
 
@@ -628,7 +631,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
     const diag = await page.evaluate(() => {
       const info = { containerSelectors: {}, relevantClasses: [], sampleOuterHTML: "" };
 
-      // 娴嬭瘯澶氱瀹瑰櫒閫夋嫨鍣?
+      // 测试多种容器选择器
       const selTests = [
         "div.bet_box",
         "div.box_lebet",
@@ -645,7 +648,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
         }
       }
 
-      // 鎻愬彇椤甸潰涓墍鏈変笌鎶曟敞鐩稿叧鐨?class
+      // 提取页面中所有与投注相关的 class
       const allClasses = new Set();
       document.querySelectorAll("*").forEach(el => {
         if (el.className && typeof el.className === "string") {
@@ -673,7 +676,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
     const rawData = await page.evaluate((matchScores) => {
       const results = [];
 
-      // ====== 杈呭姪鍑芥暟 ======
+      // ====== 辅助函数 ======
       function safeText(el, selector) {
         const found = selector ? el.querySelector(selector) : el;
         return found ? (found.textContent || "").trim() : "";
@@ -689,21 +692,21 @@ async function parseCornerMarkets(page, matchScores = {}) {
         return parseFloat(t) || 0;
       }
 
-      // ====== 绛栫暐1: 鎸?div.bet_box 瑙ｆ瀽锛堢敤鎴锋彁渚涚殑鏂扮粨鏋勶級======
+      // ====== 策略1: 按 div.bet_box 解析（用户提供的新结构）======
       let containers = document.querySelectorAll("div.bet_box");
       if (containers.length > 0) {
         console.log("[DOM] Using div.bet_box containers, found " + containers.length);
 
         for (const box of containers) {
           try {
-            // 浠?bet_box 涓壘鐞冮槦鍚?- 鍚戜笂鏌ユ壘鏈€杩戠殑鑱旇禌鏍囩
+            // 从 bet_box 中找球队名 - 向上查找最近的联赛标签
             let league = "";
             let prev = box.previousElementSibling;
             while (prev && !league) {
               const leaEl = prev.querySelector("tt#lea_name, .lea_name, [class*='lea']");
               if (leaEl) { league = safeText(leaEl); break; }
               const text = (prev.textContent || "").trim();
-              // 濡傛灉鍓嶄竴涓厔寮熷厓绱犳槸鐭枃鏈紙鑱旇禌鍚嶏級锛屽垯浣跨敤瀹?
+              // 如果前一个兄弟元素是短文本（联赛名），则使用它
               if (text && text.length < 40 && !text.includes("\n") && !text.match(/^\d/)) {
                 league = text;
                 break;
@@ -711,13 +714,13 @@ async function parseCornerMarkets(page, matchScores = {}) {
               prev = prev.previousElementSibling;
             }
 
-            // 鑾峰彇鐞冮槦鍚?- bet_box 鍐呯殑 team div
+            // 获取球队名 - bet_box 内的 team div
             const homeEl = box.querySelector("div.box_team.teamH span.text_team, div.team_home, [class*='team_h']");
             const awayEl = box.querySelector("div.box_team.teamC span.text_team, div.team_away, [class*='team_a']");
             let homeTeam = safeText(homeEl);
             let awayTeam = safeText(awayEl);
 
-            // 濡傛灉 bet_box 鍐呮病鎵惧埌锛屽皾璇曞厔寮熷厓绱?
+            // 如果 bet_box 内找不到，尝试兄弟元素
             if (!homeTeam || !awayTeam) {
               const parentRow = box.closest("[class*='row'], [class*='game'], [class*='match']");
               if (parentRow) {
@@ -728,14 +731,14 @@ async function parseCornerMarkets(page, matchScores = {}) {
 
             if (!homeTeam || !awayTeam) continue;
 
-            // 姣斿垎鍜屾椂闂?鈥?浼樺厛浣跨敤 Soccer 椤垫崟鑾风殑鐪熷疄姣旇禌姣斿垎
+            // 比分和时间 — 优先使用 Soccer 页捕获的真实比赛比分
             let homeScore = 0, awayScore = 0;
             let cornerHomeCount = 0, cornerAwayCount = 0;
             let totalCorners = 0;
             let timeStr = "";
             let elapsedMinutes = 0;
 
-            // 浠?Soccer 椤垫崟鑾风殑姣旇禌姣斿垎锛堢湡瀹炴瘮鍒嗭紝闈炶鐞冩瘮鍒嗭級
+            // 从 Soccer 页捕获的比赛比分（真实比分，非角球比分）
             if (matchScores && homeTeam && awayTeam) {
               const key = (homeTeam + '|' + awayTeam).toLowerCase();
               const matchInfo = matchScores[key];
@@ -745,7 +748,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
               }
             }
 
-            // 瑙掔悆姣斿垎锛圕ORNERS 椤甸潰涓婄殑 box_score 鏄鐞冩暟鎹紝瀛樺叆鍗曠嫭瀛楁锛?
+            // 角球比分（CORNERS 页面上的 box_score 是角球数据，存入单独字段）
             const cornerScoreEls = box.querySelectorAll("div.box_score span.text_point");
             if (cornerScoreEls.length >= 2) {
               const ch = parseInt((cornerScoreEls[0].textContent || "0").trim(), 10);
@@ -756,7 +759,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
               }
             }
 
-            // 鏃堕棿瑙ｆ瀽
+            // 时间解析
             timeStr = safeText(box, "tt.text_time i, .text_time, [class*='timer'], [class*='minute']");
             if (timeStr) {
               if (timeStr.toUpperCase() === "HT") elapsedMinutes = 45;
@@ -768,7 +771,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
 
             totalCorners = safeInt(box, "span.game_total, [class*='corner'] span, [class*='total']");
 
-            // 鐩樺彛鏁版嵁: 浼樺厛鐢ㄦ爣绛炬枃鏈尮閰嶏紙閬垮厤璧旂巼纭紪鐮佺储寮曞鑷撮敊涔憋級
+            // 盘口数据: 优先用标签文本匹配（避免赔率硬编码索引导致错乱）
             let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
 
             const oddBlocks = box.querySelectorAll("div.box_lebet_odd:not(.box_lebet_half)");
@@ -783,7 +786,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
                 if (marketType === "O/U" && betButtons.length >= 2) {
                   let ouLine = safeFloat(betButtons[0], "tt.text_ballhead");
                   if (!ouLine) {
-                    // 鍥為€€锛氫粠 block 鏂囨湰涓彁鍙栨暟瀛?
+                    // 回退：从 block 文本中提取数字
                     const blockText = (block.textContent || "").trim();
                     const numMatch = blockText.match(/(\d+\.?\d*)/);
                     if (numMatch) ouLine = parseFloat(numMatch[1]) || 0;
@@ -814,7 +817,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
               }
             }
 
-            // 鍏滃簳: 鏍囩鍖归厤澶辫触鏃剁敤纭紪鐮佺储寮曪紙淇濈暀鍏煎鎬э級
+            // 兜底：标签匹配失败时用硬编码索引（保留兼容性）
             if (!cornerHDP && !cornerOU) {
               const oddsSpans = box.querySelectorAll("span.odds");
               const oddsValues = [];
@@ -842,7 +845,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
         }
       }
 
-      // ====== 绛栫暐2: 鎸?div.box_lebet.bet_type_cn 瑙ｆ瀽锛堝師鏈夌粨鏋勶級======
+      // ====== 策略2: 按 div.box_lebet.bet_type_cn 解析（原有结构）======
       if (results.length === 0) {
         containers = document.querySelectorAll("div.box_lebet.bet_type_cn");
         if (containers.length > 0) {
@@ -944,12 +947,12 @@ async function parseCornerMarkets(page, matchScores = {}) {
         }
       }
 
-      // ====== 绛栫暐3: 閫氱敤鍥為€€ - 鎵弿鎵€鏈?box_lebet 鍙樹綋 ======
+      // ====== 策略3: 通用回退 - 扫描所有 box_lebet 变体 ======
       if (results.length === 0) {
         containers = document.querySelectorAll("div[class*='box_lebet']");
         if (containers.length > 0) {
           console.log("[DOM] Using generic box_lebet containers, found " + containers.length);
-          // 杩囨护鎺夐潪姣旇禌瀹瑰櫒锛堝浠呮湁瀵艰埅鐨勶級
+          // 过滤掉非比赛容器（如仅有导航的）
           const matchContainers = [...containers].filter(el => {
             const text = (el.textContent || "").toLowerCase();
             return text.includes("vs") ||
@@ -965,7 +968,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
               const awayTeam = (teams[1].textContent || "").trim();
               if (!homeTeam || !awayTeam) continue;
 
-              // 鎻愬彇鎵€鏈夎禂鐜囨暟瀛?
+              // 提取所有赔率数字
               const oddsSpans = el.querySelectorAll("span.text_odds, span.odds, [class*='odds']");
               const oddsValues = [];
               oddsSpans.forEach(s => {
@@ -1003,14 +1006,14 @@ async function parseCornerMarkets(page, matchScores = {}) {
       );
     }
 
-    // 鍘婚噸锛氭寜 (homeTeam + awayTeam) 鍚堝苟
+    // 去重：按 (homeTeam + awayTeam) 合并
     const seen = new Set();
     const deduped = [];
     for (const m of rawData) {
       const key = (m.homeTeam + "|||" + m.awayTeam).toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
-        // 娣诲姞鏁版嵁璐ㄩ噺鏍囪
+        // 添加数据质量标记
         const hasBasicInfo = m.homeTeam && m.awayTeam;
         const hasMarketData = (m.cornerHDP || m.cornerOU || m.nextCorner);
         const hasLiveData = (m.elapsedMinutes > 0 || m.homeScore > 0 || m.awayScore > 0 || m.totalCorners > 0);
@@ -1039,13 +1042,13 @@ async function parseCornerMarkets(page, matchScores = {}) {
 }
 
 
-// ======================== XHR 鎷︽埅 ========================
+// ======================== XHR 拦截 ========================
 async function setupXHRInterception(page) {
   capturedResponses = [];
   seenRequestUrls.clear();
   page.removeAllListeners("request");
   page.removeAllListeners("response");
-  console.log("[cornerCrawler] 璁剧疆缃戠粶鐩戝惉锛堣鍔ㄦā寮忥級...");
+  console.log("[cornerCrawler] 设置网络监听（被动模式）...");
 
   const typeStats = {};
   let saveCount = 0;
@@ -1076,7 +1079,7 @@ async function setupXHRInterception(page) {
       let jsonData = null;
       try { jsonData = JSON.parse(text); } catch (e) { return; }
 
-      // transform.php 澶勭悊 - 鎵╁睍锛氬皾璇曚粠浠绘剰鍝嶅簲鎻愬彇姣旇禌鏁版嵁
+      // transform.php 处理 - 扩展：尝试从任意响应提取比赛数据
       if (url.includes("transform.php") || url.includes("transform_nl.php")) {
         if (saveCount < 5) {
           try {
@@ -1233,7 +1236,7 @@ async function setupXHRInterception(page) {
         return;
       }
 
-      // 閫氱敤 JSON 鏁版嵁鎹曡幏
+      // 通用 JSON 数据捕获
       let matchList = jsonData;
       if (jsonData.data && Array.isArray(jsonData.data)) matchList = jsonData.data;
       else if (jsonData.result && Array.isArray(jsonData.result)) matchList = jsonData.result;
@@ -1260,7 +1263,7 @@ async function setupXHRInterception(page) {
   });
 }
 
-// ======================== 鏁版嵁鏄犲皠 ========================
+// ======================== 数据映射 ========================
 function mapToCornerMatch(apiMatch) {
   const matchId = String(
     apiMatch.id || apiMatch.match_id || apiMatch.matchId || apiMatch._id ||
@@ -1324,10 +1327,10 @@ function pickBestResponse(captured) {
   return scored[0];
 }
 
-// ======================== 骞跺彂閿侊紙鍙橀噺宸茬Щ鑷抽《閮級 ========================
+// ======================== 并发锁（变量已移至顶部） ========================
 
 
-// ======================== 杈呭姪锛氬皢 parseCornerMarkets 杩斿洖鏍煎紡杞负 handicaps 鏁扮粍 ========================
+// ======================== 辅助：将 parseCornerMarkets 返回格式转为 handicaps 数组 ========================
 function buildHandicapsArray(m) {
   const result = [];
   let order = 1;
@@ -1348,7 +1351,7 @@ function buildHandicapsArray(m) {
     });
   }
   if (m.nextCorner && (m.nextCorner.homeOdds > 0 || m.nextCorner.awayOdds > 0)) {
-    // 娓呯悊瑙掔悆缂栧彿鏂囨湰锛氭彁鍙栫函鏁板瓧
+    // 清理角球编号文本：提取纯数字
     let cornerNum = (m.nextCorner.corner || "").replace(/[^0-9]/g, "");
     if (!cornerNum) cornerNum = "0";
     result.push({
@@ -1368,9 +1371,9 @@ function buildHandicapsArray(m) {
   return result;
 }
 
-// ======================== 涓诲嚱鏁帮細鐖彇瑙掔悆姣旇禌鏁版嵁 ========================
+// ======================== 主函数：爬取角球比赛数据 ========================
 export async function crawlCornerMatches() {
-  // 骞跺彂淇濇姢锛氬鏋滃凡鏈夌埇鍙栧湪杩涜涓紝鐩存帴杩斿洖
+  // 并发保护：如果已有爬取在进行中，直接返回
   if (crawlingLock) {
     console.warn("[cornerCrawler] Crawler is busy, rejecting concurrent call");
     return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, error: "Crawler busy", busy: true };
@@ -1380,7 +1383,7 @@ export async function crawlCornerMatches() {
   const ts = new Date().toISOString();
 
   // 瓒呮椂淇濇姢锛?80 绉掞紙3 鍒嗛挓锛夊悗鑷姩閲婃斁閿侊紝闃叉姝婚攣
-  const LOCK_TIMEOUT_MS = 180000; // 寤堕暱鍒?3 鍒嗛挓
+  const LOCK_TIMEOUT_MS = 180000; // 延长到 3 分钟
   const lockTimeout = setTimeout(() => {
     if (crawlingLock) {
       console.warn("[cornerCrawler] Lock timeout reached (180s), force releasing");
@@ -1389,7 +1392,7 @@ export async function crawlCornerMatches() {
   }, LOCK_TIMEOUT_MS);
 
   try {
-    // 娓呯┖涓婃鎹曡幏鐨?XHR 鍝嶅簲
+    // 清空上次捕获的 XHR 响应
     capturedResponses = [];
     seenRequestUrls.clear();
 
@@ -1399,14 +1402,14 @@ export async function crawlCornerMatches() {
       return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "Login failed" };
     }
 
-    // 璁剧疆 XHR 鎷︽埅锛堝湪瀵艰埅涔嬪墠锛?
+    // 设置 XHR 拦截（在导航之前）
     try {
       await setupXHRInterception(page);
     } catch (e) {
       console.warn("[cornerCrawler] XHR interception setup failed:", e.message);
     }
 
-    // 瀵艰埅鍒拌鐞冮〉闈紙鍙嶇埇闅忔満寤惰繜锛?
+    // 导航到角球页面（反爬随机延迟）
     await randomDelay(1000, 3000);
     const navResult = await navigateToCorners(page);
     const dataSource = navResult?.source || "unknown";
@@ -1414,11 +1417,11 @@ export async function crawlCornerMatches() {
     console.log("[cornerCrawler] Navigation result: source=" + dataSource + " scores=" + Object.keys(matchScores).length);
     await randomDelay(1000, 3000);
 
-    // 绛夊緟鏁版嵁鍔犺浇
+    // 等待数据加载
     console.log("[cornerCrawler] Waiting for market data...");
     await new Promise(r => setTimeout(r, 3000));
 
-    // 婊氬姩瑙﹀彂鎳掑姞杞?
+    // 滚动触发懒加载
     try {
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight);
@@ -1427,11 +1430,11 @@ export async function crawlCornerMatches() {
     } catch(e) {}
     await new Promise(r => setTimeout(r, 2000));
 
-    // 瑙ｆ瀽 DOM 鑾峰彇瑙掔悆鐩樺彛锛堜娇鐢ㄤ笓鐢?parseCornerMarkets 鏇夸唬閫氱敤 parseAllMarkets锛?
+    // 解析 DOM 获取角球盘口（使用专用 parseCornerMarkets 替代通用 parseAllMarkets）
     const domData = await parseCornerMarkets(page, matchScores);
     console.log("[cornerCrawler] DOM corner markets: " + domData.length);
 
-    // 灏濊瘯浠?XHR 鎹曡幏涓彁鍙栨瘮璧涘垪琛?
+    // 尝试从 XHR 捕获中提取比赛列表
     let xhrMatches = [];
     try {
       // Log all captured response summaries for debugging
@@ -1458,7 +1461,7 @@ export async function crawlCornerMatches() {
       console.warn("[cornerCrawler] XHR data extraction failed:", e.message);
     }
 
-    // 鏄犲皠 DOM 鏁版嵁鍒版爣鍑嗘牸寮忥紙parseCornerMarkets 杩斿洖 cornerOU/cornerHDP/nextCorner/cornerOE 鏍煎紡锛?
+    // 映射 DOM 数据到标准格式（parseCornerMarkets 返回 cornerOU/cornerHDP/nextCorner/cornerOE 格式）
     const matches = domData.map((m, idx) => ({
       matchId: "g_" + (m.homeTeam + "_" + m.awayTeam).replace(/[^a-zA-Z0-9]/g, "_") + "_" + idx,
       matchName: m.homeTeam + " vs " + m.awayTeam,
@@ -1477,7 +1480,7 @@ export async function crawlCornerMatches() {
       triggeredStrategies: []
     }));
 
-    // 濡傛灉 DOM 鏈?XHR 鐨勯槦浼嶈ˉ鍏呬俊鎭紝鍚堝苟锛堟寜鐞冮槦鍚嶅尮閰嶏級
+    // 如果 DOM 有 XHR 的队伍补充信息，合并（按球队名匹配）
     if (xhrMatches.length > 0 && matches.length > 0) {
       const xhrByName = {};
       for (const xm of xhrMatches) {
@@ -1487,7 +1490,7 @@ export async function crawlCornerMatches() {
       for (const m of matches) {
         const key = (m.homeTeam + "_" + m.awayTeam).toLowerCase().replace(/[^a-z0-9]/g, "_");
         if (xhrByName[key]) {
-          // XHR 鏁版嵁涓幏鍙栧疄闄呰鐞冩暟锛堣鐩?DOM 鍥為€€鍊硷級
+          // XHR 数据中获取实际角球数（覆盖 DOM 回退值）
           const xhrHC = xhrByName[key].homeCorners || 0;
           const xhrAC = xhrByName[key].awayCorners || 0;
           if (xhrHC > 0 || xhrAC > 0) {
@@ -1513,7 +1516,7 @@ export async function crawlCornerMatches() {
       } catch(e) {}
     }
 
-    // 淇濆瓨璋冭瘯鎴浘
+    // 保存调试截图
     try {
       await page.screenshot({ path: "debug/corner-final.png", fullPage: false });
     } catch(e) {}
@@ -1544,7 +1547,7 @@ export async function crawlCornerMatches() {
   }
 }
 
-// ======================== 鍚堝苟 XHR + DOM 鏁版嵁 ========================
+// ======================== 合并 XHR + DOM 数据 ========================
 function mergeCornerData(xhrMatches, domCornerData) {
   // DOM data is now the primary source, just return xhrMatches if available, else domCornerData
   if (xhrMatches && xhrMatches.length > 0) return xhrMatches;
@@ -1562,7 +1565,7 @@ function mergeCornerData(xhrMatches, domCornerData) {
   }));
 }
 
-// ======================== 杞鏀寔 ========================
+// ======================== 轮询支持 ========================
 export async function pollCornerMatches(onUpdate, intervalMs) {
   const interval = intervalMs || POLL_INTERVAL;
   console.log("[cornerCrawler] polling mode, interval=" + interval + "ms");
@@ -1584,13 +1587,13 @@ export async function pollCornerMatches(onUpdate, intervalMs) {
   return () => { stopped = true; if (timer) clearInterval(timer); };
 }
 
-// ======================== 鍏ㄥ眬杞 ========================
+// ======================== 全局轮询 ========================
 export function startCornerPolling(onUpdate) {
   if (pollingActive) {
-    console.log("[cornerCrawler] 杞宸插湪杩愯涓?);
+    console.log("[cornerCrawler] 轮询已在运行中");
     return { success: true, message: "already polling" };
   }
-  console.log("[cornerCrawler] 鍚姩鍏ㄥ眬杞...");
+  console.log("[cornerCrawler] 启动全局轮询...");
   pollingActive = true;
   pollingStopFn = null;
 
@@ -1601,7 +1604,7 @@ export function startCornerPolling(onUpdate) {
       const matches = result.success ? (result.data?.matches || []) : [];
       if (pollingActive && onUpdate) onUpdate(matches);
     } catch (e) {
-      console.error("[cornerCrawler] 杞閿欒:", e.message);
+      console.error("[cornerCrawler] 轮询错误:", e.message);
     }
     if (pollingActive) {
       pollingStopFn = setTimeout(poll, POLL_INTERVAL);
@@ -1613,7 +1616,7 @@ export function startCornerPolling(onUpdate) {
 
 export function stopCornerPolling() {
   if (!pollingActive) return { success: true, message: "not polling" };
-  console.log("[cornerCrawler] 鍋滄鍏ㄥ眬杞...");
+  console.log("[cornerCrawler] 停止全局轮询...");
   pollingActive = false;
   if (pollingStopFn) { clearTimeout(pollingStopFn); pollingStopFn = null; }
   return { success: true };
@@ -1628,9 +1631,9 @@ export function getPollingStatus() {
   };
 }
 
-// ======================== 鐧诲綍 API ========================
+// ======================== 登录 API ========================
 export async function loginToHG(username, password) {
-  console.log("[cornerCrawler] 璁剧疆鐧诲綍鍑嵁...");
+  console.log("[cornerCrawler] 设置登录凭据...");
   runtimeCredentials = { username, password };
   const MAX_RETRIES = 3;
   let lastError = null;
@@ -1638,21 +1641,21 @@ export async function loginToHG(username, password) {
     try {
       const page = await ensureLogin();
       if (page) {
-        return { success: true, message: "鐧诲綍鎴愬姛", balance: getBalance(), attempts: attempt };
+        return { success: true, message: "登录成功", balance: getBalance(), attempts: attempt };
       }
-      lastError = "鐧诲綍杩斿洖绌洪〉闈?;
+      lastError = "登录返回空页面";
     } catch (err) {
       lastError = err.message;
-      console.warn("[cornerCrawler] 鐧诲綍灏濊瘯 " + attempt + "/" + MAX_RETRIES + " 澶辫触: " + lastError);
+      console.warn("[cornerCrawler] 登录失败 " + attempt + "/" + MAX_RETRIES + " 次尝试: " + lastError);
     }
     if (attempt < MAX_RETRIES) {
       await new Promise(r => setTimeout(r, attempt * 2000));
     }
   }
-  return { success: false, message: "鐧诲綍澶辫触锛堝凡閲嶈瘯" + MAX_RETRIES + "娆★級: " + lastError, balance: getBalance() };
+  return { success: false, message: "登录失败超过" + MAX_RETRIES + "次重试: " + lastError, balance: getBalance() };
 }
 
-// ======================== 鍏抽棴 ========================
+// ======================== 关闭 ========================
 export { getBalance } from "./browserPool.js";
 
 export async function closeCrawler() {
@@ -1661,7 +1664,7 @@ export async function closeCrawler() {
   return await closeSharedBrowser();
 }
 
-// ======================== 璋冭瘯 ========================
+// ======================== 调试 ========================
 export function getDebugInfo() {
   return {
     headless: process.env.CRAWLER_HEADLESS === 'true',
@@ -1678,7 +1681,7 @@ export function getDebugInfo() {
   };
 }
 
-// ======================== 璇婃柇 ========================
+// ======================== 诊断 ========================
 export async function diagnoseCrawler() {
   const report = {
     timestamp: new Date().toISOString(),
@@ -1746,7 +1749,7 @@ export async function diagnoseCrawler() {
     await new Promise(r => setTimeout(r, 3000));
     report.steps.push("wait_done");
 
-    // XHR 鏁版嵁
+    // XHR 数据
     report.interceptedXHRUrls = [...seenRequestUrls];
     report.interceptedXHRCount = seenRequestUrls.size;
     for (const cr of capturedResponses.slice(0, 5)) {
@@ -1758,7 +1761,8 @@ export async function diagnoseCrawler() {
       });
     }
 
-    // 椤甸潰缁撴瀯蹇収锛堣瘖鏂敤锛?    try {
+    // 尝试获取数据
+    try {
       report.pageStructure = await page.evaluate(() => {
         const result = {};
         result['div.bet_box'] = document.querySelectorAll('div.bet_box').length;
@@ -1777,18 +1781,18 @@ export async function diagnoseCrawler() {
       report.steps.push("page_structure_failed");
     }
 
-    // DOM 瑙掔悆鐩樺彛
+    // DOM 角球盘口
     const domData = await parseAllMarkets(page);
     report.domCornerCount = domData.length;
     report.domCornerSample = domData.slice(0, 5);
 
-    // XHR 姣旇禌鍒楄〃
+    // XHR 比赛列表
     const bestResponse = pickBestResponse(capturedResponses);
     if (bestResponse && bestResponse.matchList.length > 0) {
       const matches = bestResponse.matchList
         .map(mapToCornerMatch)
         .filter(m => m.homeTeam && m.awayTeam);
-      // 鍚堝苟 DOM 鐩樺彛
+      // 合并 DOM 盘口
       const merged = mergeCornerData(matches, domData);
       report.matchesFound = merged.length;
       report.sampleMatches = merged.slice(0, 5);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
@@ -44,7 +44,7 @@ export default function CrawlerControlPanel() {
   const [isPaused, setIsPaused] = useState(false);
 
 
-  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [isBackendPolling, setIsBackendPolling] = useState(false);
 
   const fetchingRef = React.useRef(false);
   const messageTimerRef = React.useRef(null);
@@ -83,7 +83,7 @@ export default function CrawlerControlPanel() {
       const res = await fetch("/api/corner/start", { method: "POST" });
       const data = await res.json();
       if (data.success) {
-        setIsMonitoring(true);
+        setIsBackendPolling(true);
         showMessage("success", "启动成功，后台将自动获取数据");
         // 等待 8 秒后触发首次即时数据获取
         setTimeout(async () => {
@@ -145,7 +145,7 @@ export default function CrawlerControlPanel() {
       const res = await fetch("/api/corner/stop", { method: "POST" });
       const data = await res.json();
       if (data.success) {
-        setIsMonitoring(false);
+        setIsBackendPolling(false);
         setAutoRefresh(false);
         showMessage("info", "监控已停止");
       }
@@ -208,7 +208,7 @@ export default function CrawlerControlPanel() {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     try {
       const isLoggedInCorner = useCornerStore.getState().isLoggedIn;
-      const useCornerApi = forceCorner || isMonitoring || isLoggedInCorner;
+      const useCornerApi = forceCorner || isBackendPolling || isLoggedInCorner;
       
       let apiData = null;
       let apiSource = "";
@@ -238,7 +238,7 @@ export default function CrawlerControlPanel() {
         if (matchCount > 0 || !apiData.cacheEmpty) {
           // 检查数据来源
           const firstDataSource = rawMatches.length > 0 ? (rawMatches[0]._dataSource || "") : "";
-          if (firstDataSource === "today" && !isMonitoring) {
+          if (firstDataSource === "today" && !isBackendPolling) {
             showMessage("info", "当前无实时比赛，展示赛程数据");
           }
           
@@ -460,10 +460,10 @@ export default function CrawlerControlPanel() {
 
       <div className="flex flex-wrap gap-2 mb-6">
         <button key="btn-toggle-monitor" type="button"
-          onClick={isMonitoring ? handleStopMonitor : isLoggedIn ? handleStartMonitor : handleLogin}
+          onClick={isBackendPolling ? handleStopMonitor : isLoggedIn ? handleStartMonitor : handleLogin}
           disabled={loading}
           className={`flex items-center gap-2 px-4 py-2 text-white text-xs rounded-lg transition-colors ${
-            isMonitoring
+            isBackendPolling
               ? "bg-rose-600 hover:bg-rose-500"
               : isLoggedIn
               ? "bg-emerald-600 hover:bg-emerald-500"
@@ -472,14 +472,14 @@ export default function CrawlerControlPanel() {
         >
           {loading ? (
             <RefreshCw key="icon-loading" className="w-3.5 h-3.5 animate-spin" />
-          ) : isMonitoring ? (
+          ) : isBackendPolling ? (
             <StopCircle key="icon-stop" className="w-3.5 h-3.5" />
           ) : isLoggedIn ? (
             <RefreshCw key="icon-start" className="w-3.5 h-3.5" />
           ) : (
             <LogIn key="icon-login" className="w-3.5 h-3.5" />
           )}
-          <span>{loading ? "加载中..." : isMonitoring ? "停止监控" : isLoggedIn ? "启动监控" : "登录"}</span>
+          <span>{loading ? "加载中..." : isBackendPolling ? "停止监控" : isLoggedIn ? "启动监控" : "登录"}</span>
         </button>
 
         <button key="btn-refresh" type="button"
@@ -499,7 +499,7 @@ export default function CrawlerControlPanel() {
           <Calendar className="w-3.5 h-3.5" />
           获取赛程
         </button>
-        {isMonitoring && (
+        {isBackendPolling && (
           <button key="btn-pause-resume" type="button"
             onClick={isPaused ? handleResumeMonitor : handlePauseMonitor}
             disabled={loading}
@@ -543,7 +543,7 @@ export default function CrawlerControlPanel() {
             type="checkbox"
             checked={autoRefresh}
             onChange={(e) => setAutoRefresh(e.target.checked)}
-            disabled={!isMonitoring}
+            disabled={!isBackendPolling}
             className="rounded border-slate-600 text-emerald-500 focus:ring-emerald-500"
           />
           <span>自动刷新 (10s)</span>
@@ -604,7 +604,7 @@ export default function CrawlerControlPanel() {
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {!crawlerData || !(crawlerData.matches || []).length ? (
             <div className="text-center py-8 text-slate-500 text-sm">
-              {isMonitoring ? "监控中，等待数据更新..." : "暂无比赛数据，请点击刷新获取数据。"}
+              {isBackendPolling ? "监控中，等待数据更新..." : "暂无比赛数据，请点击刷新获取数据。"}
             </div>
           ) : (
             (crawlerData.matches || []).map((match) => {

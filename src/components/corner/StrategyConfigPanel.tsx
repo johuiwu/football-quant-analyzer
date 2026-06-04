@@ -3,13 +3,6 @@ import { Settings, RotateCcw, ChevronDown, ChevronUp, Power, BarChart3 } from "l
 import { useCornerStore, CornerStrategy, BacktestStats } from "../../store/cornerStore";
 import SettingsPanel from "./SettingsPanel";
 
-const DEFAULT_STRATEGIES: CornerStrategy[] = [
-  { id: 1, name: "策略一 · 走地角球(35'-55')", enabled: false, playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 1, cornerHandicapLower: -1.25, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-  { id: 2, name: "策略二 · 领先角球(50'-77')", enabled: false, playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8 },
-  { id: 3, name: "策略三 · 平局角球(70'-99')", enabled: false, playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8 },
-  { id: 4, name: "策略四 · 领先追角(60'-99')", enabled: false, playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-  { id: 5, name: "策略五 · 尾声角球(70'-99')", enabled: false, playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-];
 
 const numInputClass = "w-full bg-slate-900/80 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 font-mono focus:outline-none focus:border-emerald-500/50 transition-colors text-center";
 const labelClass = "text-[10px] text-slate-500 mb-0.5 block";
@@ -31,9 +24,19 @@ export default function StrategyConfigPanel() {
     });
   };
 
-  const handleResetDefaults = () => setStrategies(DEFAULT_STRATEGIES);
+  const handleResetDefaults = async () => {
+    try {
+      const res = await fetch("/api/corner/strategies/default");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setStrategies(data.data);
+      }
+    } catch (err) {
+      console.error("加载默认策略失败:", err);
+    }
+  };
   const handleToggle = (id: number, enabled: boolean) => updateStrategy(id, { enabled });
-  const handleChange = (id: number, field: keyof CornerStrategy, value: number) => updateStrategy(id, { [field]: value });
+  const handleChange = (id: number, field: keyof CornerStrategy, value: number | string) => updateStrategy(id, { [field]: value } as any);
 
   const runBacktest = async () => {
     setBacktesting(true);
@@ -156,6 +159,24 @@ export default function StrategyConfigPanel() {
                     <span>⏱ {s.playTimeStart}'–{s.playTimeEnd}'</span>
                     <span>📊 {s.cornerHandicapLower}~{s.cornerHandicapUpper}</span>
                     <span>🎯 ≥{s.targetOdds.toFixed(2)}</span>
+                    {(() => {
+                      const overlapping = strategies.filter(o => o.enabled && o.id !== s.id && o.playTimeStart <= s.playTimeEnd && o.playTimeEnd >= s.playTimeStart);
+                      const halfTimeIssue = s.playTimeStart <= 45 && s.playTimeEnd >= 46;
+                      return (
+                        <>
+                          {overlapping.length > 0 && (
+                            <span className="text-[9px] text-amber-500" title="同时触发可能导致重复投注">
+                              ⚠ 与策略{overlapping.map(o => o.id).join("、")}时间重叠
+                            </span>
+                          )}
+                          {halfTimeIssue && (
+                            <span className="text-[9px] text-amber-500 ml-1" title="半场休息不支持投注">
+                              ⚠ 不含半场
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -208,11 +229,27 @@ export default function StrategyConfigPanel() {
                       </div>
                     </div>
                     <div>
-                      <label className={labelClass}>目标赔率（≥）</label>
+                       <label className={labelClass}>目标赔率（≥）<span className="text-[9px] text-amber-500 ml-1">马来盘</span></label>
                       <div className="w-24">
                         <input type="number" className={numInputClass} min={0.5} max={2.0} step={0.05}
                           value={s.targetOdds} onChange={(e) => handleChange(s.id, "targetOdds", Number(e.target.value))} />
                       </div>
+                    <div>
+                      <label className={labelClass}>投注方向</label>
+                      <div className="w-32">
+                        <select
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                          value={s.betDirection || "auto"}
+                          onChange={(e) => handleChange(s.id, "betDirection", e.target.value as any)}
+                        >
+                          <option value="auto">自动</option>
+                          <option value="over">大 (Over)</option>
+                          <option value="under">小 (Under)</option>
+                          <option value="home">主队</option>
+                          <option value="away">客队</option>
+                        </select>
+                      </div>
+                    </div>
                     </div>
                   </div>
                 )}

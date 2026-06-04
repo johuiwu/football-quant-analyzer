@@ -1,4 +1,4 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 // ==================== 类型定义 ====================
@@ -15,6 +15,7 @@ export interface CornerStrategy {
   cornerHandicapLower: number;
   cornerHandicapUpper: number;
   targetOdds: number;
+  betDirection: "over" | "under" | "home" | "away" | "auto";
 }
 
 /** 盘口条目 */
@@ -75,13 +76,14 @@ export interface CornerSettings {
   hgPassword: string;
   balance: number;
   refreshInterval: number;
-  strongHandicapThreshold: number;
-  handicapUpperLimit: number;
-  handicapLowerLimit: number;
+  strongHandicapThreshold: number; // @todo 规划中 - 将作为全局盘口兜底限制，当前未接入任何判断逻辑
+  handicapUpperLimit: number; // @todo 规划中
+  handicapLowerLimit: number; // @todo 规划中
   betAmount: number;
   pollInterval: number;
   isRealMode: boolean;
   isSoundEnabled: boolean;
+  autoBetEnabled: boolean;
 }
 
 /** 回测统计数据 */
@@ -108,7 +110,7 @@ export interface CornerStore {
   error: string | null;
   accountConfig: AccountConfig;
   settings: CornerSettings;
-  activeCornerTab: string;
+  activeCornerTab: 'crawler' | 'monitor' | 'strategy' | 'history';
   historyFilterMatchId: string | null;
   backtestResults: Record<number, BacktestStats>;
   crawlerData: any | null;
@@ -121,7 +123,7 @@ export interface CornerStore {
   logout: () => void;
   setSettings: (partial: Partial<CornerSettings>) => void;
   setLoginStatus: (status: boolean, user?: string) => void;
-  setActiveCornerTab: (tab: string) => void;
+  setActiveCornerTab: (tab: 'crawler' | 'monitor' | 'strategy' | 'history') => void;
   setHistoryFilterMatchId: (matchId: string | null) => void;
   setBacktestResults: (results: Record<number, BacktestStats>) => void;
   updateBalance: (balance: number) => void;
@@ -146,11 +148,12 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     enabled: false,
     playTimeStart: 35,
     playTimeEnd: 55,
-    leadGoals: 99,
-    leadGoalsWeak: 1,
+    leadGoals: 99, // >=20 sentinel: no score restriction
+    leadGoalsWeak: 0,
     cornerHandicapLower: -1.25,
-    cornerHandicapUpper: 3.5,
+    cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    betDirection: "over",
   },
   {
     id: 2,
@@ -163,6 +166,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     cornerHandicapLower: -0.75,
     cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    betDirection: "over",
   },
   {
     id: 3,
@@ -175,6 +179,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     cornerHandicapLower: 0,
     cornerHandicapUpper: 1.5,
     targetOdds: 0.8,
+    betDirection: "under",
   },
   {
     id: 4,
@@ -183,10 +188,11 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     playTimeStart: 60,
     playTimeEnd: 99,
     leadGoals: 2,
-    leadGoalsWeak: 0,
+    leadGoalsWeak: 1,
     cornerHandicapLower: 0,
-    cornerHandicapUpper: 3.5,
+    cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    betDirection: "over",
   },
   {
     id: 5,
@@ -197,8 +203,9 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     leadGoals: 1,
     leadGoalsWeak: 0,
     cornerHandicapLower: 0,
-    cornerHandicapUpper: 3.5,
+    cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    betDirection: "over",
   },
 ];
 
@@ -216,12 +223,17 @@ export function evaluateMatchForStrategies(
     if (!strategy.enabled) continue;
     if (match.currentMinute < strategy.playTimeStart) continue;
     if (match.currentMinute > strategy.playTimeEnd) continue;
-    if (match.cornerHandicap < strategy.cornerHandicapLower) continue;
-    if (match.cornerHandicap > strategy.cornerHandicapUpper) continue;
+    // handicap range check (direction-aware: betDirection=auto uses abs value)
+    if (strategy.betDirection === "auto" || strategy.betDirection == null) {
+      const absHcp = Math.abs(match.cornerHandicap);
+      if (absHcp < strategy.cornerHandicapLower || absHcp > strategy.cornerHandicapUpper) continue;
+    } else {
+      if (match.cornerHandicap < strategy.cornerHandicapLower || match.cornerHandicap > strategy.cornerHandicapUpper) continue;
+    }
     if (match.odds < strategy.targetOdds) continue;
 
     // 比赛时间合理性校验（与后端 cornerEvaluator.js 一致）
-    if (match.currentMinute > 95) continue;             // 超过最大比赛时间
+    if (match.currentMinute > 99) continue;             // 超过最大比赛时间
     if (match.currentMinute >= 45 && match.currentMinute <= 46) continue; // 半场休息
 
     // 比分条件（与后端 cornerEvaluator.js 严格一致）
@@ -230,7 +242,7 @@ export function evaluateMatchForStrategies(
     // 2) leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
     if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) { triggered.push(strategy.id); continue; }
     // 3) leadGoalsWeak > 0 → 弱队领先：至少差N球
-    if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0)) { triggered.push(strategy.id); continue; }
+    if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) { triggered.push(strategy.id); continue; }
     // 4) leadGoals === 0 且 leadGoalsWeak === 0 → 平局检查：goalDiff 必须为 0
     if (strategy.leadGoals === 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff === 0) { triggered.push(strategy.id); continue; }
   }
@@ -239,6 +251,9 @@ export function evaluateMatchForStrategies(
 
 // ==================== 策略同步到后端 ====================
 
+// debounce timer for updateStrategy backend sync
+let __syncTimer: ReturnType<typeof setTimeout> | null = null;
+
 function syncStrategiesToBackend(strategies: CornerStrategy[]) {
   fetch('/api/corner/strategies', {
     method: 'PUT',
@@ -246,6 +261,7 @@ function syncStrategiesToBackend(strategies: CornerStrategy[]) {
     body: JSON.stringify({ strategies }),
   }).catch(err => console.error('[cornerStore] 策略同步失败:', err));
 }
+
 
 // ==================== 监控循环 ====================
 
@@ -278,6 +294,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     pollInterval: 5000,
     isRealMode: false,
     isSoundEnabled: true,
+    autoBetEnabled: false,
   },
   activeCornerTab: 'crawler',
   historyFilterMatchId: null,
@@ -287,22 +304,36 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   betConfirmRequired: false,
 
   setStrategies: (strategies) => { set({ strategies }); syncStrategiesToBackend(strategies); },
-  updateStrategy: (id, updates) =>
+  updateStrategy: (id, updates) => {
     set((state) => ({
       strategies: state.strategies.map((s) =>
         s.id === id ? { ...s, ...updates } : s
       ),
-    })),
+    }));
+    const strategies = get().strategies;
+    clearTimeout(__syncTimer);
+    __syncTimer = setTimeout(() => syncStrategiesToBackend(strategies), 300);
+  },
 
   setAccountConfig: (config) =>
     set((state) => ({
       accountConfig: { ...state.accountConfig, ...config }
     })),
 
-  setSettings: (partial) =>
+  setSettings: (partial) => {
     set((state) => ({
       settings: { ...state.settings, ...partial }
-    })),
+    }));
+    // isRealMode 或 betAmount 变更时同步到后端
+    if ('isRealMode' in partial || 'betAmount' in partial) {
+      const s = get().settings;
+      fetch('/api/corner/bet-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRealMode: s.isRealMode, amount: s.betAmount })
+      }).catch(() => {});
+    }
+  },
 
   updateBalance: (balance) =>
     set((state) => ({
@@ -436,6 +467,13 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     settings: state.settings
   })
 }));
+
+if (typeof window !== "undefined") {
+  useCornerStore.persist.onFinishHydration(() => {
+    const strategies = useCornerStore.getState().strategies;
+    syncStrategiesToBackend(strategies);
+  });
+}
 
 
 // 页面关闭时清理定时器（模块级别，仅注册一次）

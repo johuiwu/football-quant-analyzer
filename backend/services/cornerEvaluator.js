@@ -1,4 +1,4 @@
-// ======================== 共享策略条件评估模块 ========================
+﻿// ======================== 共享策略条件评估模块 ========================
 // 【同步提醒】前端 cornerStore.ts:export evaluateMatchForStrategies 须与此逻辑保持一致
 // 修改任一处时请同步更新另一处
 // 统一后端策略评估逻辑，供 cornerService.js 和 cornerStrategyEngine.js 共用
@@ -23,14 +23,20 @@ export function evaluateSingleStrategy(match, strategy) {
   // 比赛时间合理性校验
   const HALF_TIME_START = 45;
   const HALF_TIME_END = 46;
-  const MATCH_MAX_MINUTES = 95;
+  const MATCH_MAX_MINUTES = 99;
   if (currentMinute > MATCH_MAX_MINUTES) return false;
   if (currentMinute >= HALF_TIME_START && currentMinute <= HALF_TIME_END) return false;
 
   // 时间窗口检查
   if (currentMinute < strategy.playTimeStart || currentMinute > strategy.playTimeEnd) return false;
   // 盘口范围检查
-  if (handicap < strategy.cornerHandicapLower || handicap > strategy.cornerHandicapUpper) return false;
+  // 盘口范围检查（方向感知：betDirection=auto 时使用绝对值比较，否则使用原始值）
+  if (strategy.betDirection === "auto" || strategy.betDirection == null) {
+    const absHcp = Math.abs(handicap);
+    if (absHcp < strategy.cornerHandicapLower || absHcp > strategy.cornerHandicapUpper) return false;
+  } else {
+    if (handicap < strategy.cornerHandicapLower || handicap > strategy.cornerHandicapUpper) return false;
+  }
   // 赔率条件检查
   if (odds < strategy.targetOdds) return false;
 
@@ -41,8 +47,8 @@ export function evaluateSingleStrategy(match, strategy) {
   // leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
   if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) return true;
 
-  // leadGoalsWeak > 0 → 弱队领先：至少差N球
-  if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0)) return true;
+  // leadGoalsWeak > 0 → 弱队领先：至少差N球，同时受 leadGoals 上限约束
+  if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) return true;
 
   // leadGoals === 0 且 leadGoalsWeak === 0 → 平局检查：goalDiff 必须为 0
   if (strategy.leadGoals === 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff === 0) return true;

@@ -182,6 +182,14 @@ function liveMatchReducer(state: LiveMatchState, action: LiveMatchAction): LiveM
 
 // ==================== Store ====================
 
+function syncTrackedMatchesToBackend(ids: string[]) {
+  fetch('/api/corner/bet-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trackedMatchIds: ids })
+  }).catch(() => {});
+}
+
 export const useAppStore = create<AppStore>((set) => ({
   ...defaultState,
 
@@ -191,8 +199,8 @@ export const useAppStore = create<AppStore>((set) => ({
   setAwayLeague: (league, firstTeamId) => set({ selectedAwayLeague: league, selectedAwayId: firstTeamId }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setSelectedMatchId: (id) => set({ selectedMatchId: id }),
-  addTrackedMatch: (matchId) => set((s) => ({ trackedMatchIds: s.trackedMatchIds.includes(matchId) ? s.trackedMatchIds : [...s.trackedMatchIds, matchId] })),
-  removeTrackedMatch: (matchId) => set((s) => ({ trackedMatchIds: s.trackedMatchIds.filter((id) => id !== matchId) })),
+  addTrackedMatch: (matchId) => set((s) => { const next = s.trackedMatchIds.includes(matchId) ? s.trackedMatchIds : [...s.trackedMatchIds, matchId]; syncTrackedMatchesToBackend(next); return { trackedMatchIds: next }; }),
+  removeTrackedMatch: (matchId) => set((s) => { const next = s.trackedMatchIds.filter((id) => id !== matchId); syncTrackedMatchesToBackend(next); return { trackedMatchIds: next }; }),
   navigateToCorner: (matchId) => set({ selectedMatchId: matchId, activeTab: "corner" }),
   setCornerActiveSubTab: (tab) => set({ cornerActiveSubTab: tab }),
   navigateToDashboard: (homeId, awayId, homeLeague, awayLeague) =>

@@ -1,5 +1,5 @@
-import { Router } from "express";
-import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount } from "../services/cornerService.js";
+﻿import { Router } from "express";
+import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, loginToHG, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
@@ -79,6 +79,17 @@ router.get("/corner/strategies/check", async (req, res) => {
     res.json({ success: true, data: checked, generatedAt: result.generatedAt, count: checked.length });
   } catch (err) {
     console.error("[cornerRoutes] /corner/strategies/check error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/strategies/default ========================
+router.get("/corner/strategies/default", async (req, res) => {
+  try {
+    const { DEFAULT_STRATEGIES } = await import("../services/cornerService.js");
+    res.json({ success: true, data: DEFAULT_STRATEGIES });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/strategies/default error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -288,11 +299,27 @@ router.post("/corner/close", async (req, res) => {
   }
 });
 
+// ======================== GET /api/corner/bet-config ========================
+router.get("/corner/bet-config", async (req, res) => {
+  try {
+    const config = getAutoBetConfig();
+    res.json({ success: true, data: config });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/bet-config GET error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ======================== POST /api/corner/bet-config ========================
 router.post("/corner/bet-config", async (req, res) => {
   try {
-    const { amount, isRealMode } = req.body || {};
-    setBetConfig({ amount, isRealMode });
+    const { amount, isRealMode, trackedMatchIds, autoBetEnabled } = req.body || {};
+    const config = {};
+    if (amount !== undefined) config.amount = amount;
+    if (isRealMode !== undefined) config.isRealMode = isRealMode;
+    if (trackedMatchIds !== undefined) config.trackedMatchIds = trackedMatchIds;
+    if (autoBetEnabled !== undefined) config.autoBetEnabled = autoBetEnabled;
+    setBetConfig(config);
     res.json({ success: true });
   } catch (err) {
     console.error("[cornerRoutes] /corner/bet-config error:", err.message);

@@ -1,4 +1,4 @@
-import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
+﻿import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 
@@ -15,11 +15,11 @@ const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
 
 // ======================== 策略配置 ========================
 export const DEFAULT_STRATEGIES = [
-  { id: 1, enabled: false, name: "策略一", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 1, cornerHandicapLower: -1.25, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-  { id: 2, enabled: false, name: "策略二", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8 },
-  { id: 3, enabled: false, name: "策略三", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8 },
-  { id: 4, enabled: false, name: "策略四", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
-  { id: 5, enabled: false, name: "策略五", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 3.5, targetOdds: 0.8 },
+  { id: 1, enabled: false, name: "策略一 · 走地角球(35'-55')", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -1.25, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
+  { id: 2, enabled: false, name: "策略二 · 领先角球(50'-77')", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
+  { id: 3, enabled: false, name: "策略三 · 平局角球(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8, betDirection: "under" },
+  { id: 4, enabled: false, name: "策略四 · 领先追角(60'-99')", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
+  { id: 5, enabled: false, name: "策略五 · 尾声角球(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
 ];
 
 let activeStrategies = DEFAULT_STRATEGIES;
@@ -37,8 +37,12 @@ export function getCornerStrategies() {
 // ======================== 投注配置 ========================
 let betConfig = {
   amount: parseInt(process.env.CORNER_BET_AMOUNT || "100", 10),
-  isRealMode: process.env.CORNER_BET_REAL_MODE === "true"
+  isRealMode: process.env.CORNER_BET_REAL_MODE === "true",
+  trackedMatchIds: [],
+  autoBetEnabled: false
 };
+
+export function getAutoBetConfig() { return { ...betConfig, autoBetMasterSwitch: AUTO_BET_ENABLED }; }
 
 export function setBetConfig(config) {
   if (config) {
@@ -46,7 +50,7 @@ export function setBetConfig(config) {
   }
 }
 
-// ======================== ?????? ========================
+// ======================== 自动投注配置 ========================
 const AUTO_BET_ENABLED = process.env.AUTO_BET_ENABLED === "true";
 const MAX_BET_AMOUNT = parseInt(process.env.MAX_BET_AMOUNT || "1000", 10);
 
@@ -82,8 +86,7 @@ export function startCornerBackendPolling() {
         for (const sid of triggeredIds) {
           saveCornerTrigger(match, sid).catch(e =>
             console.error("[cornerService] 保存触发记录失败:", e.message)
-          );
-          );
+        );
         }
       }
 
@@ -96,10 +99,11 @@ export function startCornerBackendPolling() {
           console.log("[cornerService] 首次爬取完成，缓存已就绪");
         }
 
-      // ?????????????????? AUTO_BET_ENABLED?
-      // 自动投注：策略触发后入队处理（需启用 AUTO_BET_ENABLED）
-      if (AUTO_BET_ENABLED && betConfig.isRealMode) {
+      // 自动投注：策略触发后入队处理（需启用 AUTO_BET_ENABLED + UI开关 + 白名单非空）
+      if (AUTO_BET_ENABLED && betConfig.isRealMode && betConfig.autoBetEnabled) {
         for (const match of matches) {
+          // 白名单检查：仅投注用户追踪的比赛（空白名单=不投注）
+          if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
           const triggeredIds = evaluateStrategies(match, activeStrategies);
           match.triggeredStrategies = triggeredIds;
           for (const sid of triggeredIds) {
@@ -226,8 +230,7 @@ export function resumeCornerBackendPolling() {
         for (const sid of triggeredIds) {
           saveCornerTrigger(match, sid).catch(e =>
             console.error("[cornerService] 保存触发记录失败:", e.message)
-          );
-          );
+        );
         }
       }
 
@@ -240,10 +243,10 @@ export function resumeCornerBackendPolling() {
           console.log("[cornerService] 首次爬取完成，缓存已就绪");
         }
 
-      // ????????
-      if (AUTO_BET_ENABLED && betConfig.isRealMode) {
+      // 检查是否需要执行自动投注
+      if (AUTO_BET_ENABLED && betConfig.isRealMode && betConfig.autoBetEnabled) {
         processBetQueue().catch(e =>
-          console.error("[cornerService] ????????:", e.message)
+          console.error("[cornerService] 自动投注失败:", e.message)
         );
       }
     } catch (e) {
@@ -438,12 +441,12 @@ export async function generatePendingBet(match, strategyId) {
   }
 }
 
-// ======================== ???? ========================
+// ======================== 投注队列 ========================
 let betQueue = [];
 let isProcessing = false;
 
 /**
- * ?????????????????corner_history ?? executed/failed ???
+ * 检查是否已有同一比赛同一策略的成功/失败投注记录（查 corner_history 表 executed/failed 状态）
  */
 export async function checkDuplicateBet(matchId, strategyId) {
   await ensureTable();
@@ -454,13 +457,13 @@ export async function checkDuplicateBet(matchId, strategyId) {
     );
     return rows && rows.length > 0;
   } catch (err) {
-    console.error("[cornerService] ??????:", err.message);
+    console.error("[cornerService] 查重失败:", err.message);
     return false;
   }
 }
 
 /**
- * ????????????? 1 ?
+ * 处理投注队列中的任务（每次处理 1 个）
  */
 async function processBetQueue() {
   if (isProcessing || betQueue.length === 0) return;
@@ -468,7 +471,7 @@ async function processBetQueue() {
 
   try {
     const task = betQueue.shift();
-    console.log("[cornerService] ??????: bet#" + task.betId + " " + task.matchName);
+    console.log("[cornerService] 执行投注: bet#" + task.betId + " " + task.matchName);
 
     const betData = {
       matchName: task.matchName,
@@ -486,7 +489,6 @@ async function processBetQueue() {
         "UPDATE corner_bets SET status = 'executed', executed_at = ? WHERE id = ?",
         [new Date().toISOString(), task.betId]
       );
-      await run(
       // 同步更新 corner_history（通过 lastID 精确更新）
       if (task.historyId) {
         await run(
@@ -504,7 +506,6 @@ async function processBetQueue() {
         "UPDATE corner_bets SET status = 'failed', error_message = ? WHERE id = ?",
         [result.error || "unknown", task.betId]
       );
-      await run(
       // 同步更新 corner_history（通过 lastID 精确更新）
       if (task.historyId) {
         await run(
@@ -519,25 +520,25 @@ async function processBetQueue() {
       }
     }
   } catch (err) {
-    console.error("[cornerService] ????????:", err.message);
+    console.error("[cornerService] 自动投注失败:", err.message);
   } finally {
     isProcessing = false;
   }
 }
 
 /**
- * ?????? API ?????????????
+ * 手动投注 API —— 创建投注记录并加入队列
  */
 export async function addManualBet(matchData) {
   const { matchId, matchName, strategyId, odds, handicap, amount } = matchData;
 
   if (amount > MAX_BET_AMOUNT) {
-    return { success: false, error: "???????? (" + MAX_BET_AMOUNT + ")" };
+    return { success: false, error: "投注金额超限 (" + MAX_BET_AMOUNT + ")" };
   }
 
   const isDuplicate = await checkDuplicateBet(matchId, strategyId);
   if (isDuplicate) {
-    return { success: false, error: "???????????" };
+    return { success: false, error: "该比赛/策略已有执行记录" };
   }
 
   await ensureBetTable();
@@ -577,7 +578,7 @@ export async function addManualBet(matchData) {
 
   if (betConfig.isRealMode) {
     processBetQueue().catch(e =>
-      console.error("[cornerService] ??????????:", e.message)
+      console.error("[cornerService] 投注队列处理失败:", e.message)
     );
   }
 
@@ -585,11 +586,11 @@ export async function addManualBet(matchData) {
 }
 
 /**
- * ?? cornerBetExecutor ??????
+ * 调用 cornerBetExecutor 执行投注
  */
 async function placeBetOnHG(bet) {
   if (!betConfig.isRealMode) {
-    console.log("[cornerService] ??????????? bet#" + bet.id);
+    console.log("[cornerService] 模拟模式跳过实际投注 bet#" + bet.id);
     return { success: true };
   }
 
@@ -643,7 +644,6 @@ export async function executePendingBets() {
   await processBetQueue();
 
   return { success: true, executed: 0, queued };
-};
 }
 
 export async function getCornerBets({ status, limit = 50 }) {

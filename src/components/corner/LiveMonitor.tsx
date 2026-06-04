@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { ExternalLink, History, DollarSign, X } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
@@ -30,7 +30,8 @@ export default function LiveMonitor() {
   const displayData = useCornerStore((s) => s.liveMatches);
   const isLoading = useCornerStore((s) => s.isLoading);
   const pollInterval = useCornerStore((s) => s.settings.pollInterval);
-  const isRealMode = useCornerStore((s) => s.settings.isRealMode);
+  const settings = useCornerStore((s) => s.settings);
+  const isRealMode = settings.isRealMode;
   const betAmount = useCornerStore((s) => s.settings.betAmount);
 
   const findTeamInfo = (nameCn: string) => {
@@ -252,7 +253,7 @@ export default function LiveMonitor() {
                     <button type="button"
                       onClick={() => removeTrackedMatch(String(row.matchId))}
                       className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 hover:text-rose-300 transition-all"
-                      title="取消追踪"
+                      title={isRealMode && settings.autoBetEnabled ? "取消追踪（将停止自动投注）" : "取消追踪"}
                     >
                       ×
                     </button>
@@ -334,7 +335,7 @@ export default function LiveMonitor() {
                 {`取消`}
               </button>
               <button onClick={handleManualBet} disabled={betSubmitting || betInputAmount <= 0} className="flex-1 px-4 py-2 text-xs rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                {betSubmitting ? "提交中..." : "确认投注 楼" + betInputAmount}
+                {betSubmitting ? "提交中..." : "确认投注 ¥" + betInputAmount}
               </button>
             </div>
           </div>
@@ -349,7 +350,7 @@ export default function LiveMonitor() {
           <span className="w-1 h-3 border-l-2 border-emerald-600/60" />触发行高亮
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="w-1 h-3 ring-2 ring-emerald-500/60" />追踪比赛
+          <span className="w-1 h-3 ring-2 ring-emerald-500/60" />追踪比赛{isRealMode && settings.autoBetEnabled ? "（自动投注）" : ""}
         </span>
         <span>自动刷新: {pollInterval / 1000}s</span>
       </div>
