@@ -27,6 +27,14 @@ export const ON_TARGET_XG_FACTOR = 1.2;
 /** 射偏期望 xG（低质量尝试） */
 export const OFF_TARGET_XG_FACTOR = 0.2;
 
+// ======================== 返回类型 ========================
+
+export interface XGResult {
+  xg: number;
+  /** 数据质量警告 */
+  warning?: string;
+}
+
 // ======================== 计算函数 ========================
 
 /**
@@ -35,28 +43,46 @@ export const OFF_TARGET_XG_FACTOR = 0.2;
  * @param shots 总射门次数
  * @param shotsOnTarget 射正次数
  * @param league 联赛 ID（用于联赛特定 xG 基准）
- * @param useRealXG 若有真实 xG 数据则直接返回（爬虫提供）
- * @returns 计算后的 xG 值
+ * @param realXG 若有真实 xG 数据则直接返回（爬虫提供）
+ * @returns 计算后的 xG 值及可选的警告信息
  */
 export function calculateRealisticXG(
   shots: number,
   shotsOnTarget: number,
   league?: string,
   realXG?: number,
-): number {
+): XGResult {
   // 若有真实 xG 数据，直接使用
   if (realXG !== undefined && realXG > 0) {
-    return realXG;
+    return { xg: realXG };
+  }
+
+  const warnings: string[] = [];
+
+  // 射正数不能超过总射门数
+  const safeShotsOnTarget = Math.min(shotsOnTarget, shots);
+  if (shotsOnTarget > shots) {
+    warnings.push('shotsOnTarget 超过总射门数，已自动截断');
+  }
+
+  // 负数截断
+  const safeShots = Math.max(0, shots);
+
+  if (safeShots === 0) {
+    return { xg: 0, warning: warnings.length > 0 ? warnings.join('; ') : undefined };
   }
 
   const xgPerShot = LEAGUE_XG_PER_SHOT[league || 'DEFAULT'] || LEAGUE_XG_PER_SHOT.DEFAULT;
-  const shotsOffTarget = Math.max(0, shots - shotsOnTarget);
+  const shotsOffTarget = safeShots - safeShotsOnTarget;
 
   // 核心公式：射正 × 高质量系数 + 射偏 × 低质量系数
-  const xg = shotsOnTarget * (xgPerShot * ON_TARGET_XG_FACTOR)
+  const xg = safeShotsOnTarget * (xgPerShot * ON_TARGET_XG_FACTOR)
            + shotsOffTarget * (xgPerShot * OFF_TARGET_XG_FACTOR);
 
-  return Math.round(xg * 100) / 100;
+  return {
+    xg: Math.round(xg * 100) / 100,
+    warning: warnings.length > 0 ? warnings.join('; ') : undefined,
+  };
 }
 
 /**
@@ -75,7 +101,7 @@ export function computeTeamXG(team: {
   const accuracy = (team.shotAccuracy || 40) / 100;
   const shotsOnTarget = Math.round(shots * accuracy);
 
-  return calculateRealisticXG(shots, shotsOnTarget, team.league, team.realXG);
+  return calculateRealisticXG(shots, shotsOnTarget, team.league, team.realXG).xg;
 }
 
 /**
@@ -104,10 +130,10 @@ export function computeTeamXGSplit(
   const baseXG = computeTeamXG(team);
   const xgFor = Math.round((baseXG * 0.85 + goalsPerGame * 0.15) * 100) / 100;
 
-  // xGAgainst：基于对手进球率估算
+  // xGAgainst：基于对手进球率与联赛场均进球关系估算
   const leagueAvg = getLeagueAvgGoals(team.league);
   const opponentQuality = concededPerGame / Math.max(0.1, leagueAvg / 2);
-  const xgAgainst = Math.round((leagueAvg / 2 * opponentQuality * 0.9) * 100) / 100;
+  const xgAgainst = Math.round((leagueAvg / 2 * Math.min(opponentQuality, 3.0) * 0.9) * 100) / 100;
 
   return { xgFor, xgAgainst };
 }

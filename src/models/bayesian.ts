@@ -42,8 +42,12 @@ export function calculateTimeDecay(
   totalMinutes: number = 90,
   exponent: number = 1.2,
 ): number {
-  const ratio = Math.max(0, totalMinutes - elapsedMinutes) / totalMinutes;
-  return Math.pow(ratio, exponent);
+  // 防御性编程：参数校验
+  const safeTotal = totalMinutes <= 0 ? 90 : totalMinutes;
+  const safeElapsed = Math.max(0, Math.min(elapsedMinutes, safeTotal));
+  const safeExponent = Math.max(0, exponent);
+  const ratio = (safeTotal - safeElapsed) / safeTotal;
+  return Math.pow(ratio, safeExponent);
 }
 
 /**

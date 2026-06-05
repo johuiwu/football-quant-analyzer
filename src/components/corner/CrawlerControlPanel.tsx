@@ -86,8 +86,9 @@ export default function CrawlerControlPanel() {
       const data = await res.json();
       if (data.success) {
         setIsBackendPolling(true);
+        setAutoRefresh(true);
         showMessage("success", "启动成功，后台将自动获取数据");
-        // 等待 8 秒后触发首次即时数据获取
+        // 等待 8 秒后触发首次数据获取（先尝试即时爬取，失败则从缓存读取）
         setTimeout(async () => {
           await fetchMatches(true); // forceCorner=true，走 /api/corner/fetch 即时爬取
         }, 8000);
@@ -230,18 +231,23 @@ export default function CrawlerControlPanel() {
       let apiData = null;
       let apiSource = "";
       
-      if (forceCorner && useCornerApi) {
+      if (forceCorner) {
         try {
           const fetchRes = await fetch("/api/corner/fetch", { method: "POST" });
           apiData = await fetchRes.json();
           apiSource = "/api/corner/fetch";
+          // 即时爬取失败（如 Crawler busy）时回退到缓存接口
+          if (!apiData?.success) {
+            console.warn("[数据] 即时爬取失败:", apiData?.error || "unknown", "回退到缓存接口");
+            apiData = null;
+          }
         } catch (fetchErr) {
           console.warn("[数据] 实时获取失败，回退获取:", fetchErr);
         }
       }
       
       if (!apiData) {
-        const fallbackUrl = useCornerApi ? "/api/corner/live" : "/api/crawler/matches";
+        const fallbackUrl = "/api/corner/live";
         apiSource = fallbackUrl;
         const res = await fetch(fallbackUrl);
         apiData = await res.json();
@@ -280,7 +286,9 @@ export default function CrawlerControlPanel() {
               cornerHandicap: Number(item.cornerHandicap) || 0,
               cornerOdds: Number(item.cornerOdds) || 0,
               handicaps: item.handicaps || [],
-              triggeredStrategies: item.triggeredStrategies || []
+              triggeredStrategies: item.triggeredStrategies || [],
+              _dataSource: item._dataSource || "",
+              _cornerSource: item._cornerSource || ""
             }));
             useCornerStore.getState().setLiveMatches(mapped);
           } else {
@@ -1007,7 +1015,7 @@ export default function CrawlerControlPanel() {
           更新时间：{new Date(status.lastUpdate).toLocaleTimeString()}
         </div>
       )}
-      ﻿      {activeTab === "main_markets" && (
+      {activeTab === "main_markets" && (
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {(!mainMarketData || Object.keys(mainMarketData).length === 0) ? (
             <div className="text-center py-8 text-slate-500 text-sm">
@@ -1017,6 +1025,19 @@ export default function CrawlerControlPanel() {
             Object.entries(mainMarketData).map(([key, val]: [string, any]) => {
               const [home, away] = key.split("|");
               const hasScore = typeof val.homeScore === 'number' && val.homeScore >= 0 && typeof val.awayScore === 'number' && val.awayScore >= 0;
+              
+              // 辅助函数：兼容单个对象或数组
+              const getArray = (data: any) => {
+                if (Array.isArray(data)) return data;
+                if (data && typeof data === 'object') return [data];
+                return [];
+              };
+              
+              const hdpList = getArray(val.hdp);
+              const ouList = getArray(val.ou);
+              const hdpHalfList = getArray(val.hdpHalf);
+              const ouHalfList = getArray(val.ouHalf);
+              
               return (
                 <div key={key} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
                   <div className="p-4">
@@ -1043,38 +1064,86 @@ export default function CrawlerControlPanel() {
                         <div className="text-sm font-medium text-slate-200">{translateTeam(away)}</div>
                       </div>
                     </div>
-                    {/* 盘口卡片 */}
+                    {/* 盘口卡片 - 左右两列布局：左列让球，右列大小 */}
                     <div className="grid grid-cols-2 gap-3">
-                      {val.hdp && (
-                        <div className="bg-slate-800/50 rounded-lg p-3">
-                          <div className="text-xs text-orange-400 mb-2 font-medium">让球</div>
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="text-slate-300">{home}</div>
-                            <div className="text-orange-300 font-bold">{val.hdp.line}</div>
-                            <div className="text-emerald-400">{val.hdp.homeOdds}</div>
+                      {/* 左列：让球区域 */}
+                      <div className="space-y-2">
+                        {/* 全场让球 */}
+                        {hdpList.length > 0 && (
+                          <div className="bg-slate-800/50 rounded-lg p-2">
+                            <div className="text-xs text-orange-400 mb-1 font-medium text-center">让球</div>
+                            <div className="grid grid-cols-4 gap-1">
+                              {hdpList.map((hdp: any, idx: number) => (
+                                <div key={idx} className="bg-slate-700/50 rounded p-1 text-center">
+                                  <div className="text-orange-300 font-bold text-xs">{hdp.line}</div>
+                                  <div className="text-emerald-400 text-xs">{hdp.homeOdds?.toFixed(2) || '-'}</div>
+                                  <div className="border-t border-slate-600 my-1"></div>
+                                  <div className="text-slate-400 text-xs">{hdp.awayLine || hdp.line}</div>
+                                  <div className="text-emerald-400 text-xs">{hdp.awayOdds?.toFixed(2) || '-'}</div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between text-sm mt-1">
-                            <div className="text-slate-300">{away}</div>
-                            <div className="text-slate-400">{val.hdp.awayLine || val.hdp.line}</div>
-                            <div className="text-emerald-400">{val.hdp.awayOdds}</div>
+                        )}
+                        {/* 上半场让球 */}
+                        {hdpHalfList.length > 0 && (
+                          <div className="bg-slate-800/50 rounded-lg p-2">
+                            <div className="text-xs text-orange-400/70 mb-1 font-medium text-center">上半场让球</div>
+                            <div className="grid grid-cols-4 gap-1">
+                              {hdpHalfList.map((hdp: any, idx: number) => (
+                                <div key={idx} className="bg-slate-700/50 rounded p-1 text-center">
+                                  <div className="text-orange-300/70 font-bold text-xs">{hdp.line}</div>
+                                  <div className="text-emerald-400 text-xs">{hdp.homeOdds?.toFixed(2) || '-'}</div>
+                                  <div className="border-t border-slate-600 my-1"></div>
+                                  <div className="text-slate-400 text-xs">{hdp.awayLine || hdp.line}</div>
+                                  <div className="text-emerald-400 text-xs">{hdp.awayOdds?.toFixed(2) || '-'}</div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      {val.ou && (
-                        <div className="bg-slate-800/50 rounded-lg p-3">
-                          <div className="text-xs text-blue-400 mb-2 font-medium">得分大小</div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500">大</span>
-                            <span className="text-blue-300 font-bold">{val.ou.line}</span>
-                            <span className="text-emerald-400">{val.ou.overOdds}</span>
+                        )}
+                      </div>
+                      {/* 右列：大小区域 */}
+                      <div className="space-y-2">
+                        {/* 全场大小 */}
+                        {ouList.length > 0 && (
+                          <div className="bg-slate-800/50 rounded-lg p-2">
+                            <div className="text-xs text-blue-400 mb-1 font-medium text-center">得分大小</div>
+                            <div className="grid grid-cols-4 gap-1">
+                              {ouList.map((ou: any, idx: number) => (
+                                <div key={idx} className="bg-slate-700/50 rounded p-1 text-center">
+                                  <div className="text-xs text-slate-500">大</div>
+                                  <div className="text-blue-300 font-bold text-xs">{ou.line}</div>
+                                  <div className="text-emerald-400 text-xs">{ou.overOdds?.toFixed(2) || '-'}</div>
+                                  <div className="border-t border-slate-600 my-1"></div>
+                                  <div className="text-xs text-slate-500">小</div>
+                                  <div className="text-slate-400 text-xs">{ou.line}</div>
+                                  <div className="text-emerald-400 text-xs">{ou.underOdds?.toFixed(2) || '-'}</div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between text-sm mt-1">
-                            <span className="text-slate-500">小</span>
-                            <span className="text-slate-400">{val.ou.line}</span>
-                            <span className="text-emerald-400">{val.ou.underOdds}</span>
+                        )}
+                        {/* 上半场大小 */}
+                        {ouHalfList.length > 0 && (
+                          <div className="bg-slate-800/50 rounded-lg p-2">
+                            <div className="text-xs text-blue-400/70 mb-1 font-medium text-center">上半场大小</div>
+                            <div className="grid grid-cols-4 gap-1">
+                              {ouHalfList.map((ou: any, idx: number) => (
+                                <div key={idx} className="bg-slate-700/50 rounded p-1 text-center">
+                                  <div className="text-xs text-slate-500">大</div>
+                                  <div className="text-blue-300/70 font-bold text-xs">{ou.line}</div>
+                                  <div className="text-emerald-400 text-xs">{ou.overOdds?.toFixed(2) || '-'}</div>
+                                  <div className="border-t border-slate-600 my-1"></div>
+                                  <div className="text-xs text-slate-500">小</div>
+                                  <div className="text-slate-400 text-xs">{ou.line}</div>
+                                  <div className="text-emerald-400 text-xs">{ou.underOdds?.toFixed(2) || '-'}</div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -11,6 +11,35 @@ export const LEAGUE_ELO_BASE: Record<string, number> = {
   WorldCup: 1550, DEFAULT: 1350,
 };
 
+// ======================== 主场优势 ========================
+
+/** 默认主场 Elo 加成（约等于 0.25 球的优势） */
+export const DEFAULT_HOME_ADVANTAGE = 100;
+
+/** 各联赛主场优势差异化（联赛主场胜率越高，加成越大） */
+export const LEAGUE_HOME_ADVANTAGE: Record<string, number> = {
+  EPL: 105, LaLiga: 110, Bundesliga: 95, SerieA: 115,
+  Ligue1: 100, Eredivisie: 105, PrimeiraLiga: 120,
+  Championship: 100, SaudiPL: 100, CSL: 110, JLeague: 95,
+  KLeague1: 100, KLeague2: 95,
+  Eliteserien: 110, Allsvenskan: 105, Veikkausliiga: 100,
+  WorldCup: 0, // 中立场无主场优势
+  DEFAULT: 100,
+};
+
+// ======================== K 因子 ========================
+
+/** 联赛 K 因子（高竞争联赛 K 值更低以稳定排名） */
+export const LEAGUE_K_FACTOR: Record<string, number> = {
+  EPL: 18, LaLiga: 18, Bundesliga: 18, SerieA: 18,
+  Ligue1: 20, Eredivisie: 22, PrimeiraLiga: 22,
+  Championship: 24, SaudiPL: 24, CSL: 26, JLeague: 26,
+  KLeague1: 26, KLeague2: 28,
+  Eliteserien: 24, Allsvenskan: 26, Veikkausliiga: 28,
+  WorldCup: 32, // 大赛 K 值更高以快速反映状态
+  DEFAULT: 20,
+};
+
 // ======================== 纯数学函数 ========================
 
 /**
@@ -23,11 +52,12 @@ export function getOrInitElo(teamName: string, league: string, rank: number = 10
 }
 
 /**
- * 标准 Elo 更新公式
+ * 标准 Elo 更新公式（参数化主场优势）
  * @param homeElo 主队当前 Elo
  * @param awayElo 客队当前 Elo
  * @param goalDiff 净胜球（主队进球 - 客队进球）
  * @param K K 因子，默认 20
+ * @param homeAdv 主场 Elo 加成，默认 100
  * @returns { homeDelta, awayDelta } 双方 Elo 变化量
  */
 export function calculateEloUpdate(
@@ -35,9 +65,10 @@ export function calculateEloUpdate(
   awayElo: number,
   goalDiff: number,
   K: number = 20,
+  homeAdv: number = DEFAULT_HOME_ADVANTAGE,
 ): { homeDelta: number; awayDelta: number } {
-  // 预期主队胜率
-  const expectedHome = 1 / (1 + Math.pow(10, -(homeElo - awayElo + 100) / 400));
+  // 预期主队胜率（含主场优势）
+  const expectedHome = 1 / (1 + Math.pow(10, -(homeElo - awayElo + homeAdv) / 400));
 
   // 实际结果：胜=1, 平=0.5, 负=0
   const actualHome = goalDiff > 0 ? 1 : goalDiff < 0 ? 0 : 0.5;
@@ -65,4 +96,20 @@ export function getTeamElo(team: TeamStats): number {
   const rank = team?.rank ?? 10;
   const league = team?.league || 'DEFAULT';
   return getOrInitElo(team?.nameCn || '', league, rank);
+}
+
+/**
+ * 获取联赛 K 因子
+ */
+export function getLeagueKFactor(league?: string): number {
+  if (!league) return LEAGUE_K_FACTOR.DEFAULT;
+  return LEAGUE_K_FACTOR[league] ?? LEAGUE_K_FACTOR.DEFAULT;
+}
+
+/**
+ * 获取联赛主场优势
+ */
+export function getLeagueHomeAdvantage(league?: string): number {
+  if (!league) return LEAGUE_HOME_ADVANTAGE.DEFAULT;
+  return LEAGUE_HOME_ADVANTAGE[league] ?? LEAGUE_HOME_ADVANTAGE.DEFAULT;
 }

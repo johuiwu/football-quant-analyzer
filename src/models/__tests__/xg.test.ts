@@ -12,26 +12,36 @@ describe('LEAGUE_XG_PER_SHOT', () => {
 
 describe('calculateRealisticXG', () => {
   it('typical EPL team: 15 shots, 5 on target => ~0.88 xG', () => {
-    const xg = calculateRealisticXG(15, 5, 'EPL');
+    const result = calculateRealisticXG(15, 5, 'EPL');
     // 5 * 0.11*1.2 + 10 * 0.11*0.2 = 0.66 + 0.22 = 0.88
-    expect(xg).toBe(0.88);
+    expect(result.xg).toBe(0.88);
+    expect(result.warning).toBeUndefined();
   });
 
   it('realXG overrides computation when provided', () => {
-    const xg = calculateRealisticXG(15, 5, 'EPL', 1.5);
-    expect(xg).toBe(1.5);
+    const result = calculateRealisticXG(15, 5, 'EPL', 1.5);
+    expect(result.xg).toBe(1.5);
+    expect(result.warning).toBeUndefined();
   });
 
   it('0 shots => 0 xG', () => {
-    const xg = calculateRealisticXG(0, 0, 'EPL');
-    expect(xg).toBe(0);
+    const result = calculateRealisticXG(0, 0, 'EPL');
+    expect(result.xg).toBe(0);
   });
 
-  it('shotsOnTarget cannot exceed shots', () => {
-    const xg = calculateRealisticXG(10, 15, 'EPL');
-    // shotsOffTarget = max(0, 10-15) = 0
-    // 15 * 0.132 + 0 = 1.98
-    expect(xg).toBeGreaterThan(0);
+  it('shotsOnTarget > shots 时自动截断并警告', () => {
+    const result = calculateRealisticXG(10, 15, 'EPL');
+    // shotsOffTarget = 10 - min(15,10) = 0
+    // 10 * 0.132 + 0 = 1.32
+    expect(result.xg).toBeGreaterThan(0);
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toContain('已自动截断');
+  });
+
+  it('负数输入不崩溃', () => {
+    const result = calculateRealisticXG(-5, -2, 'EPL');
+    expect(result.xg).toBe(0);
+    expect(Number.isFinite(result.xg)).toBe(true);
   });
 });
 
@@ -58,7 +68,7 @@ describe('computeTeamXGSplit', () => {
     league: 'EPL',
   };
 
-  it('home xGFor > away xGFor', () => {
+  it('home xgFor > away xgFor', () => {
     const home = computeTeamXGSplit(team, true);
     const away = computeTeamXGSplit(team, false);
     expect(home.xgFor).toBeGreaterThan(away.xgFor);
@@ -67,6 +77,21 @@ describe('computeTeamXGSplit', () => {
   it('returns positive values', () => {
     const result = computeTeamXGSplit(team, true);
     expect(result.xgFor).toBeGreaterThan(0);
+    expect(result.xgAgainst).toBeGreaterThan(0);
+  });
+
+  it('xgAgainst 不超过上限（被截断到 3× 联赛均值的 0.9）', () => {
+    const leakyTeam = {
+      homeStats: { played: 1, goalsFor: 1, goalsAgainst: 20 },
+      awayStats: { played: 1, goalsFor: 1, goalsAgainst: 20 },
+      shotsPerGame: 10,
+      shotAccuracy: 30,
+      league: 'EPL',
+    };
+    const result = computeTeamXGSplit(leakyTeam, false);
+    // leagueAvg/2 * min(oppQual, 3.0) * 0.9
+    // EPL avg = 2.85, /2 = 1.425, *3*0.9 = 3.8475
+    expect(result.xgAgainst).toBeLessThan(5);
     expect(result.xgAgainst).toBeGreaterThan(0);
   });
 });

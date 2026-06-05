@@ -1,0 +1,17 @@
+﻿import { diagnoseCrawler, closeCrawler } from './backend/services/cornerCrawler.js';
+console.log('[test] starting diagnose...');
+const t0 = Date.now();
+const report = await diagnoseCrawler();
+console.log('[test] diagnose done in ' + (Date.now()-t0) + 'ms');
+console.log('  status:', report.status);
+console.log('  totalTimeMs:', report.totalTimeMs);
+console.log('  loginSuccess:', report.loginSuccess);
+console.log('  navSuccess:', report.navigationSuccess);
+console.log('  XHR URLs:', report.interceptedXHRCount);
+console.log('  captured APIs:', report.capturedAPIs.length);
+console.log('  matchesFound:', report.matchesFound);
+console.log('  errors:', report.errors.length);
+if (report.errors.length > 0) for (const e of report.errors) console.log('    [' + e.step + ']', e.message);
+console.log('  steps:', report.steps.join(' -> '));
+await closeCrawler();
+console.log('[test] done');

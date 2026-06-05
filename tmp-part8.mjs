@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer-extra";
+﻿import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import path from "path";
@@ -174,13 +174,10 @@ async function ensureLogin() {
         const body = document.body?.textContent || "";
         const hasInPlay = body.includes("In-Play") && body.includes("Soccer");
         const sportBtn = document.getElementById("old_ft_live_league");
-        const hasSport = sportBtn && getComputedStyle(sportBtn).display !== 'none' && getComputedStyle(sportBtn).visibility !== 'hidden';
+        const hasSport = sportBtn && sportBtn.offsetParent !== null;
+        const hasAccShow = document.querySelector("#acc_show") !== null;
         const hasMyEvents = body.includes("My Events");
-        // 检测简易密码页面（#back_login 可见说明在简易密码页面，不应认为已登录）
-        const backLoginBtn = document.getElementById("back_login");
-        const hasPasscodePage = backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
-        if (hasPasscodePage) return false;
-        return hasInPlay || hasSport || hasMyEvents;
+        return hasInPlay || hasSport || hasAccShow || hasMyEvents;
       });
       if (isValid) {
         setSharedPage(quickPage);
@@ -305,20 +302,16 @@ async function ensureLogin() {
           const body = document.body;
           const bodyText = body ? body.textContent || "" : "";
           const accShow = document.getElementById("acc_show");
-          const loginHidden = !accShow || accShow.style.display === "none" || (function(){ const s = getComputedStyle(accShow); return s.display === 'none' || s.visibility === 'hidden'; })();
+          const loginHidden = !accShow || accShow.style.display === "none" || accShow.offsetParent === null;
           const errEl = document.getElementById("text_error");
           const hasError = errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0;
           const hasMyEvents = bodyText.includes("My Events") || bodyText.includes("My Bets");
           const hasInPlaySoccer = bodyText.includes("In-Play") && bodyText.includes("Soccer");
-          const hasSportSelector = (function(){ const el = document.getElementById("old_ft_live_league"); return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'; })();
-          // 检测简易密码页面（#back_login 按钮可见）
-          const backLoginBtn = document.getElementById("back_login");
-          const hasPasscodePage = backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
+          const hasSportSelector = !!(document.getElementById("old_ft_live_league")?.offsetParent);
           return {
             loginHidden, hasError, hasMyEvents, hasInPlaySoccer, hasSportSelector,
             hasPasscode: bodyText.includes("Passcode Login") || bodyText.includes("简易密码"),
             hasTwoFactor: bodyText.includes("普通登入"),
-            hasPasscodePage,
             currentUrl: window.location.href,
             bodyTextSample: bodyText.substring(0, 200)
           };
@@ -334,36 +327,8 @@ async function ensureLogin() {
           return null;
         }
 
-        // 简易密码页面 — 优先处理（必须在登录成功判断之前）
-        if (status.hasPasscodePage || status.hasTwoFactor) {
-          console.log("[cornerCrawler] 检测到简易密码页面，点击普通登入...");
-          await page.evaluate(() => {
-            const btn = document.querySelector("#back_login");
-            if (btn) btn.click();
-          });
-          await new Promise(r => setTimeout(r, 3000));
-          // 重新输入账号密码
-          console.log("[cornerCrawler] 重新输入账号密码...");
-          const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
-          const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
-          await page.evaluate((usr, pw) => {
-            const u = document.getElementById('usr');
-            const p = document.getElementById('pwd');
-            if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-            if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-          }, reUser, rePwd);
-          await new Promise(r => setTimeout(r, 500));
-          // 点击登录按钮
-          await page.evaluate(() => {
-            const btn = document.getElementById('btn_login');
-            if (btn) btn.click();
-          });
-          console.log("[cornerCrawler] 已重新点击登录按钮，继续等待...");
-          continue;
-        }
-
         // 登录成功
-        if (status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector) {
+        if (status.loginHidden || status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector) {
           console.log("[cornerCrawler] ✅ 登录成功！（轮次 " + (i + 1) + "）");
           loginResult = { success: true };
           break;
@@ -376,6 +341,16 @@ async function ensureLogin() {
             const btn = document.querySelector("#C_no_btn, #no_btn, .btn_cancel");
             if (btn) btn.click();
           });
+        }
+
+        // 2FA 页面
+        if (status.hasTwoFactor) {
+          console.log("[cornerCrawler] 检测到二次验证页面，返回登录...");
+          await page.evaluate(() => {
+            const btn = document.querySelector("#back_login");
+            if (btn) btn.click();
+          });
+          await new Promise(r => setTimeout(r, 3000));
         }
 
         if (i % 5 === 4) {
@@ -414,8 +389,7 @@ async function ensureLogin() {
       lastLoginErrorDetail = "login_exception:" + e.message;
     } finally {
       loginInProgress = false;
-      // 仅在登录失败时关闭 page，成功时已被 setSharedPage 接管
-      if (page && !page.isClosed() && getSharedPage() !== page) {
+      if (page && !page.isClosed()) {
         try { await page.close(); } catch (_) {}
       }
     }
@@ -444,30 +418,10 @@ export async function navigateToCorners(page) {
 
     // Step 1: 点击 Soccer
     console.log("[cornerCrawler] Step 1: 点击 Soccer... (attempt " + navAttempt + "/" + MAX_NAV_RETRIES + ")");
-    try {
-      await page.evaluate(() => {
-        const btn = document.getElementById("old_ft_live_league");
-        if (btn) { btn.scrollIntoView({block:"center"}); btn.click(); }
-      });
-    } catch (clickErr) {
-      if (clickErr.message && clickErr.message.includes("Execution context was destroyed")) {
-        console.log("[cornerCrawler] 页面上下文销毁，尝试重建引用...");
-        try {
-          const newPage = getSharedPage();
-          if (newPage) {
-            page = newPage;
-            await page.evaluate(() => {
-              const btn = document.getElementById("old_ft_live_league");
-              if (btn) { btn.scrollIntoView({block:"center"}); btn.click(); }
-            });
-          }
-        } catch (retryErr) {
-          console.log("[cornerCrawler] 重建后仍失败:", retryErr.message);
-        }
-      } else {
-        console.log("[cornerCrawler] Soccer 点击失败:", clickErr.message);
-      }
-    }
+    await page.evaluate(() => {
+      const btn = document.getElementById('old_ft_live_league');
+      if (btn) { btn.scrollIntoView({block:'center'}); btn.click(); }
+    });
 
     // 等待容器渲染
     try {
@@ -491,12 +445,9 @@ export async function navigateToCorners(page) {
 
   // ========== Step 4: HDP & O/U ==========
   let soccerMarkets = {};
-  let matchScores = {};
   const hasRnou = await page.evaluate(() => {
     const tab = document.getElementById('tab_rnou');
-    if (!tab) return false;
-    const style = getComputedStyle(tab);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    return tab && tab.offsetParent !== null;
   });
   if (hasRnou) {
     console.log("[cornerCrawler] Step 4: 点击 HDP & O/U 标签...");
@@ -521,35 +472,6 @@ export async function navigateToCorners(page) {
     await randomDelay(1500, 3000);
     soccerMarkets = await captureMainMarkets(page, {});
     console.log("[cornerCrawler] HDP&O/U 市场: " + Object.keys(soccerMarkets).length + " 场");
-
-    // ★ 从 HDP&O/U 页面捕获比赛比分（Soccer页面的 box_score 是真实比赛比分）
-    try {
-      const scores = await page.evaluate(() => {
-        const result = {};
-        const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"], div.box_lebet_l');
-        for (const leftPanel of containers) {
-          const htEl = leftPanel.querySelector('div.box_team.teamH span.text_team');
-          const atEl = leftPanel.querySelector('div.box_team.teamC span.text_team');
-          if (!htEl || !atEl) continue;
-          const homeTeam = (htEl.textContent || '').trim();
-          const awayTeam = (atEl.textContent || '').trim();
-          if (!homeTeam || !awayTeam) continue;
-          const scoreSpans = leftPanel.querySelectorAll('div.box_score span.text_point');
-          if (scoreSpans.length >= 2) {
-            const hs = parseInt((scoreSpans[0].textContent || '0').trim(), 10);
-            const as = parseInt((scoreSpans[1].textContent || '0').trim(), 10);
-            if (!isNaN(hs) && !isNaN(as)) {
-              result[(homeTeam + '|' + awayTeam).toLowerCase()] = { homeScore: hs, awayScore: as };
-            }
-          }
-        }
-        return result;
-      });
-      Object.assign(matchScores, scores);
-      console.log("[cornerCrawler] 从 HDP&O/U 页面捕获比分: " + Object.keys(matchScores).length + " 场");
-    } catch(e) {
-      console.log("[cornerCrawler] 比分捕获失败:", e.message);
-    }
   } else {
     console.log("[cornerCrawler] #tab_rnou 不可见，跳过 HDP&O/U");
   }
@@ -558,9 +480,7 @@ export async function navigateToCorners(page) {
   let cornerClicked = false;
   const hasCorners = await page.evaluate(() => {
     const tab = document.getElementById('tab_cn');
-    if (!tab) return false;
-    const style = getComputedStyle(tab);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    return tab && tab.offsetParent !== null;
   });
   if (hasCorners) {
     console.log("[cornerCrawler] Step 5: 点击 CORNERS 标签...");
@@ -593,7 +513,7 @@ export async function navigateToCorners(page) {
   }
 
   await handlePopups(page);
-  return { success: true, source: "simplified", matchScores, soccerMarkets, noSoccer: false };
+  return { success: true, source: "simplified", matchScores: {}, soccerMarkets, noSoccer: false };
 }
 
 
@@ -602,8 +522,6 @@ async function captureMainMarkets(page, matchScores = {}) {
   try {
     return await page.evaluate((scores) => {
       const markets = {};
-      // ★ 中文→英文盘口类型映射
-      const cm = {'大/小':'O/U','大小':'O/U','O/U':'O/U','得分大小':'O/U','Over/Under':'O/U','Goals O/U':'O/U','让球':'HDP','HDP':'HDP','Handicap':'HDP','上半场':'1H','1H':'1H','下半场':'2H','2H':'2H'};
       let currentLeague = '';
       const leaNameEl = document.getElementById('lea_name');
       if (leaNameEl) currentLeague = (leaNameEl.textContent || '').trim();
@@ -629,71 +547,48 @@ async function captureMainMarkets(page, matchScores = {}) {
         const scoreData = scores[key] || {};
         const homeScore = typeof scoreData.homeScore === 'number' ? scoreData.homeScore : -1;
         const awayScore = typeof scoreData.awayScore === 'number' ? scoreData.awayScore : -1;
-        const entry = { league, time, homeScore: homeScore >= 0 ? homeScore : null, awayScore: awayScore >= 0 ? awayScore : null, hdp: [], ou: [], hdpHalf: [], ouHalf: [] };
-
-        // ★ 优先解析 hdpou_ft 结构（HDP&O/U 页面使用此结构）
-        const hdpouSections = box.querySelectorAll('div.form_lebet_hdpou');
+        const entry = { league, time, homeScore: homeScore >= 0 ? homeScore : null, awayScore: awayScore >= 0 ? awayScore : null, hdp: null, ou: null };
+        // hdpou_ft sections
+        const hdpouSections = box.querySelectorAll('div.form_lebet_hdpou.hdpou_ft');
         for (const section of hdpouSections) {
           const headSpan = section.querySelector('div.head_lebet span');
           if (!headSpan) continue;
-          const rawLabel = (headSpan.textContent || '').trim();
-          const marketLabel = cm[rawLabel] || rawLabel.toUpperCase();
-          const isHalfSection = section.classList.contains('hdpou_1h');
-
-          // 遍历所有非空的 col_hdpou，收集所有有效盘口
-          const cols = section.querySelectorAll('div.col_hdpou');
-          for (const col of cols) {
-            if (col.classList.contains('odd_empty')) continue;
-            const buttons = col.querySelectorAll('div.btn_hdpou_odd');
-            if (buttons.length < 2) continue;
-            const homeLine = (buttons[0].querySelector('tt.text_ballhead')?.textContent || '').trim();
-            const homeOdds = parseFloat(buttons[0].querySelector('span.text_odds')?.textContent || '0') || 0;
-            const awayLine = (buttons[1].querySelector('tt.text_ballhead')?.textContent || '').trim();
-            const awayOdds = parseFloat(buttons[1].querySelector('span.text_odds')?.textContent || '0') || 0;
-
-            if (marketLabel === 'HDP') {
-              const hdpEntry = { line: homeLine, awayLine: awayLine, homeOdds, awayOdds };
-              if (isHalfSection) entry.hdpHalf.push(hdpEntry); else entry.hdp.push(hdpEntry);
-            } else if (marketLabel === 'O/U') {
-              const ouEntry = { line: parseFloat(homeLine) || 0, overOdds: homeOdds, underOdds: awayOdds };
-              if (isHalfSection) entry.ouHalf.push(ouEntry); else entry.ou.push(ouEntry);
-            }
+          const marketLabel = (headSpan.textContent || '').trim();
+          const firstRow = section.querySelector('div.col_hdpou:first-child');
+          if (!firstRow) continue;
+          const buttons = firstRow.querySelectorAll('div.btn_hdpou_odd');
+          if (buttons.length < 2) continue;
+          const homeLine = (buttons[0].querySelector('tt.text_ballhead')?.textContent || '').trim();
+          const homeOdds = parseFloat(buttons[0].querySelector('span.text_odds')?.textContent || '0') || 0;
+          const awayLine = (buttons[1].querySelector('tt.text_ballhead')?.textContent || '').trim();
+          const awayOdds = parseFloat(buttons[1].querySelector('span.text_odds')?.textContent || '0') || 0;
+          if (marketLabel === '让球' || marketLabel === 'HDP') {
+            entry.hdp = { line: homeLine, homeOdds, awayOdds };
+          } else if (marketLabel === '得分大小' || marketLabel === 'O/U') {
+            entry.ou = { line: parseFloat(homeLine) || 0, overOdds: homeOdds, underOdds: awayOdds };
           }
         }
-
-        // ★ fallback: box_lebet_odd 结构（CORNERS 页面或部分 HDP&O/U 页面使用）
-        if (entry.hdp.length === 0 && entry.ou.length === 0 && entry.hdpHalf.length === 0 && entry.ouHalf.length === 0) {
+        // box_lebet_odd fallback
+        if (!entry.hdp && !entry.ou) {
           const oddBlocks = box.querySelectorAll('div.box_lebet_odd');
           for (const block of oddBlocks) {
             const headSpan = block.querySelector('div.head_lebet span');
             if (!headSpan) continue;
-            const rawLabel = (headSpan.textContent || '').trim();
-            const marketLabel = cm[rawLabel] || rawLabel.toUpperCase();
-
-            // 判断是否上半场
-            const halfTt = block.querySelector('div.head_lebet tt');
-            const halfLabel = halfTt ? (cm[(halfTt.textContent || '').trim()] || (halfTt.textContent || '').trim()) : '';
-            const isHalf = halfLabel === '1H' || halfLabel === '上半场' || (halfTt && (halfTt.textContent || '').includes('上半'));
-
-            const btns = block.querySelectorAll('div.btn_lebet_odd');
+            const label = (headSpan.textContent || '').trim();
+            const btns = block.querySelectorAll('div.btn_lebet_odd:not(.lock)');
             if (btns.length < 2) continue;
-            const isLocked = btns[0].classList.contains('lock');
-            const homeOdds = isLocked ? 0 : parseFloat((btns[0].querySelector('span.text_odds') || {}).textContent || '0') || 0;
-            const awayOdds = isLocked ? 0 : parseFloat((btns[1].querySelector('span.text_odds') || {}).textContent || '0') || 0;
-
-            if (marketLabel === 'HDP') {
+            const homeOdds = parseFloat((btns[0].querySelector('span.text_odds') || {}).textContent || '0') || 0;
+            const awayOdds = parseFloat((btns[1].querySelector('span.text_odds') || {}).textContent || '0') || 0;
+            if (label === 'HDP') {
               const ln = (btns[0].querySelector('tt.text_ballhead')?.textContent || '').trim();
-              const awayLn = (btns[1].querySelector('tt.text_ballhead')?.textContent || '').trim();
-              const hdpEntry = { line: ln, awayLine: awayLn, homeOdds, awayOdds, locked: isLocked };
-              if (isHalf) entry.hdpHalf.push(hdpEntry); else entry.hdp.push(hdpEntry);
-            } else if (marketLabel === 'O/U') {
+              entry.hdp = { line: ln, homeOdds, awayOdds };
+            } else if (label === 'O/U') {
               const ln = parseFloat((btns[0].querySelector('tt.text_ballhead')?.textContent || '0')) || 0;
-              const ouEntry = { line: ln, overOdds: homeOdds, underOdds: awayOdds, locked: isLocked };
-              if (isHalf) entry.ouHalf.push(ouEntry); else entry.ou.push(ouEntry);
+              entry.ou = { line: ln, overOdds: homeOdds, underOdds: awayOdds };
             }
           }
         }
-        if (entry.hdp.length > 0 || entry.ou.length > 0 || entry.hdpHalf.length > 0 || entry.ouHalf.length > 0) markets[key] = entry;
+        if (entry.hdp || entry.ou) markets[key] = entry;
       }
       return markets;
     }, matchScores);
@@ -863,8 +758,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
                 // ★ 中文→英文盘口类型映射（与 parseAllMarkets 保持一致）
                 const cm = {'大/小':'O/U','大小':'O/U','O/U':'O/U','角球大/小':'O/U','角球大小':'O/U','Over/Under':'O/U','让球':'HDP','HDP':'HDP','角球让球':'HDP','Handicap':'HDP','下个角球':'NEXT_CORNER','NEXT CORNER':'NEXT_CORNER','单/双':'O/E','单双':'O/E','O/E':'O/E','角球单/双':'O/E','角球单双':'O/E','Odd/Even':'O/E'};
                 const marketType = cm[rawMarket] || rawMarket.toUpperCase();
-                // ★ 修复：包含 lock 按钮提取盘口线(line)，lock时赔率为0
-                const betButtons = block.querySelectorAll("div.btn_lebet_odd");
+                const betButtons = block.querySelectorAll("div.btn_lebet_odd:not(.lock)");
                 if (betButtons.length === 0) continue;
 
                 if (marketType === "O/U" && betButtons.length >= 2) {
@@ -875,35 +769,27 @@ async function parseCornerMarkets(page, matchScores = {}) {
                     const numMatch = blockText.match(/(\d+\.?\d*)/);
                     if (numMatch) ouLine = parseFloat(numMatch[1]) || 0;
                   }
-                  const isLocked = betButtons[0].classList.contains("lock");
                   cornerOU = {
                     line: ouLine || 0,
-                    overOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                    underOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                    locked: isLocked
+                    overOdds: safeFloat(betButtons[0], "span.text_odds"),
+                    underOdds: safeFloat(betButtons[1], "span.text_odds")
                   };
                 } else if (marketType === "HDP" && betButtons.length >= 2) {
-                  const isLocked = betButtons[0].classList.contains("lock");
                   cornerHDP = {
                     line: safeText(betButtons[0], "tt.text_ballhead"),
-                    homeOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                    awayOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                    locked: isLocked
+                    homeOdds: safeFloat(betButtons[0], "span.text_odds"),
+                    awayOdds: safeFloat(betButtons[1], "span.text_odds")
                   };
                 } else if (marketType === "NEXT_CORNER" && betButtons.length >= 2) {
-                  const isLocked = betButtons[0].classList.contains("lock");
                   nextCorner = {
                     corner: safeText(betButtons[0], "tt.text_ballou"),
-                    homeOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                    awayOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                    locked: isLocked
+                    homeOdds: safeFloat(betButtons[0], "span.text_odds"),
+                    awayOdds: safeFloat(betButtons[1], "span.text_odds")
                   };
                 } else if (marketType === "O/E" && betButtons.length >= 2) {
-                  const isLocked = betButtons[0].classList.contains("lock");
                   cornerOE = {
-                    oddOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                    evenOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                    locked: isLocked
+                    oddOdds: safeFloat(betButtons[0], "span.text_odds"),
+                    evenOdds: safeFloat(betButtons[1], "span.text_odds")
                   };
                 }
               }
@@ -986,22 +872,11 @@ async function parseCornerMarkets(page, matchScores = {}) {
                 }
               }
 
-              // ★ 比分：优先使用 matchScores（Soccer页面的真实比赛比分）
               let homeScore = 0, awayScore = 0;
-              let cornerHomeCount = 0, cornerAwayCount = 0;
-              // CORNERS 页面的 box_score 是角球数，不是比赛比分
               const scoreSpans = leftPanel.querySelectorAll("div.box_score span.text_point");
               if (scoreSpans.length >= 2) {
-                cornerHomeCount = parseInt((scoreSpans[0].textContent || "0").trim(), 10) || 0;
-                cornerAwayCount = parseInt((scoreSpans[1].textContent || "0").trim(), 10) || 0;
-              }
-              if (matchScores && homeTeam && awayTeam) {
-                const key = (homeTeam + '|' + awayTeam).toLowerCase();
-                const matchInfo = matchScores[key];
-                if (matchInfo) {
-                  homeScore = matchInfo.homeScore || 0;
-                  awayScore = matchInfo.awayScore || 0;
-                }
+                homeScore = parseInt((scoreSpans[0].textContent || "0").trim(), 10) || 0;
+                awayScore = parseInt((scoreSpans[1].textContent || "0").trim(), 10) || 0;
               }
 
               let totalCorners = safeInt(leftPanel, "span.game_total");
@@ -1017,42 +892,33 @@ async function parseCornerMarkets(page, matchScores = {}) {
 
                   const headSpan = block.querySelector("div.head_lebet span");
                   if (!headSpan) continue;
-                  const rawMarket = (headSpan.textContent || "").trim();
-                  // ★ 中文→英文盘口类型映射（与策略1保持一致）
-                  const cm = {'大/小':'O/U','大小':'O/U','O/U':'O/U','角球大/小':'O/U','角球大小':'O/U','Over/Under':'O/U','让球':'HDP','HDP':'HDP','角球让球':'HDP','Handicap':'HDP','下个角球':'NEXT_CORNER','NEXT CORNER':'NEXT_CORNER','单/双':'O/E','单双':'O/E','O/E':'O/E','角球单/双':'O/E','角球单双':'O/E','Odd/Even':'O/E'};
-                  const marketType = cm[rawMarket] || rawMarket.toUpperCase();
+                  const marketType = (headSpan.textContent || "").trim().toUpperCase();
 
-                  // ★ 修复：包含 lock 按钮提取盘口线(line)，lock时赔率为0
-                  const betButtons = block.querySelectorAll("div.btn_lebet_odd");
+                  const betButtons = block.querySelectorAll("div.btn_lebet_odd:not(.lock)");
                   if (betButtons.length === 0) continue;
-                  const isLocked = betButtons[0].classList.contains("lock");
 
                   if (marketType === "O/U" && betButtons.length >= 2) {
                     cornerOU = {
                       line: safeFloat(betButtons[0], "tt.text_ballhead"),
-                      overOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                      underOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                      locked: isLocked
+                      overOdds: safeFloat(betButtons[0], "span.text_odds"),
+                      underOdds: safeFloat(betButtons[1], "span.text_odds")
                     };
                   } else if (marketType === "HDP" && betButtons.length >= 2) {
                     cornerHDP = {
                       line: safeText(betButtons[0], "tt.text_ballhead"),
-                      homeOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                      awayOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                      locked: isLocked
+                      homeOdds: safeFloat(betButtons[0], "span.text_odds"),
+                      awayOdds: safeFloat(betButtons[1], "span.text_odds")
                     };
-                  } else if ((marketType === "NEXT_CORNER" || marketType === "NEXT CORNER") && betButtons.length >= 2) {
+                  } else if (marketType === "NEXT CORNER" && betButtons.length >= 2) {
                     nextCorner = {
                       corner: safeText(betButtons[0], "tt.text_ballou"),
-                      homeOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                      awayOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                      locked: isLocked
+                      homeOdds: safeFloat(betButtons[0], "span.text_odds"),
+                      awayOdds: safeFloat(betButtons[1], "span.text_odds")
                     };
                   } else if (marketType === "O/E" && betButtons.length >= 2) {
                     cornerOE = {
-                      oddOdds: isLocked ? 0 : safeFloat(betButtons[0], "span.text_odds"),
-                      evenOdds: isLocked ? 0 : safeFloat(betButtons[1], "span.text_odds"),
-                      locked: isLocked
+                      oddOdds: safeFloat(betButtons[0], "span.text_odds"),
+                      evenOdds: safeFloat(betButtons[1], "span.text_odds")
                     };
                   }
                 }
@@ -1456,52 +1322,38 @@ function pickBestResponse(captured) {
 function buildHandicapsArray(m) {
   const result = [];
   let order = 1;
-  if (m.cornerOU) {
+  if (m.cornerOU && (m.cornerOU.overOdds > 0 || m.cornerOU.underOdds > 0)) {
     result.push({
       order: order++, category: "O/U", categoryLabel: "O/U",
       period: "full", line: m.cornerOU.line || 0,
       odds: { over: m.cornerOU.overOdds || 0, under: m.cornerOU.underOdds || 0 },
-      source: "dom", marketGroup: "corner",
-      locked: m.cornerOU.locked || false
+      source: "dom", marketGroup: "corner"
     });
   }
-  if (m.cornerHDP) {
+  if (m.cornerHDP && (m.cornerHDP.homeOdds > 0 || m.cornerHDP.awayOdds > 0)) {
     result.push({
       order: order++, category: "HDP", categoryLabel: "HDP",
       period: "full", line: m.cornerHDP.line || "",
       odds: { home: m.cornerHDP.homeOdds || 0, away: m.cornerHDP.awayOdds || 0 },
-      source: "dom", marketGroup: "corner",
-      locked: m.cornerHDP.locked || false
+      source: "dom", marketGroup: "corner"
     });
   }
-  if (m.nextCorner) {
-    // 清理角球编号文本：支持中文数字和阿拉伯数字
-    let cornerText = (m.nextCorner.corner || "").trim();
-    const cnNumMap = {'一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10','十一':'11','十二':'12','十三':'13','十四':'14','十五':'15'};
-    let cornerNum = "";
-    // 先尝试提取中文数字
-    const cnMatch = cornerText.match(/[一二三四五六七八九十]+/);
-    if (cnMatch && cnNumMap[cnMatch[0]]) {
-      cornerNum = cnNumMap[cnMatch[0]];
-    } else {
-      // 回退：提取阿拉伯数字
-      cornerNum = cornerText.replace(/[^0-9]/g, "");
-    }
+  if (m.nextCorner && (m.nextCorner.homeOdds > 0 || m.nextCorner.awayOdds > 0)) {
+    // 清理角球编号文本：提取纯数字
+    let cornerNum = (m.nextCorner.corner || "").replace(/[^0-9]/g, "");
     if (!cornerNum) cornerNum = "0";
     result.push({
       order: order++, category: "NEXT", categoryLabel: "NEXT CORNER",
       period: "full", line: cornerNum,
       odds: { home: m.nextCorner.homeOdds || 0, away: m.nextCorner.awayOdds || 0 },
-      source: "dom", marketGroup: "corner",
-      locked: m.nextCorner.locked || false
+      source: "dom", marketGroup: "corner"
     });
   }
-  if (m.cornerOE) {
+  if (m.cornerOE && (m.cornerOE.oddOdds > 0 || m.cornerOE.evenOdds > 0)) {
     result.push({
       order: order++, category: "O/E", categoryLabel: "O/E",
       period: "full", odds: { odd: m.cornerOE.oddOdds || 0, even: m.cornerOE.evenOdds || 0 },
-      source: "dom", marketGroup: "corner",
-      locked: m.cornerOE.locked || false
+      source: "dom", marketGroup: "corner"
     });
   }
   return result;
@@ -1560,72 +1412,6 @@ export async function crawlCornerMatches() {
   const soccerMarkets = navResult?.soccerMarkets || {};
     console.log("[cornerCrawler] Navigation result: source=" + dataSource + " scores=" + Object.keys(matchScores).length);
     await randomDelay(500, 1000);
-
-    // 主动登出检测：检查 kick_ok_btn 弹窗
-    try {
-      const kickedOut = await page.evaluate(() => {
-          const kickBtn = document.querySelector("#kick_ok_btn");
-          if (!kickBtn) return false;
-          const style = getComputedStyle(kickBtn);
-          return style.display !== 'none' && style.visibility !== 'hidden';
-        });
-      if (kickedOut) {
-        console.log("[cornerCrawler] 检测到登出弹窗(kick_ok_btn)，尝试重新登录...");
-        try { await page.click("#kick_ok_btn"); } catch (_) {}
-        await randomDelay(1000, 2000);
-        const rePage = await ensureLogin();
-        if (rePage) {
-          console.log("[cornerCrawler] 重新登录成功，重新导航...");
-          await setupXHRInterception(rePage);
-          await navigateToCorners(rePage);
-          await randomDelay(500, 1000);
-        }
-      }
-    } catch (e) {
-      console.warn("[cornerCrawler] 登出检测失败:", e.message);
-    }
-
-    // 简易密码页面检测：导航后可能跳转到简易密码页面
-    try {
-      const passcodeDetected = await page.evaluate(() => {
-        const backLoginBtn = document.getElementById("back_login");
-        return backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
-      });
-      if (passcodeDetected) {
-        console.log("[cornerCrawler] 检测到简易密码页面，点击普通登入...");
-        await page.evaluate(() => {
-          const btn = document.querySelector("#back_login");
-          if (btn) btn.click();
-        });
-        await randomDelay(3000, 4000);
-        // 重新输入账号密码
-        const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
-        const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
-        await page.evaluate((usr, pw) => {
-          const u = document.getElementById('usr');
-          const p = document.getElementById('pwd');
-          if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-          if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-        }, reUser, rePwd);
-        await randomDelay(500, 1000);
-        await page.evaluate(() => {
-          const btn = document.getElementById('btn_login');
-          if (btn) btn.click();
-        });
-        console.log("[cornerCrawler] 已重新登录，等待页面加载...");
-        await randomDelay(5000, 7000);
-        // 重新导航到角球页面
-        try {
-          await setupXHRInterception(page);
-          await navigateToCorners(page);
-          await randomDelay(500, 1000);
-        } catch (navErr) {
-          console.warn("[cornerCrawler] 重新导航失败:", navErr.message);
-        }
-      }
-    } catch (e) {
-      console.warn("[cornerCrawler] 简易密码检测失败:", e.message);
-    }
 
     // 等待数据加载
     await randomDelay(800, 1500);
@@ -1823,308 +1609,3 @@ export async function navigateToCornersFast(page) {
 
   // 2. 检查是否在 In-Play
   const isInPlay = await page.evaluate(() => {
-    const url = window.location.href.toLowerCase();
-    if (url.includes('inplay') || url.includes('in-play')) return true;
-    const activeFilters = document.querySelectorAll('.btn_filter.on, .btn_filter.active');
-    return Array.from(activeFilters).some(el => {
-      const text = (el.textContent || '').toLowerCase();
-      return text.includes('inplay') || text.includes('in-play') || text.includes('滚球');
-    });
-  });
-
-  if (!isInPlay) {
-    console.log("[cornerCrawler] Switching to In-Play...");
-    await page.evaluate(() => {
-      const all = document.querySelectorAll('#showtype_now, div.btn_filter, div.btn_title_le');
-      for (const el of all) {
-        const t = (el.textContent || '').trim();
-        if (t === '滚球' || t.includes('In-Play') || t.includes('inplay')) {
-          el.scrollIntoView({ block: 'center' });
-          el.click();
-          return;
-        }
-      }
-    });
-    await new Promise(r => setTimeout(r, 3000));
-    await handlePopups(page);
-  }
-
-  // 3. 点击 CORNERS tab
-  let cnClicked = false;
-  try {
-    cnClicked = await page.evaluate(() => {
-      const cnTab = document.getElementById('tab_cn');
-      if (cnTab && !cnTab.classList.contains('on') && !cnTab.classList.contains('active')) {
-        cnTab.scrollIntoView({ block: 'center' });
-        cnTab.click();
-        return true;
-      }
-      return false;
-    });
-  } catch (e) {}
-
-  if (!cnClicked) {
-    // 回退：通过文本查找 CORNERS tab
-    try {
-      await page.evaluate(() => {
-        const all = document.querySelectorAll('#league_name, div.btn_filter, div[id*="tab"], div.btn_title_le');
-        for (const el of all) {
-          const t = (el.textContent || '').trim();
-          if (t === 'CORNERS' || t === '角球' || t.includes('CORNERS')) {
-            el.scrollIntoView({ block: 'center' });
-            el.click();
-            return;
-          }
-        }
-      });
-    } catch (e) {}
-  }
-
-  // 4. 等待比赛行出现（不等待完整盘口数据）
-  await new Promise(r => setTimeout(r, 3000));
-  await handlePopups(page);
-
-  try {
-    await waitWithKeepAlive(page, 
-      () => document.querySelectorAll('div.box_lebet').length > 0,
-      { timeout: 8000 }
-    );
-  } catch (e) {
-    console.log("[cornerCrawler] Fast nav: match rows not found, continuing anyway");
-  }
-
-  return { success: true };
-}
-
-// ======================== 全局轮询 ========================
-export function startCornerPolling(onUpdate) {
-  if (pollingActive) {
-    console.log("[cornerCrawler] 轮询已在运行中");
-    return { success: true, message: "already polling" };
-  }
-  console.log("[cornerCrawler] 启动全局轮询...");
-  pollingActive = true;
-  pollingStopFn = null;
-
-  const poll = async () => {
-    if (!pollingActive) return;
-    try {
-      const page = getSharedPage(); if (page) await randomMouseMove(page);
-      const result = await crawlCornerMatches();
-      const matches = result.success ? (result.data?.matches || []) : [];
-      if (pollingActive && onUpdate) onUpdate(matches);
-    } catch (e) {
-      console.error("[cornerCrawler] 轮询错误:", e.message);
-    }
-    if (pollingActive) {
-      pollingStopFn = setTimeout(poll, POLL_INTERVAL);
-    }
-  };
-  poll();
-  return { success: true };
-}
-
-export function stopCornerPolling() {
-  if (!pollingActive) return { success: true, message: "not polling" };
-  console.log("[cornerCrawler] 停止全局轮询...");
-  pollingActive = false;
-  if (pollingStopFn) { clearTimeout(pollingStopFn); pollingStopFn = null; }
-  return { success: true };
-}
-
-export function getPollingStatus() {
-  return {
-    isPolling: pollingActive,
-    isLoggedIn: isLoggedIn(),
-    balance: getBalance(),
-    lastUpdate: pollingActive ? Date.now() : null
-  };
-}
-
-// ======================== 登录 API ========================
-export async function loginToHG(username, password) {
-  console.log("[cornerCrawler] 设置登录凭据...");
-  runtimeCredentials = { username, password };
-  lastLoginErrorDetail = null;
-  const MAX_RETRIES = 3;
-  let lastError = null;
-  let lastReason = null;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const page = await ensureLogin();
-      if (page) {
-        return { success: true, message: "登录成功", balance: getBalance(), attempts: attempt };
-      }
-      lastError = "登录返回空页面";
-      lastReason = lastLoginErrorDetail || "login_unknown";
-    } catch (err) {
-      lastError = err.message;
-      lastReason = "login_exception:" + (err.message || "未知异常");
-      console.warn("[cornerCrawler] 登录失败 " + attempt + "/" + MAX_RETRIES + " 次尝试: " + lastError);
-    }
-    if (attempt < MAX_RETRIES) {
-      await new Promise(r => setTimeout(r, attempt * 2000));
-    }
-  }
-  return {
-    success: false,
-    message: "登录失败(" + MAX_RETRIES + "次重试): " + lastError,
-    reason: lastReason || "login_unknown",
-    detail: lastLoginErrorDetail || lastError,
-    balance: getBalance()
-  };
-}
-
-// ======================== 关闭 ========================
-export { getBalance } from "./browserPool.js";
-
-export async function closeCrawler() {
-  stopCornerPolling();
-  capturedResponses = [];
-  return await closeSharedBrowser();
-}
-
-// ======================== 调试 ========================
-export function getDebugInfo() {
-  return {
-    headless: process.env.CRAWLER_HEADLESS === 'true',
-    isLoggedIn: isLoggedIn(),
-    balance: getBalance(),
-    capturedResponseCount: capturedResponses.length,
-    capturedResponsesSummary: capturedResponses.map(c => ({
-      url: c.url.substring(0, 150),
-      itemCount: c.itemCount,
-      sampleFields: c.sampleFields
-    })),
-    seenXHRCount: seenRequestUrls.size,
-    seenXHRUrls: Array.from(seenRequestUrls).slice(0, 30)
-  };
-}
-
-// ======================== 诊断 ========================
-export async function diagnoseCrawler() {
-  const report = {
-    timestamp: new Date().toISOString(),
-    headless: process.env.CRAWLER_HEADLESS === 'true',
-    steps: [],
-    status: "starting",
-    errors: [],
-    loginSuccess: false,
-    navigationSuccess: false,
-    interceptedXHRCount: 0,
-    interceptedXHRUrls: [],
-    capturedAPIs: [],
-    matchesFound: 0,
-    sampleMatches: [],
-    domCornerCount: 0,
-    domCornerSample: [],
-    totalTimeMs: 0
-  };
-
-  const startTime = Date.now();
-
-  try {
-    report.steps.push("browser_start");
-    await getSharedBrowser(false);
-    report.steps.push("browser_ready");
-
-    report.steps.push("login_start");
-    try {
-      const page = await ensureLogin();
-      report.loginSuccess = true;
-      report.steps.push("login_ok");
-    } catch (e) {
-      report.errors.push({ step: "login", message: e.message });
-      report.steps.push("login_failed");
-      report.status = "login_failed";
-      report.totalTimeMs = Date.now() - startTime;
-      return report;
-    }
-
-    const page = getSharedPage();
-
-    report.steps.push("xhr_setup_start");
-    try { await setupXHRInterception(page); report.steps.push("xhr_setup_ok"); } catch (e) {
-      report.errors.push({ step: "xhr_setup", message: e.message });
-    }
-
-    report.steps.push("navigate_start");
-    try {
-      await navigateToCorners(page);
-      report.navigationSuccess = true;
-      report.steps.push("navigate_ok");
-    } catch (e) {
-      report.errors.push({ step: "navigate", message: e.message });
-      report.steps.push("navigate_failed");
-    }
-
-    report.steps.push("wait_data");
-    await new Promise(r => setTimeout(r, 5000));
-    try {
-      await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight);
-        setTimeout(() => window.scrollTo(0, 0), 1000);
-      });
-    } catch (e) {}
-    await new Promise(r => setTimeout(r, 3000));
-    report.steps.push("wait_done");
-
-    // XHR 数据
-    report.interceptedXHRUrls = [...seenRequestUrls];
-    report.interceptedXHRCount = seenRequestUrls.size;
-    for (const cr of capturedResponses.slice(0, 5)) {
-      report.capturedAPIs.push({
-        url: cr.url.substring(0, 250),
-        itemCount: cr.itemCount,
-        fields: cr.sampleFields,
-        sampleItem: cr.matchList[0] || {}
-      });
-    }
-
-    // 尝试获取数据
-    try {
-      report.pageStructure = await page.evaluate(() => {
-        const result = {};
-        result['div.bet_box'] = document.querySelectorAll('div.bet_box').length;
-        result['div.box_lebet'] = document.querySelectorAll('div.box_lebet').length;
-        result['div.box_lebet[class*="bet_type_"]'] = document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length;
-        result['div.box_lebet.bet_type_cn'] = document.querySelectorAll('div.box_lebet.bet_type_cn').length;
-        result['div.box_lebet_odd'] = document.querySelectorAll('div.box_lebet_odd').length;
-        const cnTab = document.getElementById('tab_cn');
-        result['tab_cn_exists'] = !!cnTab;
-        result['tab_cn_active'] = cnTab ? cnTab.classList.contains('active') || cnTab.classList.contains('on') : false;
-        result['bodyText'] = (document.body?.textContent || '').replace(/\s+/g, ' ').trim().substring(0, 200);
-        return result;
-      });
-      report.steps.push("page_structure_ok");
-    } catch(e) {
-      report.steps.push("page_structure_failed");
-    }
-
-    // DOM 角球盘口
-    const domData = await parseAllMarkets(page);
-    report.domCornerCount = domData.length;
-    report.domCornerSample = domData.slice(0, 5);
-
-    // XHR 比赛列表
-    const bestResponse = pickBestResponse(capturedResponses);
-    if (bestResponse && bestResponse.matchList.length > 0) {
-      const matches = bestResponse.matchList
-        .map(mapToCornerMatch)
-        .filter(m => m.homeTeam && m.awayTeam);
-      // 合并 DOM 盘口
-      const merged = mergeCornerData(matches, domData);
-      report.matchesFound = merged.length;
-      report.sampleMatches = merged.slice(0, 5);
-    }
-
-    report.status = "complete";
-    report.totalTimeMs = Date.now() - startTime;
-    return report;
-  } catch (err) {
-    report.status = "error";
-    report.errors.push({ step: "global", message: err.message, stack: (err.stack || "").substring(0, 300) });
-    report.totalTimeMs = Date.now() - startTime;
-    return report;
-  }
-}

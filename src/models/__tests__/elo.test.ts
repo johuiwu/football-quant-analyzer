@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getTeamElo, getOrInitElo, calculateEloUpdate, LEAGUE_ELO_BASE } from '../elo';
+import { getTeamElo, getOrInitElo, calculateEloUpdate, LEAGUE_ELO_BASE, LEAGUE_K_FACTOR, LEAGUE_HOME_ADVANTAGE, getLeagueKFactor, getLeagueHomeAdvantage } from '../elo';
 import { TeamStats } from '../../data/realTeamsData';
 import mockTeams from '../../__tests__/fixtures/mockTeams.json';
 
@@ -88,7 +88,77 @@ describe('calculateEloUpdate(homeElo, awayElo, goalDiff, K)', () => {
 });
 
 // ======================== getTeamElo() 测试 ========================
-describe('getTeamElo(team)', () => {
+
+// ======================== 主场优势参数化测试 ========================
+describe('calculateEloUpdate 主场优势参数化', () => {
+  it('主场优势 = 0（中立场地）时两队对等', () => {
+    const result = calculateEloUpdate(1500, 1500, 0, 20, 0);
+    // 无主场优势，同 Elo，平局 => expectedHome=0.5, actualHome=0.5 => delta=0
+    expect(result.homeDelta).toBeCloseTo(0);
+    expect(result.awayDelta).toBeCloseTo(0);
+  });
+
+  it('主场优势 = 200 时主队预期更高，平局掉分更多', () => {
+    const d100 = calculateEloUpdate(1500, 1500, 0, 20, 100);
+    const d200 = calculateEloUpdate(1500, 1500, 0, 20, 200);
+    // 主场优势更大 => 预期主胜更高 => 平局低于预期 => 掉分更多
+    expect(d200.homeDelta).toBeLessThan(d100.homeDelta);
+  });
+
+  it('WorldCup 中立场地主场优势为 0', () => {
+    const result = calculateEloUpdate(1500, 1500, 0, 20, 0);
+    expect(result.homeDelta).toBe(0);
+  });
+});
+
+// ======================== LEAGUE_K_FACTOR 配置测试 ========================
+describe('LEAGUE_K_FACTOR', () => {
+  it('EPL K=18（竞争最激烈，最稳定）', () => {
+    expect(LEAGUE_K_FACTOR.EPL).toBe(18);
+  });
+
+  it('WorldCup K=32（大赛高波动）', () => {
+    expect(LEAGUE_K_FACTOR.WorldCup).toBe(32);
+  });
+
+  it('KLeague2 K=28（低级别联赛波动大）', () => {
+    expect(LEAGUE_K_FACTOR.KLeague2).toBe(28);
+  });
+});
+
+// ======================== LEAGUE_HOME_ADVANTAGE 配置测试 ========================
+describe('LEAGUE_HOME_ADVANTAGE', () => {
+  it('PrimeiraLiga 主场优势最高（120）', () => {
+    const values = Object.values(LEAGUE_HOME_ADVANTAGE).filter(v => v > 0);
+    expect(LEAGUE_HOME_ADVANTAGE.PrimeiraLiga).toBeGreaterThanOrEqual(Math.max(...values) - 10);
+  });
+
+  it('WorldCup 主场优势为 0', () => {
+    expect(LEAGUE_HOME_ADVANTAGE.WorldCup).toBe(0);
+  });
+
+  it('Bundesliga 主场优势偏低（95）', () => {
+    expect(LEAGUE_HOME_ADVANTAGE.Bundesliga).toBeLessThan(100);
+  });
+});
+
+// ======================== getLeagueKFactor/getLeagueHomeAdvantage 测试 ========================
+describe('getLeagueKFactor / getLeagueHomeAdvantage', () => {
+  it('已知联赛返回正确值', () => {
+    expect(getLeagueKFactor('EPL')).toBe(18);
+    expect(getLeagueHomeAdvantage('EPL')).toBe(105);
+  });
+
+  it('未知联赛返回 DEFAULT', () => {
+    expect(getLeagueKFactor('Unknown')).toBe(20);
+    expect(getLeagueHomeAdvantage('Unknown')).toBe(100);
+  });
+
+  it('null/undefined 返回 DEFAULT', () => {
+    expect(getLeagueKFactor(undefined)).toBe(20);
+    expect(getLeagueHomeAdvantage(undefined)).toBe(100);
+  });
+});describe('getTeamElo(team)', () => {
   const mancity = mockTeams.mancity as unknown as TeamStats;
   const unknownTeam = mockTeams.unknownTeam as unknown as TeamStats;
   const defaultTeam = mockTeams.defaultLeagueTeam as unknown as TeamStats;

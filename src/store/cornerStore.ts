@@ -54,6 +54,7 @@ export interface CornerLiveMatch {
   handicaps: HandicapEntry[];
   triggeredStrategies: number[];
   _dataSource?: string;
+  _cornerSource?: string;
 }
 
 /** 监控日志条目 */
@@ -400,6 +401,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         cornerOdds: m.cornerOdds || 0,
         handicaps: m.handicaps || [],
         _dataSource: m._dataSource,
+        _cornerSource: m._cornerSource,
         triggeredStrategies: m.triggeredStrategies || []
       }));
 

@@ -284,7 +284,9 @@ function mapMatchToCornerFormat(match) {
     cornerOdds: match.cornerOdds != null ? parseFloat(match.cornerOdds) : 0,
     handicaps: match.handicaps || [],
     timestamp: match.timestamp || Date.now(),
-    triggeredStrategies: match.triggeredStrategies || []
+    triggeredStrategies: match.triggeredStrategies || [],
+    _dataSource: match._dataSource || "",
+    _cornerSource: match._cornerSource || ""
   };
 }
 

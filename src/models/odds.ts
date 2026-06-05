@@ -70,6 +70,7 @@ export function exactAsianTo1X2(
 // ======================== 欧赔 → 亚盘 ========================
 
 function klDivergence(p: number[], q: number[]): number {
+  if (p.length === 0 || q.length === 0) return Infinity;
   let kl = 0;
   for (let i = 0; i < p.length; i++) {
     if (p[i] > 0 && q[i] > 0) kl += p[i] * Math.log(p[i] / q[i]);

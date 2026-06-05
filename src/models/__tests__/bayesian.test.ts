@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { calculateTimeDecay, calculateLeagueTimeDecay, LEAGUE_TIME_DECAY } from '../bayesian';
 
 describe('calculateTimeDecay', () => {
@@ -63,7 +63,36 @@ describe('calculateLeagueTimeDecay', () => {
   });
 });
 
-describe('LEAGUE_TIME_DECAY', () => {
+
+// ======================== 边界保护测试（v3.1新增） ========================
+describe('calculateTimeDecay 边界保护', () => {
+  it('elapsedMinutes 为负数时截断为 0', () => {
+    expect(calculateTimeDecay(-10, 90, 1.2)).toBeCloseTo(1.0, 5);
+  });
+
+  it('elapsedMinutes > totalMinutes 时截断为 totalMinutes', () => {
+    expect(calculateTimeDecay(100, 90, 1.2)).toBe(0);
+  });
+
+  it('totalMinutes <= 0 时兜底为 90', () => {
+    const decay = calculateTimeDecay(45, 0, 1.2);
+    expect(decay).toBeCloseTo(0.435, 2);
+  });
+
+  it('totalMinutes 为负数时兜底为 90', () => {
+    const decay = calculateTimeDecay(45, -10, 1.2);
+    expect(decay).toBeCloseTo(0.435, 2);
+  });
+
+  it('exponent 为负数时截断为 0', () => {
+    const decay = calculateTimeDecay(45, 90, -1);
+    expect(decay).toBe(1); // pow(0.5, 0) = 1
+  });
+
+  it('exponent=0 时始终返回 1', () => {
+    expect(calculateTimeDecay(45, 90, 0)).toBe(1);
+  });
+});describe('LEAGUE_TIME_DECAY', () => {
   it('Bundesliga lowest exponent (most goals late)', () => {
     expect(LEAGUE_TIME_DECAY.Bundesliga).toBe(1.0);
   });
