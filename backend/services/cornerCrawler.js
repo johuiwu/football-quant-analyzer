@@ -132,7 +132,7 @@ async function ensureLogin() {
       const isValid = await quickPage.evaluate(() => {
         const body = document.body?.textContent || "";
         const hasInPlay = body.includes("In-Play") && body.includes("Soccer");
-        const sportBtn = document.getElementById("symbol_ft");
+        const sportBtn = document.getElementById("old_ft_live_league");
         const hasSport = sportBtn && sportBtn.offsetParent !== null;
         return hasInPlay || hasSport;
       });
@@ -246,7 +246,7 @@ const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERN
       const hasError = errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0;
       const hasMyEvents = bodyText.includes("My Events") || bodyText.includes("My Bets");
       const hasInPlaySoccer = bodyText.includes("In-Play") && bodyText.includes("Soccer");
-      const hasSportSelector = !!(document.getElementById("symbol_ft")?.offsetParent);
+      const hasSportSelector = !!(document.getElementById("old_ft_live_league")?.offsetParent);
       return {
         loginHidden, hasError, hasMyEvents, hasInPlaySoccer, hasSportSelector,
         hasPasscode: bodyText.includes("Passcode Login") || bodyText.includes("简易密码"),
@@ -338,7 +338,7 @@ export async function navigateToCorners(page) {
   // ========== Step 1: 点击 Soccer ==========
   console.log("[cornerCrawler] Step 1: 点击 Soccer...");
   let soccerClicked = await page.evaluate(() => {
-    const btn = document.getElementById('symbol_ft');
+    const btn = document.getElementById('old_ft_live_league');
     if (!btn) return false;
     if (btn.classList.contains('on')) return true;
     btn.scrollIntoView({block:'center'});
@@ -349,9 +349,13 @@ export async function navigateToCorners(page) {
   await handlePopups(page);
 
   // ========== Step 2: 检测 Soccer 比赛 ==========
-  const hasSoccer = await page.evaluate(() =>
-    document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length > 0
-  );
+  const hasSoccer = await page.evaluate(() => {
+    let count = document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length;
+    if (count === 0) count = document.querySelectorAll('div.box_lebet_odd').length;
+    if (count === 0) count = document.querySelectorAll('div.bet_box').length;
+    if (count === 0) count = document.querySelectorAll('div.box_lebet_r').length;
+    return count > 0;
+  });
   if (!hasSoccer) {
     console.log("[cornerCrawler] 无 Soccer 比赛，终止");
     return { success: false, source: "no-soccer", matchScores: {}, soccerMarkets: {}, noSoccer: true };
