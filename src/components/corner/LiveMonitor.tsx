@@ -22,6 +22,7 @@ import { REAL_TEAMS } from "../../data/realTeamsData";
 export default function LiveMonitor() {
   const selectedMatchId = useAppStore((s) => s.selectedMatchId);
   const trackedMatchIds = useAppStore((s) => s.trackedMatchIds);
+  const addTrackedMatch = useAppStore((s) => s.addTrackedMatch);
   const removeTrackedMatch = useAppStore((s) => s.removeTrackedMatch);
   const navigateToDashboard = useAppStore((s) => s.navigateToDashboard);
   const strategies = useCornerStore((s) => s.strategies) || [];
@@ -250,13 +251,23 @@ export default function LiveMonitor() {
                 </div>
                 <div className="text-center">
                   <div className="flex items-center gap-1 justify-center">
-                    <button type="button"
-                      onClick={() => removeTrackedMatch(String(row.matchId))}
-                      className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 hover:text-rose-300 transition-all"
-                      title={isRealMode && settings.autoBetEnabled ? "取消追踪（将停止自动投注）" : "取消追踪"}
-                    >
-                      ×
-                    </button>
+                    {trackedMatchIds.includes(String(row.matchId)) ? (
+                      <button type="button"
+                        onClick={() => removeTrackedMatch(String(row.matchId))}
+                        className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 hover:text-rose-300 transition-all"
+                        title={isRealMode && settings.autoBetEnabled ? "取消追踪（将停止自动投注）" : "取消追踪"}
+                      >
+                        ×
+                      </button>
+                    ) : (
+                      <button type="button"
+                        onClick={() => addTrackedMatch(String(row.matchId))}
+                        className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 hover:text-emerald-300 transition-all"
+                        title={isRealMode && settings.autoBetEnabled ? "追踪比赛（允许自动投注）" : "追踪比赛"}
+                      >
+                        +
+                      </button>
+                    )}
                     <button type="button"
                       onClick={() => handleViewHistory(String(row.matchId))}
                       className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 hover:text-indigo-300 transition-all"

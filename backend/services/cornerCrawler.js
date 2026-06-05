@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer-extra";
+﻿import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import path from "path";
@@ -182,7 +182,7 @@ async function ensureLogin() {
 
   loginInProgress = true;
   try {
-  console.log("[cornerCrawler] 正在登录 hga050.com...");
+  console.log("[cornerCrawler] 正在登录 HG...");
   const page = await bi.newPage();
 
   await page.setUserAgent(

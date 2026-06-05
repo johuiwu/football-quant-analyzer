@@ -1,4 +1,4 @@
-import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
+﻿import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 
@@ -86,6 +86,14 @@ async function pollOnce() {
   cachedMatches = matches;
   cachedMainMarkets = mainMk || {};
   lastFetchTime = Date.now();
+
+  // 无比赛且无主盘口数据时自动暂停轮询，避免反复登录
+  if (matches.length === 0 && Object.keys(mainMk).length === 0) {
+    console.log("[cornerService] 暂无比赛，轮询已暂停");
+    pauseCornerBackendPolling();
+    return;
+  }
+
   consecutiveFailures = 0;
   console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
   if (matches.length > 0 && !pollingFirstDone) {
@@ -248,6 +256,7 @@ export function getBackendPollingStatus() {
   return {
     isPolling: pollingActive,
     isPaused: pollingPaused,
+    pausedReason: pollingPaused ? "no_matches" : null,
     cachedCount: cachedMatches.length,
     cachedMainMarketCount: Object.keys(cachedMainMarkets).length,
     lastPollInterval: POLL_INTERVAL,

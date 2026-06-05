@@ -2,6 +2,7 @@
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { resolve } from "path";
 
 puppeteer.use(StealthPlugin());
 
@@ -13,8 +14,12 @@ let lastBalance = 0;
 let isLaunching = false; // 防止重复启动
 let lastActivityTime = 0; // 最后活动时间
 
-const HG_URL = "https://www.hga050.com";
-const HEADLESS = true; // 生产模式使用无头模式
+const HG_URL = process.env.HG_URL || "https://www.hga050.com";
+
+/** 读取环境变量决定是否无头模式，默认 true（有头模式需显式设 CRAWLER_HEADLESS=false） */
+function getHeadless() {
+  return process.env.CRAWLER_HEADLESS !== "false";
+}
 
 // ======================== 浏览器启动 ========================
 async function launchBrowser() {
@@ -33,13 +38,14 @@ async function launchBrowser() {
     }
     return browser;
   }
-  
+
+  const headless = getHeadless();
   isLaunching = true;
-  console.log("[browserPool] 正在启动浏览器... (headless=" + HEADLESS + ")");
-  
+  console.log("[browserPool] 正在启动浏览器... (headless=" + headless + ", CRAWLER_HEADLESS=" + (process.env.CRAWLER_HEADLESS || "(未设置)") + ")");
+
   try {
     const bi = await puppeteer.launch({
-      headless: HEADLESS,
+      headless,
       slowMo: process.env.CRAWLER_DEBUG === "1" ? 100 : 0,
       args: [
         "--no-sandbox",
@@ -48,7 +54,7 @@ async function launchBrowser() {
         "--disable-gpu",
         "--disable-blink-features=AutomationControlled",
         "--window-size=1920,1400",
-        "--disable-features=VizDisplayCompositor",
+        "--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process",
         "--enable-features=NetworkService,NetworkServiceInProcess"
       ],
       timeout: 120000 // 启动超时 2 分钟
@@ -58,7 +64,11 @@ async function launchBrowser() {
     lastActivityTime = Date.now();
     return bi;
   } catch (e) {
-    console.error("[browserPool] 浏览器启动失败:", e.message);
+    const errMsg = e.message || String(e);
+    console.error("[browserPool] 浏览器启动失败:", errMsg);
+    if (errMsg.includes("chrome") || errMsg.includes("executable")) {
+      console.error("[browserPool] 提示: 请确认 Chromium 已安装 (npm install puppeteer 自动下载)");
+    }
     isLaunching = false;
     return null;
   }
@@ -68,8 +78,8 @@ async function getSharedBrowser(forceNew = false) {
   // 强制新建
   if (forceNew && browser) {
     console.log("[browserPool] 强制关闭现有浏览器...");
-    try { 
-      await browser.close(); 
+    try {
+      await browser.close();
     } catch (e) {
       console.warn("[browserPool] 关闭浏览器时出错:", e.message);
     }
@@ -146,8 +156,8 @@ function isLoggedIn() {
 
 async function closeSharedBrowser() {
   if (browser) {
-    try { 
-      await browser.close(); 
+    try {
+      await browser.close();
     } catch (e) {
       console.warn("[browserPool] 关闭浏览器时出错:", e.message);
     }
@@ -162,7 +172,15 @@ async function closeSharedBrowser() {
 }
 
 // ======================== Cookie 文件持久化 ========================
-const COOKIE_PATH = fileURLToPath(new URL("../cookies.json", import.meta.url));
+let COOKIE_PATH;
+try {
+  // ESM 模式（原始源码）
+  COOKIE_PATH = fileURLToPath(new URL("../cookies.json", import.meta.url));
+} catch {
+  // CJS/bundled 模式（esbuild 打包后 import.meta.url 为空）
+  // 优先使用环境变量，否则回退到 cwd
+  COOKIE_PATH = process.env.COOKIE_PATH || resolve(process.cwd(), "backend", "cookies.json");
+}
 
 function saveCookiesToDisk(cookies) {
   try {

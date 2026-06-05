@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
@@ -164,13 +164,18 @@ export default function CrawlerControlPanel() {
       const data = await res.json();
       if (data.success) {
         const crawler = data.data?.crawler || {};
+        const backend = data.data?.backend || {};
         setStatus(prev => ({
           ...prev,
           isLoggedIn: crawler.isLoggedIn || false,
           lastUpdate: crawler.lastUpdate || prev.lastUpdate,
-          matchesCount: data.data?.backend?.cachedCount || prev.matchesCount,
+          matchesCount: backend.cachedCount || prev.matchesCount,
           error: null,
         }));
+        // 同步后端轮询状态到前端 UI
+        const backendPolling = backend.isPolling && !backend.isPaused;
+        setIsBackendPolling(backendPolling);
+        setIsPaused(!!backend.isPaused);
       }
     } catch (err) {
       console.error("获取状态失败:", err);
@@ -439,6 +444,13 @@ export default function CrawlerControlPanel() {
     };
   }, [autoRefresh]);
 
+  // 定时同步后端轮询状态（检测后端自动暂停等）
+  useEffect(() => {
+    if (!isBackendPolling) return;
+    const timer = setInterval(() => { fetchStatus(); }, 5000);
+    return () => clearInterval(timer);
+  }, [isBackendPolling]);
+
   return (
     <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -631,7 +643,7 @@ export default function CrawlerControlPanel() {
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {!crawlerData || !(crawlerData.matches || []).length ? (
             <div className="text-center py-8 text-slate-500 text-sm">
-              {isBackendPolling ? "监控中，等待数据更新..." : "暂无比赛数据，请点击刷新获取数据。"}
+              {isBackendPolling ? "监控中，等待数据更新..." : isPaused ? "暂无比赛，轮询已暂停" : "暂无比赛数据，请点击刷新获取数据。"}
             </div>
           ) : (
             (crawlerData.matches || []).map((match) => {
@@ -826,6 +838,7 @@ export default function CrawlerControlPanel() {
         </div>
       )}
 
+
       {activeTab === "schedule" && (
         <div className="space-y-3 max-h-[600px] overflow-y-auto">
           {!scheduleData || !scheduleData.length ? (
@@ -834,38 +847,152 @@ export default function CrawlerControlPanel() {
             </div>
           ) : (
             scheduleData.map((item) => (
-              <div key={item.id} className="bg-slate-900/50 rounded-xl border border-slate-800 p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(item.league)}</span>
-                  <span className="text-xs text-slate-500">{item.date}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <div className="text-sm font-medium text-slate-200">{translateTeam(item.homeTeam)}</div>
+              <div key={item.id} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
+                <div
+                  className="p-4 cursor-pointer flex items-center justify-between hover:bg-slate-800/50 transition-colors"
+                  onClick={() => toggleMatchExpand(item.id)}
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(item.league)}</span>
+                      <span className="text-xs text-slate-500">{item.date}</span>
+                      {item.time && (
+                        <span className="text-xs text-amber-400">{translateTime(item.time)}</span>
+                      )}
                     </div>
-                    <div>
-                      <div className="text-xs text-slate-400">VS</div>
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-slate-200">{translateTeam(item.awayTeam)}</div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-center">
+                        <div className="text-sm font-medium text-slate-200">{translateTeam(item.homeTeam)}</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-slate-400">VS</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-sm font-medium text-slate-200">{translateTeam(item.awayTeam)}</div>
+                      </div>
                     </div>
                   </div>
+                  <button type="button" className="text-slate-400 hover:text-slate-200">
+                    {expandedMatches.has(item.id) ? (
+                      <ChevronUp className="w-5 h-5" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5" />
+                    )}
+                  </button>
                 </div>
-                {item.time && (
-                  <div className="mt-2 text-center text-xs text-amber-400">
-                    时间：{translateTime(item.time)}
-                  </div>
-                )}
-                {item.hasCornerOdds && item.handicaps.length > 0 && (
-                  <div className="mt-2 text-center text-xs text-slate-500">
-                    角球盘口：{item.handicaps.length}条
-                    {item.handicaps.filter((h: any) => h.category === "HDP").length > 0 && (
-                      <span className="ml-2 text-emerald-400">含亚盘</span>
-                    )}
-                    {item.handicaps.filter((h: any) => h.category === "O/U").length > 0 && (
-                      <span className="ml-2 text-blue-400">含大小球</span>
-                    )}
+
+                {expandedMatches.has(item.id) && (
+                  <div className="p-4 border-t border-slate-800 bg-slate-900/30">
+                    {(() => {
+                      const handicaps = item.handicaps || [];
+
+                      if (handicaps.length === 0) {
+                        return (
+                          <div className="bg-slate-800/30 rounded-lg p-4 text-center text-slate-500 text-sm">
+                            暂无盘口数据
+                          </div>
+                        );
+                      }
+
+                      const colCount = handicaps.length;
+                      const gridCols = colCount <= 2 ? "grid-cols-2" : colCount <= 4 ? "grid-cols-4" : "grid-cols-4";
+
+                      const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
+                        "O/U":       { bg: "from-blue-900/50 to-slate-800/50",   text: "text-blue-300",   border: "border-blue-800/30" },
+                        "O/U_half":  { bg: "from-blue-800/30 to-slate-800/50",  text: "text-blue-300/70", border: "border-blue-700/20" },
+                        "HDP":       { bg: "from-orange-900/50 to-slate-800/50",text: "text-orange-300",  border: "border-orange-800/30" },
+                        "HDP_half":  { bg: "from-orange-800/30 to-slate-800/50",text: "text-orange-300/70",border: "border-orange-700/20" },
+                        "1X2":       { bg: "from-purple-900/50 to-slate-800/50",text: "text-purple-300",  border: "border-purple-800/30" },
+                        "1X2_half":  { bg: "from-purple-800/30 to-slate-800/50",text: "text-purple-300/70",border: "border-purple-700/20" },
+                        "O/E":       { bg: "from-green-900/50 to-slate-800/50", text: "text-green-300",   border: "border-green-800/30" },
+                        "O/E_half":  { bg: "from-green-800/30 to-slate-800/50", text: "text-green-300/70", border: "border-green-700/20" },
+                        "NEXT":      { bg: "from-teal-900/50 to-slate-800/50", text: "text-teal-300",     border: "border-teal-800/30" },
+                      };
+
+                      return (
+                        <div className={`grid ${gridCols} gap-3`}>
+                          {handicaps.map((h: any) => {
+                            const colorKey = h.period === "half" ? `${h.category}_half` : h.category;
+                            const colors = categoryColors[colorKey] || categoryColors["O/U"];
+                            let label = h.categoryLabel || h.category;
+                            if (label.length > 6) label = label.replace("上半场 ", "半");
+
+                            return (
+                              <div key={h.order || label} className={`bg-gradient-to-br ${colors.bg} rounded-lg p-3 border ${colors.border}`}>
+                                <div className={`text-xs ${colors.text} mb-2 font-medium text-center`}>{label}</div>
+                                {h.category === "O/U" && (
+                                  <>
+                                    <div className="text-center">
+                                      <div className="text-xs text-slate-400">大 {h.line ?? "--"}</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.over || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                      <div className="text-xs text-slate-400">小 {h.line ?? "--"}</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.under || 0).toFixed(2)}</div>
+                                    </div>
+                                  </>
+                                )}
+                                {h.category === "HDP" && (
+                                  <>
+                                    <div className="text-center">
+                                      <div className="text-xs text-slate-400">{translateTeam(item.homeTeam)} ({h.line ?? "--"})</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                      <div className="text-xs text-slate-400">{translateTeam(item.awayTeam)} ({h.line ?? "--"})</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
+                                    </div>
+                                  </>
+                                )}
+                                {h.category === "1X2" && (
+                                  <div className="flex justify-around text-center">
+                                    <div>
+                                      <div className="text-xs text-slate-400">主</div>
+                                      <div className="text-sm font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-xs text-slate-400">平</div>
+                                      <div className="text-sm font-bold text-white">{(h.odds?.draw || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-xs text-slate-400">客</div>
+                                      <div className="text-sm font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
+                                    </div>
+                                  </div>
+                                )}
+                                {h.category === "O/E" && (
+                                  <>
+                                    <div className="text-center">
+                                      <div className="text-xs text-slate-400">单</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.odd || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                      <div className="text-xs text-slate-400">双</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.even || 0).toFixed(2)}</div>
+                                    </div>
+                                  </>
+                                )}
+                                {h.category === "NEXT" && (
+                                  <>
+                                    <div className="text-center">
+                                      <div className="text-xs text-slate-400">{translateTeam(item.homeTeam)}</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                    </div>
+                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                      <div className="text-xs text-slate-400">第{h.line}个角球</div>
+                                    </div>
+                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                      <div className="text-xs text-slate-400">{translateTeam(item.awayTeam)}</div>
+                                      <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -880,7 +1007,6 @@ export default function CrawlerControlPanel() {
           更新时间：{new Date(status.lastUpdate).toLocaleTimeString()}
         </div>
       )}
-
       ﻿      {activeTab === "main_markets" && (
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {(!mainMarketData || Object.keys(mainMarketData).length === 0) ? (

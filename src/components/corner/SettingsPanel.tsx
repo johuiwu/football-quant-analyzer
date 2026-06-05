@@ -9,19 +9,11 @@ export default function SettingsPanel() {
   const updateBalance = useCornerStore((s) => s.updateBalance);
   const isLoggedIn = useCornerStore((s) => s.isLoggedIn);
   const isMonitoring = useCornerStore((s) => s.isMonitoring);
-  const [masterSwitchOn, setMasterSwitchOn] = useState(false);
   const username = useCornerStore((s) => s.settings.hgUsername || s.accountConfig.username);
 
   const inputClass = "w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 transition-colors";
   const labelClass = "text-[10px] text-slate-400 mb-1 block";
   const cardClass = "bg-[#0F1424] rounded-xl border border-slate-800/80 p-4";
-
-  // 获取自动投注总闸状态
-  useEffect(() => {
-    fetch('/api/corner/bet-config').then(r => r.json()).then(d => {
-      if (d.success) setMasterSwitchOn(d.data.autoBetMasterSwitch || false);
-    }).catch(() => {});
-  }, []);
 
   // 定期刷新余额
   useEffect(() => {
@@ -162,12 +154,11 @@ export default function SettingsPanel() {
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
               <label className="text-xs text-slate-300">自动投注</label>
-              <span className="text-[9px] text-slate-500">需环境变量 AUTO_BET_ENABLED=true 作为总闸</span>
+              <span className="text-[9px] text-slate-500">开启后，追踪的比赛触发策略时将自动投注</span>
             </div>
             <button
               onClick={() => setSettings({ autoBetEnabled: !settings.autoBetEnabled })}
-              disabled={!masterSwitchOn}
-              title={masterSwitchOn ? (settings.autoBetEnabled ? "自动投注运行中" : "点击启用自动投注") : "请在 .env 中设置 AUTO_BET_ENABLED=true 并重启服务"}
+              title={settings.autoBetEnabled ? "自动投注运行中" : "点击启用自动投注"}
               className={`relative w-10 h-5 rounded-full transition-colors ${settings.autoBetEnabled ? "bg-emerald-500" : "bg-slate-700"} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.autoBetEnabled ? "translate-x-5" : "translate-x-0.5"}`}

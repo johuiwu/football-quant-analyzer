@@ -1,8 +1,8 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
-import { loginToHG as hgLoginToHG } from "../services/cornerCrawler.js";
+import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
@@ -138,7 +138,7 @@ router.post("/corner/history", validateTypes({ matchId: "string", matchName: "st
 });
 
 // ======================== POST /api/corner/login ========================
-// ★ 使用 cornerCrawler 的登录实现（复用 browserPool 单例）
+// ★ 复用 hgCrawlerService 的登录实现（已验证可用）
 router.post("/corner/login", requireFields(["username", "password"]), validateLength({ username: { min: 1, max: 100 }, password: { min: 1, max: 100 } }), async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -151,7 +151,7 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     );
 
     const result = await Promise.race([
-      hgLoginToHG(username, password),
+      hgLoginToHG({ username, password }),
       timeoutPromise
     ]);
 
