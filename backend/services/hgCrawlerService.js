@@ -1064,7 +1064,7 @@ export async function fetchAllLiveMatches() {
 }
 
 // ======================== 获取赛程（Today → CORNERS） ========================
-export async function fetchSchedule() {
+export async function fetchSchedule(_retryCount = 0) {
   console.log("[HgCrawler] === 获取赛程 (Today → CORNERS) ===");
 
   if (!(await ensurePageReady())) {
@@ -1140,28 +1140,6 @@ export async function fetchSchedule() {
     if (!oddsReady) await new Promise(r => setTimeout(r, 5000));
     await new Promise(r => setTimeout(r, 5000));
 
-
-    // 检测强制登出（session 超时导致页面被踢到登录页）
-    try {
-      const kicked = await mainPage.evaluate(() => {
-        const btn = document.getElementById('kick_ok_btn');
-        if (btn) { btn.click(); return true; }
-        return false;
-      });
-      if (kicked) {
-        console.log("[HgCrawler] 检测到强制登出，点击 OK 并重新登录...");
-        await new Promise(r => setTimeout(r, 3000));
-        const loginRes = await loginToHG();
-        if (loginRes.success) {
-          console.log("[HgCrawler] 重新登录成功，重试获取赛程");
-          return await fetchSchedule();
-        }
-        console.log("[HgCrawler] 重新登录失败，继续尝试解析现有页面");
-      }
-    } catch (kickErr) {
-      console.log("[HgCrawler] 登出检测异常: " + kickErr.message);
-    }
-
     // 滚动触发懒加载
     try {
       await mainPage.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); setTimeout(() => window.scrollTo(0, 0), 1000); });
@@ -1177,6 +1155,31 @@ export async function fetchSchedule() {
       cornerOdds = await parseCornerOdds(mainPage);
     }
     console.log("[HgCrawler] CORNERS 盘口: " + cornerOdds.length + " 条");
+
+    // 数据为空时检测是否强制登出（仅可见弹窗触发，防误判隐藏DOM模板）
+    if (cornerOdds.length === 0 && _retryCount < 2) {
+      try {
+        const kicked = await mainPage.evaluate(() => {
+          const btn = document.getElementById('kick_ok_btn');
+          if (!btn || btn.offsetParent === null) return false;
+          const style = window.getComputedStyle(btn);
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          btn.click(); return true;
+        });
+        if (kicked) {
+          console.log("[HgCrawler] 检测到强制登出，点击 OK 并重新登录...");
+          await new Promise(r => setTimeout(r, 3000));
+          const loginRes = await loginToHG(null, true);
+          if (loginRes.success) {
+            console.log("[HgCrawler] 重新登录成功，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
+            return await fetchSchedule(_retryCount + 1);
+          }
+          console.log("[HgCrawler] 重新登录失败，返回空结果");
+        }
+      } catch (kickErr) {
+        console.log("[HgCrawler] 登出检测异常: " + kickErr.message);
+      }
+    }
 
     // ========== 阶段三：直接用 CORNERS 数据构建赛程 ==========
     const scheduleData = cornerOdds.map((co, idx) => {
@@ -1237,7 +1240,7 @@ export async function fetchSchedule() {
     crawlerStatus.error = err.message;
     try {
       const loginResult = await loginToHG();
-      if (loginResult.success) return await fetchSchedule();
+      if (loginResult.success && _retryCount < 2) return await fetchSchedule(_retryCount + 1);
     } catch (e) {}
     return { success: false, error: err.message };
   }
