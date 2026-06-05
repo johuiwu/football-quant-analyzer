@@ -338,10 +338,14 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
       // 检测简易密码页面，优先处理（必须在 hasSuccess 之前检查，否则底层页面文本可能误判为成功）
       if (status.hasPasscodePage) {
         console.log("[HgCrawler] 检测到简易密码页面，点击普通登入...");
-        const clicked = await clickNoButton(page);
-        if (clicked) {
-          await new Promise((r) => setTimeout(r, 3000));
-        }
+        await page.evaluate(() => {
+          const btn = document.querySelector("#back_login");
+          if (btn) btn.click();
+        });
+        await new Promise((r) => setTimeout(r, 3000));
+        // 点击普通登入后会跳转回登录页面，需要重新输入账号密码
+        loginClicked = false;
+        console.log("[HgCrawler] 已点击普通登入，等待登录页面加载后重新登录...");
         continue;
       }
 
