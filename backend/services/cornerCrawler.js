@@ -519,10 +519,8 @@ export async function navigateToCorners(page) {
       console.log("[cornerCrawler] HDP&O/U 盘口已渲染");
     } catch(e) { console.log("[cornerCrawler] HDP&O/U 等待超时:", e.message); }
     await randomDelay(1500, 3000);
-    soccerMarkets = await captureMainMarkets(page, {});
-    console.log("[cornerCrawler] HDP&O/U 市场: " + Object.keys(soccerMarkets).length + " 场");
 
-    // ★ 从 HDP&O/U 页面捕获比赛比分（Soccer页面的 box_score 是真实比赛比分）
+    // ★ 先从 HDP&O/U 页面捕获比赛比分（Soccer页面的 box_score 是真实比赛比分）
     try {
       const scores = await page.evaluate(() => {
         const result = {};
@@ -550,6 +548,10 @@ export async function navigateToCorners(page) {
     } catch(e) {
       console.log("[cornerCrawler] 比分捕获失败:", e.message);
     }
+
+    // ★ 再捕获 HDP&O/U 盘口数据，传入比分数据
+    soccerMarkets = await captureMainMarkets(page, matchScores);
+    console.log("[cornerCrawler] HDP&O/U 市场: " + Object.keys(soccerMarkets).length + " 场");
   } else {
     console.log("[cornerCrawler] #tab_rnou 不可见，跳过 HDP&O/U");
   }
