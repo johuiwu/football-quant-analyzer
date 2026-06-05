@@ -1,4 +1,4 @@
-// ======================== 公开爬虫与公共模块 ========================
+﻿// ======================== 公开爬虫与公共模块 ========================
 import fs from "fs";
 // ======================== 随机延迟（反爬） ========================
 export function randomDelay(min, max) {
@@ -16,7 +16,7 @@ export async function handlePopups(page) {
       document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, [class*='cancel']").forEach(btn => {
         if ((btn.textContent||"").trim().toUpperCase() === "NO") { btn.click(); c = true; }
       });
-      document.querySelectorAll("[class*='msg_popup'] .btn, .btn_confirm, #C_ok_btn, #ok_btn, [class*='confirm']").forEach(btn => {
+      document.querySelectorAll("[class*='msg_popup'] .btn, .btn_confirm, #C_ok_btn, #ok_btn, #kick_ok_btn, [class*='confirm']").forEach(btn => {
         if ((btn.textContent||"").trim().toUpperCase() === "OK") { btn.click(); c = true; }
       });
       return c;

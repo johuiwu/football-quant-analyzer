@@ -1138,14 +1138,30 @@ export async function fetchSchedule() {
       console.log("[HgCrawler] CORNERS 盘口等待超时: " + e.message);
     }
     if (!oddsReady) await new Promise(r => setTimeout(r, 5000));
-    console.log("[HgCrawler] 等待 CORNERS 网络空闲...");
-    try {
-      await mainPage.waitForNetworkIdle({ timeout: 25000, idleTime: 2000 });
-      console.log("[HgCrawler] CORNERS 网络空闲完成");
-    } catch (e) {
-      console.log("[HgCrawler] CORNERS 网络空闲超时:", e.message);
-    }
     await new Promise(r => setTimeout(r, 5000));
+
+
+    // 检测强制登出（session 超时导致页面被踢到登录页）
+    try {
+      const kicked = await mainPage.evaluate(() => {
+        const btn = document.getElementById('kick_ok_btn');
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      if (kicked) {
+        console.log("[HgCrawler] 检测到强制登出，点击 OK 并重新登录...");
+        await new Promise(r => setTimeout(r, 3000));
+        const loginRes = await loginToHG();
+        if (loginRes.success) {
+          console.log("[HgCrawler] 重新登录成功，重试获取赛程");
+          return await fetchSchedule();
+        }
+        console.log("[HgCrawler] 重新登录失败，继续尝试解析现有页面");
+      }
+    } catch (kickErr) {
+      console.log("[HgCrawler] 登出检测异常: " + kickErr.message);
+    }
+
     // 滚动触发懒加载
     try {
       await mainPage.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); setTimeout(() => window.scrollTo(0, 0), 1000); });
