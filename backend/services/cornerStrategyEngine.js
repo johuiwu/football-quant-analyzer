@@ -1,4 +1,4 @@
-﻿import {
+import {
   saveSimulationRecord,
   getSimulationRecords,
   getStrategyStats
@@ -119,9 +119,9 @@ export async function runBacktest(strategies) {
       strategyId: sid,
       strategyName: strategy.name,
       triggered,
-      wins,
-      losses,
-      winRate,
+      executed: wins,
+      failed: losses,
+      successRate: winRate,
       totalProfit: Math.round(totalProfit * 100) / 100,
       roi
     };
