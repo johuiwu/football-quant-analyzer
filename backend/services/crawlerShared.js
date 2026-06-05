@@ -96,7 +96,7 @@ export async function parseAllMarkets(page) {
         for(var bi2=0; bi2<blocks.length; bi2++){
           try{
             var bl=blocks[bi2];var hsp=bl.querySelector('div.head_lebet span');var htt=bl.querySelector('div.head_lebet tt');
-            if(!hsp)continue;var ml=(hsp.textContent||'').trim();var ih=(htt&&(htt.textContent.indexOf('上半场')>=0||htt.textContent.indexOf('1st Half')>=0||htt.textContent.indexOf('First Half')>=0||htt.textContent.indexOf('1H')>=0))||bl.classList.contains('box_lebet_half');
+            if(!hsp){var hl=bl.querySelector('div.head_lebet');if(!hl)continue;var ml=(hl.textContent||'').trim();}else{var ml=(hsp.textContent||'').trim();}if(!ml)continue;var ih=(htt&&(htt.textContent.indexOf('\u4E0A\u534A\u573A')>=0||htt.textContent.indexOf('1st Half')>=0||htt.textContent.indexOf('First Half')>=0||htt.textContent.indexOf('1H')>=0))||bl.classList.contains('box_lebet_half');
             var cat=cm[ml];if(!cat)continue;
             var btns=bl.querySelectorAll('div.btn_lebet_odd:not(.lock)');if(!btns.length)continue;
             var cl=ih?('上半场 '+ml):ml;
@@ -127,7 +127,7 @@ export async function parseAllMarkets(page) {
               for(var bj=0;bj<btns.length;bj++){
                 var bq=btns[bj].querySelector('tt.text_ballou');var blv=(bq?bq.textContent:'').trim();
                 var bv=parseFloat((btns[bj].querySelector('span.text_odds')||{}).textContent||'0');
-                if(!isNaN(bv)&&bv>0){if(blv==='主')ods.home=bv;else if(blv==='和')ods.draw=bv;else if(blv==='客')ods.away=bv;}
+                if(!isNaN(bv)&&bv>0){if(blv==='\u4E3B'||blv==='1')ods.home=bv;else if(blv==='\u548C'||blv==='X')ods.draw=bv;else if(blv==='\u5BA2'||blv==='2')ods.away=bv;}
               }
               he.odds=ods;
             } else {
@@ -137,7 +137,7 @@ export async function parseAllMarkets(page) {
                 for(var bj=0;bj<btns.length;bj++){
                   var bq=btns[bj].querySelector('tt.text_ballou');var blv=(bq?bq.textContent:'').trim();
                   var bv=parseFloat((btns[bj].querySelector('span.text_odds')||{}).textContent||'0');
-                  if(!isNaN(bv)&&bv>0){if(blv==='大')over=bv;else if(blv==='小')under=bv;}
+                  if(!isNaN(bv)&&bv>0){if(blv==='\u5927'||blv==='O')over=bv;else if(blv==='\u5C0F'||blv==='U')under=bv;}
                 }
                 he.line=ln;he.odds={over:over,under:under};
               } else if(cat==='HDP'){
@@ -150,7 +150,7 @@ export async function parseAllMarkets(page) {
                 for(var bj=0;bj<btns.length;bj++){
                   var bq=btns[bj].querySelector('tt.text_ballou');var blv=(bq?bq.textContent:'').trim();
                   var bv=parseFloat((btns[bj].querySelector('span.text_odds')||{}).textContent||'0');
-                  if(!isNaN(bv)&&bv>0){if(blv==='单')oo=bv;else if(blv==='双')eo=bv;}
+                  if(!isNaN(bv)&&bv>0){if(blv==='\u5355'||blv==='Odd')oo=bv;else if(blv==='\u53CC'||blv==='Even')eo=bv;}
                 }
                 he.odds={odd:oo,even:eo};
               }

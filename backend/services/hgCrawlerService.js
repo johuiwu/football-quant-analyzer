@@ -638,8 +638,8 @@ async function parseCornerOdds(page) {
           const oddBlocks = box.querySelectorAll('div.box_lebet_odd');
           for (const block of oddBlocks) {
             const headSpan = block.querySelector('div.head_lebet span');
-            if (!headSpan) continue;
-            const marketLabel = (headSpan.textContent || '').trim();
+            let marketLabel = "";
+            if (headSpan) { marketLabel = (headSpan.textContent || "").trim(); } else { const headDiv = block.querySelector("div.head_lebet"); if (!headDiv) continue; marketLabel = (headDiv.textContent || "").trim(); }
             const category = categoryMap[marketLabel] || categoryMap[marketLabel.toUpperCase()];
             if (!category) continue;
 
@@ -661,7 +661,7 @@ async function parseCornerOdds(page) {
                 const blv = (bq ? bq.textContent : '').trim();
                 const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
                 if (!isNaN(bv) && bv > 0) {
-                  if (blv === '主') ods.home = bv; else if (blv === '和') ods.draw = bv; else if (blv === '客') ods.away = bv;
+                  if (blv === "主" || blv === "1") ods.home = bv; else if (blv === "和" || blv === "X") ods.draw = bv; else if (blv === "客" || blv === "2") ods.away = bv;
                 }
               }
               hItem.odds = ods;
@@ -672,7 +672,7 @@ async function parseCornerOdds(page) {
                 const bq = betButtons[bj].querySelector('tt.text_ballou');
                 const blv = (bq ? bq.textContent : '').trim();
                 const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
-                if (!isNaN(bv) && bv > 0) { if (blv === '大') over = bv; else if (blv === '小') under = bv; }
+                if (!isNaN(bv) && bv > 0) { if (blv === "大" || blv === "O") over = bv; else if (blv === "小" || blv === "U") under = bv; }
               }
               hItem.line = ln; hItem.odds = { over, under };
             } else if (category === 'HDP' && betButtons.length >= 2) {
@@ -686,7 +686,7 @@ async function parseCornerOdds(page) {
                 const bq = betButtons[bj].querySelector('tt.text_ballou');
                 const blv = (bq ? bq.textContent : '').trim();
                 const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
-                if (!isNaN(bv) && bv > 0) { if (blv === '单') oo = bv; else if (blv === '双') eo = bv; }
+                if (!isNaN(bv) && bv > 0) { if (blv === "单" || blv === "Odd") oo = bv; else if (blv === "双" || blv === "Even") eo = bv; }
               }
               hItem.odds = { odd: oo, even: eo };
             } else if (category === 'NEXT' && betButtons.length >= 2) {
@@ -764,8 +764,8 @@ async function parseCornerOdds(page) {
               const oddBlocks = rightPanel.querySelectorAll('div.box_lebet_odd');
               for (const block of oddBlocks) {
                 const headSpan = block.querySelector('div.head_lebet span');
-                if (!headSpan) continue;
-                const marketLabel = (headSpan.textContent || '').trim();
+                let marketLabel = "";
+                if (headSpan) { marketLabel = (headSpan.textContent || "").trim(); } else { const headDiv = block.querySelector("div.head_lebet"); if (!headDiv) continue; marketLabel = (headDiv.textContent || "").trim(); }
                 const category = categoryMap[marketLabel] || categoryMap[marketLabel.toUpperCase()];
                 if (!category) continue;
 
@@ -786,7 +786,7 @@ async function parseCornerOdds(page) {
                     const blv = (bq ? bq.textContent : '').trim();
                     const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
                     if (!isNaN(bv) && bv > 0) {
-                      if (blv === '主') ods.home = bv; else if (blv === '和') ods.draw = bv; else if (blv === '客') ods.away = bv;
+                      if (blv === "主" || blv === "1") ods.home = bv; else if (blv === "和" || blv === "X") ods.draw = bv; else if (blv === "客" || blv === "2") ods.away = bv;
                     }
                   }
                   hItem.odds = ods;
@@ -797,7 +797,7 @@ async function parseCornerOdds(page) {
                     const bq = betButtons[bj].querySelector('tt.text_ballou');
                     const blv = (bq ? bq.textContent : '').trim();
                     const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
-                    if (!isNaN(bv) && bv > 0) { if (blv === '大') over = bv; else if (blv === '小') under = bv; }
+                    if (!isNaN(bv) && bv > 0) { if (blv === "大" || blv === "O") over = bv; else if (blv === "小" || blv === "U") under = bv; }
                   }
                   hItem.line = ln; hItem.odds = { over, under };
                 } else if (category === 'HDP' && betButtons.length >= 2) {
@@ -811,7 +811,7 @@ async function parseCornerOdds(page) {
                     const bq = betButtons[bj].querySelector('tt.text_ballou');
                     const blv = (bq ? bq.textContent : '').trim();
                     const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
-                    if (!isNaN(bv) && bv > 0) { if (blv === '单') oo = bv; else if (blv === '双') eo = bv; }
+                    if (!isNaN(bv) && bv > 0) { if (blv === "单" || blv === "Odd") oo = bv; else if (blv === "双" || blv === "Even") eo = bv; }
                   }
                   hItem.odds = { odd: oo, even: eo };
                 } else if (category === 'NEXT' && betButtons.length >= 2) {
