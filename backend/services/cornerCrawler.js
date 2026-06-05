@@ -345,6 +345,15 @@ export async function navigateToCorners(page) {
     btn.click();
     return true;
   });
+  // 等待 Soccer 比赛容器渲染（XHR 异步加载需要时间）
+  try {
+    await page.waitForFunction(() => {
+      return document.querySelectorAll('div.box_lebet_odd, div.box_lebet, div.bet_box').length > 0;
+    }, { timeout: 15000 });
+    console.log("[cornerCrawler] Soccer 比赛容器已渲染");
+  } catch(e) {
+    console.log("[cornerCrawler] Soccer 容器等待超时: " + e.message);
+  }
   await new Promise(r => setTimeout(r, 3000));
   await handlePopups(page);
 
