@@ -624,72 +624,99 @@ async function parseCornerOdds(page) {
           const cornerCount = extractCornerCount(searchRoot) || extractCornerCount(box) || 0;
 
           // 盘口数据: 优先用标签文本匹配（避免赔率硬编码索引导致错乱）
-          let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
+          // 构建 handicaps 数组（兼容 parseAllMarkets 格式，含中文标签+半场）
+          const handicaps = [];
+          let hOrder = 1;
+          const categoryMap = {
+            '大/小':'O/U','大小':'O/U','O/U':'O/U','角球大/小':'O/U','角球大小':'O/U','Over/Under':'O/U',
+            '让球':'HDP','HDP':'HDP','角球让球':'HDP','Handicap':'HDP',
+            '独赢':'1X2','1X2':'1X2','1 X 2':'1X2','角球独赢':'1X2',
+            '单/双':'O/E','单双':'O/E','O/E':'O/E','角球单/双':'O/E','角球单双':'O/E','Odd/Even':'O/E',
+            'NEXT CORNER':'NEXT','下一个角球':'NEXT','下一角球':'NEXT'
+          };
 
-          const oddBlocks = box.querySelectorAll("div.box_lebet_odd:not(.box_lebet_half)");
-          if (oddBlocks.length > 0) {
-            for (const block of oddBlocks) {
-              const headSpan = block.querySelector("div.head_lebet span");
-              if (!headSpan) continue;
-              const marketType = (headSpan.textContent || "").trim().toUpperCase();
-              const betButtons = block.querySelectorAll("div.btn_lebet_odd:not(.lock)");
-              if (betButtons.length === 0) continue;
+          const oddBlocks = box.querySelectorAll('div.box_lebet_odd');
+          for (const block of oddBlocks) {
+            const headSpan = block.querySelector('div.head_lebet span');
+            if (!headSpan) continue;
+            const marketLabel = (headSpan.textContent || '').trim();
+            const category = categoryMap[marketLabel] || categoryMap[marketLabel.toUpperCase()];
+            if (!category) continue;
 
-              if (marketType === "O/U" && betButtons.length >= 2) {
-                cornerOU = {
-                  line: safeFloat(betButtons[0], "tt.text_ballhead"),
-                  overOdds: safeFloat(betButtons[0], "span.text_odds"),
-                  underOdds: safeFloat(betButtons[1], "span.text_odds")
-                };
-              } else if (marketType === "HDP" && betButtons.length >= 2) {
-                cornerHDP = {
-                  line: safeText(betButtons[0], "tt.text_ballhead"),
-                  homeOdds: safeFloat(betButtons[0], "span.text_odds"),
-                  awayOdds: safeFloat(betButtons[1], "span.text_odds")
-                };
-              } else if (marketType === "NEXT CORNER" && betButtons.length >= 2) {
-                nextCorner = {
-                  corner: safeText(betButtons[0], "tt.text_ballou"),
-                  homeOdds: safeFloat(betButtons[0], "span.text_odds"),
-                  awayOdds: safeFloat(betButtons[1], "span.text_odds")
-                };
-              } else if (marketType === "O/E" && betButtons.length >= 2) {
-                cornerOE = {
-                  oddOdds: safeFloat(betButtons[0], "span.text_odds"),
-                  evenOdds: safeFloat(betButtons[1], "span.text_odds")
-                };
+            const betButtons = block.querySelectorAll('div.btn_lebet_odd:not(.lock)');
+            if (betButtons.length === 0) continue;
+
+            // 检测半场（box_lebet_half 类 或 标签含上半场/1H）
+            const isHalf = block.classList.contains('box_lebet_half') ||
+              marketLabel.includes('上半场') || marketLabel.includes('1st Half') || marketLabel.includes('1H');
+            const period = isHalf ? 'half' : 'full';
+            const categoryLabel = (isHalf ? '上半场 ' : '') + marketLabel;
+
+            const hItem = { order: hOrder++, category, categoryLabel, period, source: 'dom', marketGroup: 'corner' };
+
+            if (category === '1X2' && betButtons.length >= 3) {
+              const ods = {};
+              for (let bj = 0; bj < betButtons.length; bj++) {
+                const bq = betButtons[bj].querySelector('tt.text_ballou');
+                const blv = (bq ? bq.textContent : '').trim();
+                const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
+                if (!isNaN(bv) && bv > 0) {
+                  if (blv === '主') ods.home = bv; else if (blv === '和') ods.draw = bv; else if (blv === '客') ods.away = bv;
+                }
               }
+              hItem.odds = ods;
+            } else if (category === 'O/U' && betButtons.length >= 2) {
+              const ln = parseFloat((betButtons[0].querySelector('tt.text_ballhead') || {}).textContent || '0') || 0;
+              let over = 0, under = 0;
+              for (let bj = 0; bj < betButtons.length; bj++) {
+                const bq = betButtons[bj].querySelector('tt.text_ballou');
+                const blv = (bq ? bq.textContent : '').trim();
+                const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
+                if (!isNaN(bv) && bv > 0) { if (blv === '大') over = bv; else if (blv === '小') under = bv; }
+              }
+              hItem.line = ln; hItem.odds = { over, under };
+            } else if (category === 'HDP' && betButtons.length >= 2) {
+              const ln = ((betButtons[0].querySelector('tt.text_ballhead') || {}).textContent || '').trim();
+              const ho = parseFloat((betButtons[0].querySelector('span.text_odds') || {}).textContent || '0');
+              const ao = parseFloat((betButtons[1].querySelector('span.text_odds') || {}).textContent || '0');
+              hItem.line = ln; hItem.odds = { home: ho || 0, away: ao || 0 };
+            } else if (category === 'O/E' && betButtons.length >= 2) {
+              let oo = 0, eo = 0;
+              for (let bj = 0; bj < betButtons.length; bj++) {
+                const bq = betButtons[bj].querySelector('tt.text_ballou');
+                const blv = (bq ? bq.textContent : '').trim();
+                const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
+                if (!isNaN(bv) && bv > 0) { if (blv === '单') oo = bv; else if (blv === '双') eo = bv; }
+              }
+              hItem.odds = { odd: oo, even: eo };
+            } else if (category === 'NEXT' && betButtons.length >= 2) {
+              const ho2 = parseFloat((betButtons[0].querySelector('span.text_odds') || {}).textContent || '0');
+              const ao2 = parseFloat((betButtons[1].querySelector('span.text_odds') || {}).textContent || '0');
+              hItem.line = marketLabel; hItem.odds = { home: ho2 || 0, away: ao2 || 0 };
+            } else {
+              continue;
             }
-          }
-
-          // 兜底: 标签匹配失败时用硬编码索引
-          if (!cornerHDP && !cornerOU) {
-            const oddsSpans = box.querySelectorAll("span.odds");
-            const oddsValues = [];
-            oddsSpans.forEach(s => { const v = parseFloat((s.textContent || "").trim()); if (!isNaN(v)) oddsValues.push(v); });
-            if (oddsValues.length >= 6) {
-              cornerOU = { line: 0, overOdds: oddsValues[0], underOdds: oddsValues[1] };
-              cornerHDP = { line: "", homeOdds: oddsValues[2], awayOdds: oddsValues[3] };
-              nextCorner = { corner: "", homeOdds: oddsValues[4], awayOdds: oddsValues[5] };
-            }
-            if (oddsValues.length >= 8) {
-              cornerOE = { oddOdds: oddsValues[6], evenOdds: oddsValues[7] };
-            }
+            handicaps.push(hItem);
           }
 
           const result = {
             homeTeam, awayTeam, league, time: timeStr, elapsedMinutes,
             homeScore, awayScore, totalCorners: cornerCount,
-            cornerOU, cornerHDP, nextCorner, cornerOE,
-            rawOdds: []
+            handicaps
           };
-
-          results.push(result);
+          if (handicaps.length > 0) results.push(result);
         } catch (e) {}
       }
     }
 
     // ====== 策略2: div.box_lebet.bet_type_cn ======
+    const categoryMap = {
+      '大/小':'O/U','大小':'O/U','O/U':'O/U','角球大/小':'O/U','角球大小':'O/U','Over/Under':'O/U',
+      '让球':'HDP','HDP':'HDP','角球让球':'HDP','Handicap':'HDP',
+      '独赢':'1X2','1X2':'1X2','1 X 2':'1X2','角球独赢':'1X2',
+      '单/双':'O/E','单双':'O/E','O/E':'O/E','角球单/双':'O/E','角球单双':'O/E','Odd/Even':'O/E',
+      'NEXT CORNER':'NEXT','下一个角球':'NEXT','下一角球':'NEXT'
+    };
     if (results.length === 0) {
       containers = document.querySelectorAll("div.box_lebet.bet_type_cn");
       if (containers.length > 0) {
@@ -729,32 +756,76 @@ async function parseCornerOdds(page) {
             // 角球数
             const cornerCount = extractCornerCount(leftPanel) || extractCornerCount(gameEl) || 0;
 
-            const rightPanel = gameEl.querySelector("div.box_lebet_r");
-            let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
-
+            // 盘口数据: 构建 handicaps 数组（含中文标签+半场，同策略1）
+            const handicaps = [];
+            let hOrder = 1;
+            const rightPanel = gameEl.querySelector('div.box_lebet_r');
             if (rightPanel) {
-              const oddBlocks = rightPanel.querySelectorAll("div.box_lebet_odd");
+              const oddBlocks = rightPanel.querySelectorAll('div.box_lebet_odd');
               for (const block of oddBlocks) {
-                if (block.classList.contains("box_lebet_half")) continue;
-                const headSpan = block.querySelector("div.head_lebet span");
+                const headSpan = block.querySelector('div.head_lebet span');
                 if (!headSpan) continue;
-                const marketType = (headSpan.textContent || "").trim().toUpperCase();
-                const betButtons = block.querySelectorAll("div.btn_lebet_odd:not(.lock)");
+                const marketLabel = (headSpan.textContent || '').trim();
+                const category = categoryMap[marketLabel] || categoryMap[marketLabel.toUpperCase()];
+                if (!category) continue;
+
+                const betButtons = block.querySelectorAll('div.btn_lebet_odd:not(.lock)');
                 if (betButtons.length === 0) continue;
 
-                if (marketType === "O/U" && betButtons.length >= 2) {
-                  cornerOU = { line: safeFloat(betButtons[0], "tt.text_ballhead"), overOdds: safeFloat(betButtons[0], "span.text_odds"), underOdds: safeFloat(betButtons[1], "span.text_odds") };
-                } else if (marketType === "HDP" && betButtons.length >= 2) {
-                  cornerHDP = { line: safeText(betButtons[0], "tt.text_ballhead"), homeOdds: safeFloat(betButtons[0], "span.text_odds"), awayOdds: safeFloat(betButtons[1], "span.text_odds") };
-                } else if (marketType === "NEXT CORNER" && betButtons.length >= 2) {
-                  nextCorner = { corner: safeText(betButtons[0], "tt.text_ballou"), homeOdds: safeFloat(betButtons[0], "span.text_odds"), awayOdds: safeFloat(betButtons[1], "span.text_odds") };
-                } else if (marketType === "O/E" && betButtons.length >= 2) {
-                  cornerOE = { oddOdds: safeFloat(betButtons[0], "span.text_odds"), evenOdds: safeFloat(betButtons[1], "span.text_odds") };
+                const isHalf = block.classList.contains('box_lebet_half') ||
+                  marketLabel.includes('上半场') || marketLabel.includes('1st Half') || marketLabel.includes('1H');
+                const period = isHalf ? 'half' : 'full';
+                const categoryLabel = (isHalf ? '上半场 ' : '') + marketLabel;
+
+                const hItem = { order: hOrder++, category, categoryLabel, period, source: 'dom', marketGroup: 'corner' };
+
+                if (category === '1X2' && betButtons.length >= 3) {
+                  const ods = {};
+                  for (let bj = 0; bj < betButtons.length; bj++) {
+                    const bq = betButtons[bj].querySelector('tt.text_ballou');
+                    const blv = (bq ? bq.textContent : '').trim();
+                    const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
+                    if (!isNaN(bv) && bv > 0) {
+                      if (blv === '主') ods.home = bv; else if (blv === '和') ods.draw = bv; else if (blv === '客') ods.away = bv;
+                    }
+                  }
+                  hItem.odds = ods;
+                } else if (category === 'O/U' && betButtons.length >= 2) {
+                  const ln = parseFloat((betButtons[0].querySelector('tt.text_ballhead') || {}).textContent || '0') || 0;
+                  let over = 0, under = 0;
+                  for (let bj = 0; bj < betButtons.length; bj++) {
+                    const bq = betButtons[bj].querySelector('tt.text_ballou');
+                    const blv = (bq ? bq.textContent : '').trim();
+                    const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
+                    if (!isNaN(bv) && bv > 0) { if (blv === '大') over = bv; else if (blv === '小') under = bv; }
+                  }
+                  hItem.line = ln; hItem.odds = { over, under };
+                } else if (category === 'HDP' && betButtons.length >= 2) {
+                  const ln = ((betButtons[0].querySelector('tt.text_ballhead') || {}).textContent || '').trim();
+                  const ho = parseFloat((betButtons[0].querySelector('span.text_odds') || {}).textContent || '0');
+                  const ao = parseFloat((betButtons[1].querySelector('span.text_odds') || {}).textContent || '0');
+                  hItem.line = ln; hItem.odds = { home: ho || 0, away: ao || 0 };
+                } else if (category === 'O/E' && betButtons.length >= 2) {
+                  let oo = 0, eo = 0;
+                  for (let bj = 0; bj < betButtons.length; bj++) {
+                    const bq = betButtons[bj].querySelector('tt.text_ballou');
+                    const blv = (bq ? bq.textContent : '').trim();
+                    const bv = parseFloat((betButtons[bj].querySelector('span.text_odds') || {}).textContent || '0');
+                    if (!isNaN(bv) && bv > 0) { if (blv === '单') oo = bv; else if (blv === '双') eo = bv; }
+                  }
+                  hItem.odds = { odd: oo, even: eo };
+                } else if (category === 'NEXT' && betButtons.length >= 2) {
+                  hItem.line = marketLabel;
+                  hItem.odds = { home: parseFloat((betButtons[0].querySelector('span.text_odds') || {}).textContent || '0') || 0, away: parseFloat((betButtons[1].querySelector('span.text_odds') || {}).textContent || '0') || 0 };
+                } else {
+                  continue;
                 }
+                handicaps.push(hItem);
               }
             }
 
-            results.push({ homeTeam, awayTeam, league, time: timeStr, elapsedMinutes, homeScore, awayScore, totalCorners: cornerCount, cornerOU, cornerHDP, nextCorner, cornerOE });
+            const result = { homeTeam, awayTeam, league, time: timeStr, elapsedMinutes, homeScore, awayScore, totalCorners: cornerCount, handicaps };
+            if (handicaps.length > 0) results.push(result);
           } catch (e) {}
         }
       }
