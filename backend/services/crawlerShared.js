@@ -92,7 +92,7 @@ export async function parseAllMarkets(page) {
         var blocks=box.querySelectorAll('div.box_lebet_odd');
         var entry={homeTeam:ht,awayTeam:at,league:league,time:ts,elapsedMinutes:em,homeScore:hs,awayScore:as2,totalCorners:tc,handicaps:[]};
         var oi=1;
-        var cm={'大/小':'O/U','大小':'O/U','O/U':'O/U','角球大/小':'O/U','角球大小':'O/U','Over/Under':'O/U','让球':'HDP','HDP':'HDP','角球让球':'HDP','Handicap':'HDP','独赢':'1X2','1X2':'1X2','角球独赢':'1X2','单/双':'O/E','单双':'O/E','O/E':'O/E','角球单/双':'O/E','角球单双':'O/E','Odd/Even':'O/E'};
+        var cm={'大/小':'O/U','大小':'O/U','O/U':'O/U','角球大/小':'O/U','角球大小':'O/U','Over/Under':'O/U','让球':'HDP','HDP':'HDP','角球让球':'HDP','Handicap':'HDP','独赢':'1X2','1X2':'1X2','1 X 2':'1X2','角球独赢':'1X2','单/双':'O/E','单双':'O/E','O/E':'O/E','角球单/双':'O/E','角球单双':'O/E','Odd/Even':'O/E'};
         for(var bi2=0; bi2<blocks.length; bi2++){
           try{
             var bl=blocks[bi2];var hsp=bl.querySelector('div.head_lebet span');var htt=bl.querySelector('div.head_lebet tt');
