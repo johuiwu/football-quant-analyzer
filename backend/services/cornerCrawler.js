@@ -328,184 +328,37 @@ const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERN
 }
 
 // ======================== 导航到角球页面 ========================
+// ======================== 导航到角球页面（简化版：Soccer → HDP&O/U → Corners） ========================
 export async function navigateToCorners(page) {
-  console.log("[cornerCrawler] ===== Navigating to Corner page =====");
-  let contentSource = "unknown"; // "inplay", "today", "worldcup", "unknown"
+  console.log("[cornerCrawler] ===== Navigating to Corner page (simplified) =====");
 
-  // Helper: check if page has match rows
-  async function hasMatches() {
-    try {
-      const count = await page.evaluate(() => document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length);
-      return count > 0;
-    } catch (e) { return false; }
-  }
-
-  // Helper: try clicking a view tab
-  async function trySwitchView(tabText) {
-    console.log("[cornerCrawler] Trying to switch to: " + tabText);
-    try {
-      const clicked = await page.evaluate((txt) => {
-        const all = document.querySelectorAll('#showtype_now, #league_name, div.btn_filter, div[id*="tab"], div.btn_title_le, div.txt_sport, div.btn_le_sport');
-        for (const el of all) {
-          const t = (el.textContent || "").trim();
-          if (t === txt || t.includes(txt)) { el.scrollIntoView({block:'center'}); el.click(); return true; }
-        }
-        return false;
-      }, tabText);
-      if (clicked) {
-        await new Promise(r => setTimeout(r, 5000));
-        await handlePopups(page);
-      }
-      return clicked;
-    } catch (e) { return false; }
-  }
-
-  // 0. 检查是否已在 CORNERS tab（In-Play 而非 Today）
-  const alreadyOnCorners = await page.evaluate(() => {
-    const cnTab = document.getElementById('tab_cn');
-    if (!cnTab || !(cnTab.classList.contains('on') || cnTab.classList.contains('active'))) return false;
-    if (document.querySelectorAll('div.box_lebet_odd').length === 0) return false;
-
-    // 排除 Today/今日视图：避免将赛程数据当作实时数据
-    const activeTabs = document.querySelectorAll('.btn_filter.on, .btn_filter.active, [class*="today"], [class*="filter"]');
-    for (const tab of activeTabs) {
-      const text = (tab.textContent || '').toLowerCase().trim();
-      if (text === 'today' || text === '今日') return false;
-    }
-    // 检查 URL
-    const url = window.location.href.toLowerCase();
-    if (url.includes('today') && !url.includes('inplay') && !url.includes('in-play')) return false;
-
-    return true;
-  });
-  if (alreadyOnCorners) {
-    console.log("[cornerCrawler] CORNERS tab already active on In-Play, skipping navigation");
-    await new Promise(r => setTimeout(r, 2000));
-    await handlePopups(page);
-    // 即使已在角球Tab，也尝试从当前DOM提取比赛比分
-    let matchScores = {};
-    try {
-      matchScores = await page.evaluate(() => {
-        const scores = {};
-        const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
-        for (const box of containers) {
-          const htEl = box.querySelector('div.box_team.teamH span.text_team, [class*="team_h"] span');
-          const atEl = box.querySelector('div.box_team.teamC span.text_team, [class*="team_c"] span');
-          if (!htEl || !atEl) continue;
-          const homeTeam = (htEl.textContent || '').trim();
-          const awayTeam = (atEl.textContent || '').trim();
-          if (!homeTeam || !awayTeam) continue;
-          const scoreEls = box.querySelectorAll('div.box_score span.text_point');
-          const homeScore = scoreEls.length >= 2 ? parseInt((scoreEls[0].textContent || '0').trim(), 10) || 0 : 0;
-          const awayScore = scoreEls.length >= 2 ? parseInt((scoreEls[1].textContent || '0').trim(), 10) || 0 : 0;
-          const key = (homeTeam + '|' + awayTeam).toLowerCase();
-          scores[key] = { homeScore, awayScore };
-        }
-        return scores;
-      });
-    } catch (e) {
-      console.log("[cornerCrawler] Score capture from corner tab failed:", e.message);
-    }
-    return { success: true, source: "corner-inplay-active", matchScores };
-  }
-
-  // 0.5: 检查是否在 In-Play（而非 Today）
-  const isInPlay = await page.evaluate(() => {
-    const url = window.location.href.toLowerCase();
-    if (url.includes('inplay') || url.includes('in-play')) return true;
-    const activeFilters = document.querySelectorAll('.btn_filter.on, .btn_filter.active');
-    return Array.from(activeFilters).some(el => {
-      const text = (el.textContent || '').toLowerCase();
-      return text.includes('inplay') || text.includes('in-play') || text.includes('In-Play');
-    });
-  });
-
-  if (!isInPlay) {
-    console.log("[cornerCrawler] Not on In-Play view, switching from Today...");
-    const inplayNames = ["滚球"];
-    for (const name of inplayNames) {
-      if (await clickTab(page, name, 1500)) {
-        console.log("[cornerCrawler] Switched to In-Play: " + name);
-        await new Promise(r => setTimeout(r, 3000));
-        await handlePopups(page);
-        break;
-      }
-    }
-  }
-
-  // 1. Detect In-Play page content - 多选择器回退精简版
-  console.log("[cornerCrawler] Step 1: Detecting In-Play page content...");
-  let contentLoaded = false;
-  contentSource = "inplay";
-
-  // 等待页面渲染（使用多种选择器回退，网站结构可能已变化）
-  try {
-    await page.waitForFunction(() => {
-      const selectors = [
-        'div[class*="team"]',            // 鐞冮槦鐩稿叧瀹瑰櫒
-        'div.bet_box',                   // 鎶曟敞瀹瑰櫒锛堟柊缁撴瀯锛?
-        'div.box_lebet[class*="bet_type_"]', // 鏃х粨鏋?
-        'div[class*="inplay"]',          // In-Play 相关元素
-        '[class*="box_score"]',          // 姣斿垎瀹瑰櫒
-        'div[class*="game"]',            // 姣旇禌瀹瑰櫒
-        'div.btn_filter',                // 鐩樺彛鏍囩瀹瑰櫒
-      ];
-      for (const sel of selectors) {
-        const els = document.querySelectorAll(sel);
-        if (els.length >= 2) return true;
-      }
-      // 通用检测：页面文本是否包含比赛相关内容
-      const bodyText = document.body?.textContent || '';
-      const hasInPlay = /\bIn.?Play\b/i.test(bodyText);
-      const hasTeamNames = /[A-Z][a-z]+[\s-]+(?:FC|United|City|AC|Real|Inter|vs|VS|v\b)/i.test(bodyText);
-      return hasInPlay || hasTeamNames;
-    }, { timeout: 8000 });
-    contentLoaded = true;
-    console.log("[cornerCrawler] In-Play content detected");
-  } catch (e) {
-    console.log("[cornerCrawler] In-Play detection timeout: " + e.message);
-    // 不返回 false — ensureLogin 已将页面导航到 In-Play，选择器可能不匹配
-    // 继续执行 Soccer → CORNERS 导航
-  }
-
-  // 输出页面状态诊断
-  try {
-    const pageDiag = await page.evaluate(() => ({
-      url: window.location.href,
-      bodyTextPreview: (document.body?.textContent || '').replace(/\s+/g, ' ').substring(0, 150),
-      teamElCount: document.querySelectorAll('div[class*="team"]').length,
-      betBoxCount: document.querySelectorAll('div.bet_box').length,
-      boxLebetCount: document.querySelectorAll('div.box_lebet').length,
-      btnFilterCount: document.querySelectorAll('div.btn_filter').length,
-      gameElCount: document.querySelectorAll('[class*="game"]').length,
-      inplayElCount: document.querySelectorAll('[class*="inplay"]').length,
-    }));
-    console.log("[cornerCrawler] Page state: " + JSON.stringify(pageDiag));
-  } catch (e) {}
-
-  await new Promise(r => setTimeout(r, 2000));
+  await new Promise(r => setTimeout(r, 3000));
   await handlePopups(page);
 
-  // === 1.5: 点击 Soccer/足球 标签（桌面版 #symbol_ft） ===
-  console.log("[cornerCrawler] Step 1.5: Clicking Soccer tab via #symbol_ft...");
+  // ========== Step 1: 点击 Soccer ==========
+  console.log("[cornerCrawler] Step 1: 点击 Soccer...");
   let soccerClicked = await page.evaluate(() => {
     const btn = document.getElementById('symbol_ft');
     if (!btn) return false;
-    if (btn.classList.contains('on')) return true; // 已激活
+    if (btn.classList.contains('on')) return true;
     btn.scrollIntoView({block:'center'});
     btn.click();
     return true;
   });
-  if (soccerClicked) {
-    console.log("[cornerCrawler] Soccer tab OK via #symbol_ft");
-    await new Promise(r => setTimeout(r, 3000));
-  } else {
-    console.log("[cornerCrawler] #symbol_ft 未找到，CORENRS 数据可能为空");
-  }
+  await new Promise(r => setTimeout(r, 3000));
   await handlePopups(page);
 
-  // 捕获比赛比分（在 CORNERS 切换之前，Soccer 页面显示真实比赛比分）
-  console.log("[cornerCrawler] Capturing match scores from Soccer view...");
+  // ========== Step 2: 检测 Soccer 比赛 ==========
+  const hasSoccer = await page.evaluate(() =>
+    document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length > 0
+  );
+  if (!hasSoccer) {
+    console.log("[cornerCrawler] 无 Soccer 比赛，终止");
+    return { success: false, source: "no-soccer", matchScores: {}, soccerMarkets: {}, noSoccer: true };
+  }
+  console.log("[cornerCrawler] Soccer 比赛已检测到");
+
+  // ========== Step 3: 捕获比赛比分 ==========
   let matchScores = {};
   try {
     matchScores = await page.evaluate(() => {
@@ -521,186 +374,62 @@ export async function navigateToCorners(page) {
         const scoreEls = box.querySelectorAll('div.box_score span.text_point');
         const homeScore = scoreEls.length >= 2 ? parseInt((scoreEls[0].textContent || '0').trim(), 10) || 0 : 0;
         const awayScore = scoreEls.length >= 2 ? parseInt((scoreEls[1].textContent || '0').trim(), 10) || 0 : 0;
-        const key = (homeTeam + '|' + awayTeam).toLowerCase();
-        scores[key] = { homeScore, awayScore };
+        scores[(homeTeam + '|' + awayTeam).toLowerCase()] = { homeScore, awayScore };
       }
       return scores;
     });
-    console.log("[cornerCrawler] Captured scores for " + Object.keys(matchScores).length + " teams");
-  } catch (e) {
-    console.log("[cornerCrawler] Score capture failed:", e.message);
-    matchScores = {};
-  }
+    console.log("[cornerCrawler] 捕获比分: " + Object.keys(matchScores).length + " 队");
+  } catch (e) { console.log("[cornerCrawler] 比分捕获失败:", e.message); }
 
-  // 捕获 Soccer 页面的让球(HDP)和大小(O/U)盘口
-  console.log("[cornerCrawler] Capturing Soccer page markets (HDP + O/U)...");
-  console.log("[cornerCrawler] Capturing main markets from Soccer view...");
+  // ========== Step 4: HDP & O/U (检查 #tab_rnou) ==========
   let soccerMarkets = {};
-  try {
-    // ★ 先等待 hdpou_ft 盘口异步加载（最多 8s，至少 5 场比赛有数据）
-    const waitStart = Date.now();
-    await page.waitForFunction(() => {
-      const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
-      let withHdpou = 0;
-      for (const box of containers) {
-        if (box.querySelectorAll('div.form_lebet_hdpou.hdpou_ft').length > 0) withHdpou++;
-      }
-      return withHdpou >= 5;
-    }, { timeout: 8000 }).catch(() => console.log("[cornerCrawler] hdpou_ft wait timeout after " + (Date.now() - waitStart) + "ms, proceeding anyway"));
-    const hdpouWaitTime = Date.now() - waitStart;
-    console.log("[cornerCrawler] hdpou_ft wait done: " + hdpouWaitTime + "ms");
-
-    // ★ 等待完成后检测是否有比赛数据
-    const soccerHasMatches = await page.evaluate(() => {
-      return document.querySelectorAll('div.box_lebet[class*="bet_type_"]').length > 0;
+  const hasRnou = await page.evaluate(() => {
+    const tab = document.getElementById('tab_rnou');
+    return tab && tab.offsetParent !== null;
+  });
+  if (hasRnou) {
+    console.log("[cornerCrawler] Step 4: 点击 HDP & O/U 标签...");
+    await page.evaluate(() => {
+      const tab = document.getElementById('tab_rnou');
+      if (tab) { tab.scrollIntoView({block:'center'}); tab.click(); }
     });
-    if (!soccerHasMatches) {
-      console.log("[cornerCrawler] Soccer 视图无比赛容器，今日无足球赛事");
-      return { success: false, source: "no-soccer", matchScores, soccerMarkets: {}, noSoccer: true };
-    }
-
-    // 将 matchScores 传入 page.evaluate 以便合并比分
-    soccerMarkets = await page.evaluate((scores) => {
-      const markets = {};
-      let totalContainers = 0, withHdpouCount = 0, withHeadCount = 0, matchedCount = 0;
-      const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
-      totalContainers = containers.length;
-
-      // 联赛名缓存：从页面顶部#lea_name 获取
-      let currentLeague = '';
-      const leaNameEl = document.getElementById('lea_name');
-      if (leaNameEl) currentLeague = (leaNameEl.textContent || '').trim();
-
-      for (const box of containers) {
-        // 尝试匹配更近的联赛标签
-        let league = currentLeague;
-        let prev = box.previousElementSibling;
-        while (prev) {
-          const lea = prev.querySelector('#lea_name, tt[id="lea_name"], [id="lea_name"]');
-          if (lea) { league = (lea.textContent || '').trim(); break; }
-          prev = prev.previousElementSibling;
+    await new Promise(r => setTimeout(r, 3000));
+    await handlePopups(page);
+    try {
+      await page.waitForFunction(() => {
+        const els = document.querySelectorAll('div.box_lebet_odd');
+        if (els.length === 0) return false;
+        for (const el of els) {
+          const os = el.querySelector('span.text_odds');
+          if (os) { const v = parseFloat(os.textContent || '0'); if (v > 0 && v < 100) return true; }
         }
-
-        const htEl = box.querySelector('div.box_team.teamH span.text_team');
-        const atEl = box.querySelector('div.box_team.teamC span.text_team');
-        if (!htEl || !atEl) continue;
-        const homeTeam = (htEl.textContent || '').trim();
-        const awayTeam = (atEl.textContent || '').trim();
-        if (!homeTeam || !awayTeam) continue;
-        const key = (homeTeam + '|' + awayTeam).toLowerCase();
-
-        // 提取比赛时间
-        let time = '';
-        const timeEl = box.querySelector('tt.text_time, [class*="text_time"]');
-        if (timeEl) {
-          time = (timeEl.textContent || '').replace(/\s+/g, ' ').trim();
-        }
-
-        // 合并比分
-        const scoreData = scores[key] || {};
-        const homeScore = typeof scoreData.homeScore === 'number' ? scoreData.homeScore : -1;
-        const awayScore = typeof scoreData.awayScore === 'number' ? scoreData.awayScore : -1;
-
-        const entry = { league, time, homeScore: homeScore >= 0 ? homeScore : null, awayScore: awayScore >= 0 ? awayScore : null, hdp: null, ou: null };
-        const hdpouSections = box.querySelectorAll('div.form_lebet_hdpou.hdpou_ft');
-        if (hdpouSections.length > 0) withHdpouCount++;
-        for (const section of hdpouSections) {
-          const headSpan = section.querySelector('div.head_lebet span');
-          if (!headSpan) continue;
-          withHeadCount++;
-          const marketLabel = (headSpan.textContent || '').trim();
-          const firstRow = section.querySelector('div.col_hdpou:first-child');
-          if (!firstRow) continue;
-          const buttons = firstRow.querySelectorAll('div.btn_hdpou_odd');
-          if (buttons.length < 2) continue;
-          const homeLine = (buttons[0].querySelector('tt.text_ballhead')?.textContent || '').trim();
-          const homeOdds = parseFloat(buttons[0].querySelector('span.text_odds')?.textContent || '0') || 0;
-          const awayLine = (buttons[1].querySelector('tt.text_ballhead')?.textContent || '').trim();
-          const awayOdds = parseFloat(buttons[1].querySelector('span.text_odds')?.textContent || '0') || 0;
-          if (marketLabel === '让球') {
-            entry.hdp = { line: homeLine, homeOdds, awayOdds };
-          } else if (marketLabel === '得分大小') {
-            entry.ou = { line: parseFloat(homeLine) || 0, overOdds: homeOdds, underOdds: awayOdds };
-          }
-        }
-        if (entry.hdp || entry.ou) {
-          matchedCount++;
-          markets[key] = entry;
-        }
-      }
-      markets['__diag__'] = { totalContainers, withHdpouCount, withHeadCount, matchedCount, league: currentLeague };
-      return markets;
-    }, matchScores);
-
-    // 提取诊断信息并打日志
-    const diag = soccerMarkets['__diag__'] || {};
-    delete soccerMarkets['__diag__'];
-    console.log("[cornerCrawler] Captured main markets for " + Object.keys(soccerMarkets).length + " matches (containers=" + diag.totalContainers + " hdpou=" + diag.withHdpouCount + " head=" + diag.withHeadCount + " matched=" + diag.matchedCount + " league=" + (diag.league || '(none)') + ")");
-  } catch (e) {
-    console.log("[cornerCrawler] Main markets capture failed:", e.message);
-    soccerMarkets = {};
+        return false;
+      }, { timeout: 10000 });
+      console.log("[cornerCrawler] HDP&O/U 盘口已渲染");
+    } catch(e) { console.log("[cornerCrawler] HDP&O/U 等待超时:", e.message); }
+    await new Promise(r => setTimeout(r, 2000));
+    soccerMarkets = await captureMainMarkets(page, matchScores);
+    console.log("[cornerCrawler] HDP&O/U 市场: " + Object.keys(soccerMarkets).length + " 场");
+  } else {
+    console.log("[cornerCrawler] #tab_rnou 不可见，跳过 HDP&O/U");
   }
 
-
-  console.log("[cornerCrawler] Step 2: 点击角球 tab...");
-  let clicked = false;
-  try {
-    clicked = await page.evaluate(() => {
+  // ========== Step 5: CORNERS (检查 #tab_cn) ==========
+  let cornerClicked = false;
+  const hasCorners = await page.evaluate(() => {
+    const tab = document.getElementById('tab_cn');
+    return tab && tab.offsetParent !== null;
+  });
+  if (hasCorners) {
+    console.log("[cornerCrawler] Step 5: 点击 CORNERS 标签...");
+    cornerClicked = await page.evaluate(() => {
       const tab = document.getElementById('tab_cn');
       if (tab) { tab.scrollIntoView({block:'center'}); tab.click(); return true; }
       return false;
     });
-    if (clicked) {
-      console.log("[cornerCrawler] 角球 tab clicked via id");
-      await new Promise(r => setTimeout(r, 2000));
-    }
-  } catch (e) {
-    console.log("[cornerCrawler] Direct id click failed: " + e.message);
-  }
-
-  if (!clicked) {
-    clicked = await clickTab(page, "角球", 2000);
-    if (!clicked) clicked = await clickTab(page, "角球", 2000);
-  }
-
-  if (!clicked) {
+    await new Promise(r => setTimeout(r, 2000));
     try {
-      const allTabs = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('div.btn_filter, div[id*="tab"], div[class*="tab"]')).map(t => ({id: t.id, text: (t.textContent || "").trim()}))
-      );
-      console.log("[cornerCrawler] Available tabs: " + JSON.stringify(allTabs));
-    } catch(e) {}
-    console.warn("[cornerCrawler] 角球 tab not found, using current page");
-  }
-
-  // 3. 确认角球 tab 是否已激活
-  console.log("[cornerCrawler] Step 3: Confirming corner tab activation...");
-  const cornerTabActive = await page.evaluate(() => {
-    const cnTab = document.getElementById('tab_cn');
-    if (!cnTab) return false;
-    const isActive = cnTab.classList.contains('active') || cnTab.classList.contains('on') || cnTab.classList.contains('selected');
-    const hasCornerOdds = document.querySelectorAll('div.box_lebet_odd').length > 0;
-    return isActive || hasCornerOdds;
-  });
-  if (!cornerTabActive) {
-    console.warn("[cornerCrawler] 角球 tab 可能未成功激活，尝试强制刷新...");
-    try {
-      await clickTab(page, "足球", 2000);
-      await new Promise(r => setTimeout(r, 1500));
-      await page.evaluate(() => {
-        const tab = document.getElementById('tab_cn');
-        if (tab) { tab.scrollIntoView({block:'center'}); tab.click(); }
-      });
-      await new Promise(r => setTimeout(r, 3000));
-    } catch(e) {}
-  }
-
-  // 4. Wait for corner market data to render (smart wait for actual odds values)
-  if (clicked) {
-    console.log("[cornerCrawler] Step 4: Waiting for corner markets (smart wait)...");
-    let oddsReady = false;
-    try {
-      oddsReady = await page.waitForFunction(() => {
+      await page.waitForFunction(() => {
         const oddsEls = document.querySelectorAll('div.box_lebet_odd');
         if (oddsEls.length === 0) return false;
         for (const od of oddsEls) {
@@ -714,19 +443,99 @@ export async function navigateToCorners(page) {
         }
         return false;
       }, { timeout: 10000 });
-      console.log("[cornerCrawler] Corner markets loaded " + (oddsReady ? "(smart wait)" : "(timeout)"));
-    } catch (e) {
-      console.log("[cornerCrawler] Corner markets wait timeout: " + e.message);
-    }
-    if (!oddsReady) await new Promise(r => setTimeout(r, 3000));
+      console.log("[cornerCrawler] CORNERS 盘口已渲染");
+    } catch(e) { console.log("[cornerCrawler] CORNERS 等待超时:", e.message); }
+    if (!cornerClicked) await new Promise(r => setTimeout(r, 3000));
+  } else {
+    console.log("[cornerCrawler] #tab_cn 不可见，跳过 CORNERS");
   }
 
   await handlePopups(page);
-console.log("[cornerCrawler] Content source: " + contentSource);
-  return { success: contentLoaded, source: contentSource, matchScores, soccerMarkets, noSoccer: false };
+  return { success: true, source: "simplified", matchScores, soccerMarkets, noSoccer: false };
 }
 
-// ======================== DOM 解析角球盘口 ========================
+
+// ======================== 解析 Soccer 页面 HDP/O/U 盘口 ========================
+async function captureMainMarkets(page, matchScores = {}) {
+  try {
+    return await page.evaluate((scores) => {
+      const markets = {};
+      let currentLeague = '';
+      const leaNameEl = document.getElementById('lea_name');
+      if (leaNameEl) currentLeague = (leaNameEl.textContent || '').trim();
+      const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+      for (const box of containers) {
+        let league = currentLeague;
+        let prev = box.previousElementSibling;
+        while (prev) {
+          const lea = prev.querySelector('#lea_name, tt[id="lea_name"], [id="lea_name"]');
+          if (lea) { league = (lea.textContent || '').trim(); break; }
+          prev = prev.previousElementSibling;
+        }
+        const htEl = box.querySelector('div.box_team.teamH span.text_team');
+        const atEl = box.querySelector('div.box_team.teamC span.text_team');
+        if (!htEl || !atEl) continue;
+        const homeTeam = (htEl.textContent || '').trim();
+        const awayTeam = (atEl.textContent || '').trim();
+        if (!homeTeam || !awayTeam) continue;
+        const key = (homeTeam + '|' + awayTeam).toLowerCase();
+        let time = '';
+        const timeEl = box.querySelector('tt.text_time, [class*="text_time"]');
+        if (timeEl) time = (timeEl.textContent || '').replace(/\s+/g, ' ').trim();
+        const scoreData = scores[key] || {};
+        const homeScore = typeof scoreData.homeScore === 'number' ? scoreData.homeScore : -1;
+        const awayScore = typeof scoreData.awayScore === 'number' ? scoreData.awayScore : -1;
+        const entry = { league, time, homeScore: homeScore >= 0 ? homeScore : null, awayScore: awayScore >= 0 ? awayScore : null, hdp: null, ou: null };
+        // hdpou_ft sections
+        const hdpouSections = box.querySelectorAll('div.form_lebet_hdpou.hdpou_ft');
+        for (const section of hdpouSections) {
+          const headSpan = section.querySelector('div.head_lebet span');
+          if (!headSpan) continue;
+          const marketLabel = (headSpan.textContent || '').trim();
+          const firstRow = section.querySelector('div.col_hdpou:first-child');
+          if (!firstRow) continue;
+          const buttons = firstRow.querySelectorAll('div.btn_hdpou_odd');
+          if (buttons.length < 2) continue;
+          const homeLine = (buttons[0].querySelector('tt.text_ballhead')?.textContent || '').trim();
+          const homeOdds = parseFloat(buttons[0].querySelector('span.text_odds')?.textContent || '0') || 0;
+          const awayLine = (buttons[1].querySelector('tt.text_ballhead')?.textContent || '').trim();
+          const awayOdds = parseFloat(buttons[1].querySelector('span.text_odds')?.textContent || '0') || 0;
+          if (marketLabel === '让球' || marketLabel === 'HDP') {
+            entry.hdp = { line: homeLine, homeOdds, awayOdds };
+          } else if (marketLabel === '得分大小' || marketLabel === 'O/U') {
+            entry.ou = { line: parseFloat(homeLine) || 0, overOdds: homeOdds, underOdds: awayOdds };
+          }
+        }
+        // box_lebet_odd fallback
+        if (!entry.hdp && !entry.ou) {
+          const oddBlocks = box.querySelectorAll('div.box_lebet_odd');
+          for (const block of oddBlocks) {
+            const headSpan = block.querySelector('div.head_lebet span');
+            if (!headSpan) continue;
+            const label = (headSpan.textContent || '').trim();
+            const btns = block.querySelectorAll('div.btn_lebet_odd:not(.lock)');
+            if (btns.length < 2) continue;
+            const homeOdds = parseFloat((btns[0].querySelector('span.text_odds') || {}).textContent || '0') || 0;
+            const awayOdds = parseFloat((btns[1].querySelector('span.text_odds') || {}).textContent || '0') || 0;
+            if (label === 'HDP') {
+              const ln = (btns[0].querySelector('tt.text_ballhead')?.textContent || '').trim();
+              entry.hdp = { line: ln, homeOdds, awayOdds };
+            } else if (label === 'O/U') {
+              const ln = parseFloat((btns[0].querySelector('tt.text_ballhead')?.textContent || '0')) || 0;
+              entry.ou = { line: ln, overOdds: homeOdds, underOdds: awayOdds };
+            }
+          }
+        }
+        if (entry.hdp || entry.ou) markets[key] = entry;
+      }
+      return markets;
+    }, matchScores);
+  } catch (e) {
+    console.log("[cornerCrawler] main markets capture failed:", e.message);
+    return {};
+  }
+}
+
 async function parseCornerMarkets(page, matchScores = {}) {
   console.log("[cornerCrawler] ===== DOM Parsing Corner Markets =====");
 
@@ -1540,11 +1349,11 @@ export async function crawlCornerMatches() {
     }
   const soccerMarkets = navResult?.soccerMarkets || {};
     console.log("[cornerCrawler] Navigation result: source=" + dataSource + " scores=" + Object.keys(matchScores).length);
-    await randomDelay(1000, 3000);
+    await randomDelay(500, 1000);
 
     // 等待数据加载
     console.log("[cornerCrawler] Waiting for market data...");
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 1000));
 
     // 滚动触发懒加载
     try {
