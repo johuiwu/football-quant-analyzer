@@ -1,4 +1,4 @@
-﻿// ======================== 公开爬虫与公共模块 ========================
+// ======================== 公开爬虫与公共模块 ========================
 import fs from "fs";
 // ======================== 随机延迟（反爬） ========================
 export function randomDelay(min, max) {
@@ -10,14 +10,26 @@ export function randomDelay(min, max) {
 
 export async function handlePopups(page) {
   for (let i = 0; i < 5; i++) {
-    await new Promise(r => setTimeout(r, 1000));
+    await randomDelay(800, 1500);
     const clicked = await page.evaluate(() => {
+      // 辅助函数：检查元素是否可见（position:fixed 弹窗用 visibility 控制显隐）
+      const isVisible = (el) => {
+        const style = getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      };
+
       let c = false;
+      // 1. 点击取消/否按钮
       document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, [class*='cancel']").forEach(btn => {
-        if ((btn.textContent||"").trim().toUpperCase() === "NO") { btn.click(); c = true; }
+        if (!isVisible(btn)) return;
+        const text = (btn.textContent || "").trim().toUpperCase();
+        if (text === "NO" || text === "否" || text === "CANCEL" || text === "取消") { btn.click(); c = true; }
       });
-      document.querySelectorAll("[class*='msg_popup'] .btn, .btn_confirm, #C_ok_btn, #ok_btn, #kick_ok_btn, [class*='confirm']").forEach(btn => {
-        if ((btn.textContent||"").trim().toUpperCase() === "OK") { btn.click(); c = true; }
+      // 2. 点击确认/OK按钮
+      document.querySelectorAll("[class*='msg_popup'] .btn, .btn_confirm, .btn_submit, #C_ok_btn, #ok_btn, #kick_ok_btn, #C_alert_confirm, #alert_confirm, [class*='confirm']").forEach(btn => {
+        if (!isVisible(btn)) return;
+        const text = (btn.textContent || "").trim().toUpperCase();
+        if (text === "OK" || text === "确认" || text === "确定" || text === "是") { btn.click(); c = true; }
       });
       return c;
     });

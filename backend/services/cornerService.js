@@ -321,47 +321,8 @@ export async function getLiveCornerData(filterMatchId) {
       : cachedMatches;
     return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true, mainMarkets: cachedMainMarkets };
   }
-
-  // 无缓存时，尝试即时爬取一次（USE_REAL_DATA 默认 true）
-  if (USE_REAL_DATA) {
-    console.log("[cornerService] 缓存为空，尝试即时爬取...");
-    try {
-      const result = await crawlCornerMatches();
-      if (result.success && result.data?.matches?.length > 0) {
-        const rawMatches = result.data.matches;
-        const matches = rawMatches.map(mapMatchToCornerFormat);
-        // 策略评估
-        for (const match of matches) {
-          match.triggeredStrategies = evaluateStrategies(match, activeStrategies);
-        }
-        const mainMk = result.mainMarkets || {};
-        cachedMatches = matches;
-        cachedMainMarkets = mainMk;
-        lastFetchTime = Date.now();
-        consecutiveFailures = 0;
-        const filtered = filterMatchId
-          ? matches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
-          : matches;
-        console.log(`[cornerService] 即时爬取成功，返回 ${filtered.length} 场`);
-        return { data: filtered, generatedAt, count: filtered.length, source: "live-fetch", cacheAge: 0, mainMarkets: cachedMainMarkets };
-      } else if (result.mainMarkets && Object.keys(result.mainMarkets).length > 0) {
-        // ★ 角球数据为空但主盘口有数据，仍缓存主盘口并返回
-        cachedMatches = [];
-        const mainMk = result.mainMarkets || {};
-        cachedMainMarkets = mainMk;
-        lastFetchTime = Date.now();
-        consecutiveFailures = 0;
-        console.log(`[cornerService] 即时爬取: 角球无数据，主盘口 ${Object.keys(mainMk).length} 场`);
-        return { data: [], generatedAt, count: 0, source: "live-fetch", cacheAge: 0, mainMarkets: mainMk };
-      } else {
-        console.log("[cornerService] 即时爬取无数据: " + (result.error || "0 matches"));
-      }
-    } catch (err) {
-      console.warn("[cornerService] 即时爬取失败:", err.message);
-    }
-  }
-
-  // 无缓存：返回空，标记 cacheEmpty 让前端知道需要等待轮询
+  // 无缓存时直接返回空（不自动触发爬虫，由轮询/即时爬取入口负责）
+  // 标记 cacheEmpty 让前端知道需要启动监控
   console.log("[cornerService] 无有效数据，返回空");
   return { data: [], generatedAt, count: 0, cacheEmpty: true };
 }

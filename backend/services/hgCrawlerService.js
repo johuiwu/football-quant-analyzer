@@ -1,4 +1,4 @@
-﻿import puppeteer from "puppeteer-extra";
+import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
@@ -42,7 +42,7 @@ async function safeEvaluate(page, fn) {
     try {
       return await page.evaluate(fn);
     } catch (err) {
-      if (err.message && err.message.includes("Execution context was destroyed") && retries > 1) {
+      if (err.message && (err.message.includes("Execution context was destroyed") || err.message.includes("detached Frame")) && retries > 1) {
         console.log("[HgCrawler] 页面导航中，等待后重试...");
         await new Promise((r) => setTimeout(r, 2000));
         retries--;
@@ -60,32 +60,103 @@ async function safeEvaluate(page, fn) {
 
 async function clickNoButton(page) {
   try {
-    const result = await page.evaluate(() => {
-      let clickedSomething = false;
-      const cancelBtns = document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn");
+    let clickedSomething = false;
+
+    // 1. 尝试点击按钮
+    const clicked = await page.evaluate(() => {
+      // 辅助函数：检查元素是否可见
+      const isVisible = (el) => {
+        const style = getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      };
+
+      let localClicked = false;
+
+      // 点击"普通登入"按钮（简易密码页面）
+      const normalLoginBtn = document.getElementById("back_login");
+      if (normalLoginBtn && isVisible(normalLoginBtn)) {
+        normalLoginBtn.click();
+        localClicked = true;
+      }
+
+      // 点击取消/否按钮
+      const cancelBtns = document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, #C_cancel_btn, [class*='popup'] [class*='close']");
       for (const btn of cancelBtns) {
+        if (!isVisible(btn)) continue;
         const text = (btn.textContent || "").trim().toUpperCase();
-        if (text === "NO" || text === "否" || btn.id === "C_no_btn" || btn.id === "no_btn") {
-          btn.click(); clickedSomething = true;
+        if (text === "NO" || text === "否" || text === "CANCEL" || text === "取消" || btn.id === "C_no_btn" || btn.id === "no_btn" || btn.id === "C_cancel_btn") {
+          btn.click(); localClicked = true;
         }
       }
-      const okBtns = document.querySelectorAll('[class*="msg_popup"] .btn, .btn_confirm, #C_ok_btn, #ok_btn');
+
+      // fallback: 点击任意可见的 .btn_cancel
+      if (!localClicked) {
+        const cancelFallback = document.querySelectorAll(".btn_cancel");
+        for (const btn of cancelFallback) {
+          if (!isVisible(btn)) continue;
+          btn.click(); localClicked = true; break;
+        }
+      }
+
+      // 点击确认/OK按钮
+      const okBtns = document.querySelectorAll('[class*="msg_popup"] .btn, .btn_confirm, .btn_submit, #C_ok_btn, #ok_btn, #C_alert_confirm, #alert_confirm, #kick_ok_btn, .btn_sure');
       for (const btn of okBtns) {
+        if (!isVisible(btn)) continue;
         const text = (btn.textContent || "").trim().toUpperCase();
-        if (text === "OK" || text === "确认" || text === "确定") {
-          btn.click(); clickedSomething = true;
+        if (text === "OK" || text === "确认" || text === "确定" || text === "SUBMIT" || text === "提交" || text === "是" || btn.id === "C_yes_btn" || btn.id === "yes_btn") {
+          btn.click(); localClicked = true;
         }
       }
-      return clickedSomething;
+
+      return localClicked;
     });
-    if (result) console.log("[HgCrawler] ✓ 已处理弹窗");
-    return !!result;
+    clickedSomething = clicked;
+
+    // 2. 稍作延迟，等待 JS 执行
+    if (clickedSomething) {
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    // 3. 强制兜底：只移除特定弹窗对话框的 .on 类，不动容器元素
+    const forceCleaned = await page.evaluate(() => {
+      let cleaned = false;
+
+      // 只移除具体弹窗对话框的 .on 类，不碰容器元素（#msg_popup, #alert_show, .popup）
+      const dialogIds = ["C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "alert_kick", "system_popup"];
+      for (const id of dialogIds) {
+        const el = document.getElementById(id);
+        if (el && el.classList.contains("on")) {
+          el.classList.remove("on");
+          cleaned = true;
+        }
+      }
+
+      // 移除 body 上的可能锁定类
+      const bodyLock = document.body;
+      if (bodyLock) {
+        bodyLock.classList.remove("scroll_lock", "locked");
+        bodyLock.style.overflow = "";
+      }
+
+      return cleaned;
+    });
+    if (forceCleaned) {
+      clickedSomething = true;
+    }
+
+    // 4. 按 ESC 键作为最后兜底
+    try {
+      await page.keyboard.press("Escape");
+      await new Promise(r => setTimeout(r, 200));
+    } catch (_) {}
+
+    if (clickedSomething) console.log("[HgCrawler] ✓ 已处理弹窗（含强制清理）");
+    return !!clickedSomething;
   } catch (err) {
     console.log("[HgCrawler] clickNoButton 出错:", err.message);
     return false;
   }
 }
-
 // ======================== 登录 ========================
 export async function loginToHG(credentials, forceNew = false, isolated = false) {
   console.log("[HgCrawler] 开始登录...");
@@ -102,7 +173,14 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
           try {
             const bodyText = document.body.textContent || "";
             return (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
-                   (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
+                   (bodyText.includes("In-Play") && bodyText.includes("Soccer")) ||
+                   (function(){
+                     var acc = document.getElementById("acc_show");
+                     if (acc) {
+                       return acc.style.display === "none" || acc.offsetParent === null;
+                     }
+                     return false;
+                   })();
           } catch (e) { return false; }
         });
         if (status) {
@@ -126,7 +204,14 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
         try {
           const bodyText = document.body.textContent || "";
           return (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
-                 (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
+                 (bodyText.includes("In-Play") && bodyText.includes("Soccer")) ||
+                 (function(){
+                   var acc = document.getElementById("acc_show");
+                   if (acc) {
+                     return acc.style.display === "none" || acc.offsetParent === null;
+                   }
+                   return false;
+                 })();
         } catch (e) { return false; }
       });
       if (status) {
@@ -190,6 +275,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
 
     let loginClicked = false;
     let popupLastHandledAt = 0;
+    let consecutivePopupCount = 0;
 
     for (let i = 0; i < 80; i++) {
       await new Promise((r) => setTimeout(r, 1000));
@@ -199,19 +285,68 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
           const bodyText = document.body.textContent || "";
           return {
             hasSuccess: (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
-                        (bodyText.includes("In-Play") && bodyText.includes("Soccer") && bodyText.includes("Basketball")),
-            hasLogin: bodyText.includes("登入") || bodyText.includes("登录") || bodyText.includes("LOG IN"),
-            hasPasscodeDialog: bodyText.includes("Passcode Login") || bodyText.includes("简易密码"),
-            hasLoggedOutMsg: bodyText.includes("您已被强制登出") || bodyText.includes("You have been logged out"),
-            hasTwoFactor: bodyText.includes("普通登入")
+                        (bodyText.includes("In-Play") && bodyText.includes("Soccer")) ||
+                        (function(){
+                          // 必须真正看到主页元素，不能仅靠登录框隐藏
+                          var nav = document.getElementById("today_page") || document.getElementById("live_page");
+                          if (nav && getComputedStyle(nav).display !== 'none' && getComputedStyle(nav).visibility !== 'hidden') return true;
+                          var symbol = document.getElementById("symbol_ft");
+                          if (symbol && getComputedStyle(symbol).display !== 'none' && getComputedStyle(symbol).visibility !== 'hidden') return true;
+                          return false;
+                        })(),
+            hasLogin: (bodyText.includes("登入") || bodyText.includes("登录") || bodyText.includes("LOG IN")) &&
+                      (function(){ var el = document.querySelector("#usr"); return el ? el.offsetParent !== null : false; })(),
+            hasPasscodeDialog: (function(){
+              // 弹窗使用 position:fixed + visibility 控制显隐，offsetParent 为 null
+              // 改用 visibility 判断
+              var confirm = document.getElementById('C_alert_confirm');
+              if (confirm && getComputedStyle(confirm).display !== 'none' && getComputedStyle(confirm).visibility !== 'hidden') return true;
+              var confirm2 = document.getElementById('alert_confirm');
+              if (confirm2 && getComputedStyle(confirm2).display !== 'none' && getComputedStyle(confirm2).visibility !== 'hidden') return true;
+              var alertShow = document.getElementById('alert_show');
+              if (!alertShow) return false;
+              return getComputedStyle(alertShow).display !== 'none' && getComputedStyle(alertShow).visibility !== 'hidden' &&
+                     (alertShow.textContent || '').includes('简易密码');
+            })(),
+            hasLoggedOutMsg: (function(){
+              var kickBtn = document.getElementById('kick_ok_btn');
+              if (kickBtn && getComputedStyle(kickBtn).display !== 'none' && getComputedStyle(kickBtn).visibility !== 'hidden') return true;
+              return false;
+            })(),
+            hasTwoFactor: bodyText.includes("普通登入"),
+            hasPasscodePage: (function(){
+              // 检测简易密码页面（back_login按钮可见）
+              var btn = document.getElementById('back_login');
+              if (!btn) return false;
+              var style = getComputedStyle(btn);
+              return style.display !== 'none' && style.visibility !== 'hidden';
+            })(),
+            // 登录后页面特征：有导航菜单、比赛列表等
+            hasPostLogin: (function(){
+              var nav = document.getElementById("today_page") || document.getElementById("live_page");
+              if (nav && getComputedStyle(nav).display !== 'none' && getComputedStyle(nav).visibility !== 'hidden') return true;
+              var symbol = document.getElementById("symbol_ft");
+              if (symbol && getComputedStyle(symbol).display !== 'none' && getComputedStyle(symbol).visibility !== 'hidden') return true;
+              return false;
+            })()
           };
         } catch (err) { return null; }
       });
 
       if (!status) continue;
 
-      if (status.hasSuccess) {
-        console.log("[HgCrawler] ✅ 登录成功！");
+      // 检测简易密码页面，优先处理（必须在 hasSuccess 之前检查，否则底层页面文本可能误判为成功）
+      if (status.hasPasscodePage) {
+        console.log("[HgCrawler] 检测到简易密码页面，点击普通登入...");
+        const clicked = await clickNoButton(page);
+        if (clicked) {
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+        continue;
+      }
+
+      if (status.hasSuccess || (loginClicked && status.hasPostLogin && !status.hasLogin)) {
+        console.log("[HgCrawler] ✅ 登录成功！ (hasSuccess=" + status.hasSuccess + ", hasPostLogin=" + status.hasPostLogin + ", loginClicked=" + loginClicked + ")");
         if (!isolated) { mainPage = page; setSharedPage(page); }
         crawlerStatus.isLoggedIn = true;
         if (process.env.CRAWLER_DEBUG === "1") {
@@ -220,14 +355,26 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
         return isolated ? { success: true, page, browser: bi } : { success: true };
       }
 
+      if (consecutivePopupCount > 8) {
+        console.log("[HgCrawler] WARNING: consecutive popup > 8, breaking loop (loginClicked=" + loginClicked + ")");
+        crawlerStatus.error = "popup loop timeout";
+        return isolated ? { success: false, error: "popup loop timeout" } : { success: false, error: "popup loop timeout" };
+      }
+
       if ((status.hasPasscodeDialog || status.hasLoggedOutMsg) && (i - popupLastHandledAt >= 3 || i === 10)) {
-        console.log("[HgCrawler] 检测到弹窗，尝试处理...");
+        console.log("[HgCrawler] 检测到弹窗，尝试处理... (loginClicked=" + loginClicked + ")");
         const clicked = await clickNoButton(page);
         if (clicked) {
           popupLastHandledAt = i;
-          loginClicked = false;
+          // 不重置 loginClicked —— 登录已点击后弹窗可能是正常后续流程，不应重置登录状态
+          consecutivePopupCount++;
           await new Promise((r) => setTimeout(r, 2000));
+          try { await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }); } catch (_) {}
+        } else {
+          consecutivePopupCount++;
+          await new Promise((r) => setTimeout(r, 1000));
         }
+        // 不 continue，让循环自然进入下一次迭代，优先检查 hasSuccess
         continue;
       }
 
@@ -265,6 +412,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
         }, user, pwd);
 
         loginClicked = true;
+        consecutivePopupCount = 0;  // reset popup counter
         console.log("[HgCrawler] ✓ 已点击登录按钮");
         continue;
       }
