@@ -1110,6 +1110,22 @@ export async function fetchSchedule(_retryCount = 0) {
     privateBrowser = loginRes.browser;
     console.log("[HgCrawler] 隔离浏览器就绪");
 
+    // 等待页面动态内容渲染（SPA 需要 JS 渲染 DOM）
+    console.log("[HgCrawler] 等待页面动态内容渲染...");
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      await page.waitForFunction(() => {
+        const body = document.body;
+        if (!body) return false;
+        const text = body.textContent || "";
+        return text.includes("In-Play") || text.includes("IN-PLAY") || text.length > 2000;
+      }, { timeout: 10000 });
+      console.log("[HgCrawler] 动态内容已渲染");
+    } catch (e) {
+      console.log("[HgCrawler] 动态内容等待超时，继续执行: " + e.message);
+    }
+
+
     // 切换到 Today 视图（仅切换上下文，不提取数据）
     console.log("[HgCrawler] 点击 Today 标签...");
     let todayClicked = await page.evaluate(() => {
