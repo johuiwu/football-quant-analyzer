@@ -3,7 +3,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import fs from "fs";
@@ -87,12 +87,12 @@ async function clickNoButton(page) {
 }
 
 // ======================== 登录 ========================
-export async function loginToHG(credentials, forceNew = false) {
+export async function loginToHG(credentials, forceNew = false, isolated = false) {
   console.log("[HgCrawler] 开始登录...");
   crawlerStatus.error = null;
 
   // Priority: reuse shared browser session from browserPool
-  if (!forceNew) {
+  if (!forceNew && !isolated) {
     const sharedPage = getSharedPage();
     if (sharedPage && isBrowserActive()) {
       try {
@@ -118,7 +118,7 @@ export async function loginToHG(credentials, forceNew = false) {
   }
 
   // 如果 mainPage 仍有效，尝试复用
-  if (!forceNew && mainPage) {
+  if (!forceNew && !isolated && mainPage) {
     try {
       const currentUrl = mainPage.url();
       console.log("[HgCrawler] 复用已有页面: " + (currentUrl || "").substring(0, 100));
@@ -140,7 +140,37 @@ export async function loginToHG(credentials, forceNew = false) {
     }
   }
 
-  const bi = await getSharedBrowser(forceNew);
+  let bi;
+  if (isolated) {
+    const headless = process.env.CRAWLER_HEADLESS !== "false";
+    bi = await puppeteer.launch({
+      headless,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1920,1400"],
+      timeout: 60000
+    });
+    console.log("[HgCrawler] 隔离浏览器已启动");
+    const savedCookies = loadCookiesFromDisk();
+    let cookiePage = await bi.newPage();
+    await cookiePage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+    await cookiePage.setViewport({ width: 1920, height: 1400 });
+    if (savedCookies && savedCookies.length > 0) {
+      for (const ck of savedCookies) { try { await cookiePage.setCookie(ck); } catch (_) {} }
+      await cookiePage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await new Promise(r => setTimeout(r, 3000));
+      const isValid = await safeEvaluate(cookiePage, () => {
+        const body = document.body?.textContent || "";
+        return (body.includes("In-Play") && body.includes("Soccer")) || !!document.getElementById("symbol_ft");
+      });
+      if (isValid) {
+        console.log("[HgCrawler] Cookie快速登录成功 (隔离模式)");
+        return { success: true, page: cookiePage, browser: bi };
+      }
+      console.log("[HgCrawler] Cookie无效，执行完整登录...");
+      await cookiePage.close();
+    }
+  } else {
+    bi = await getSharedBrowser(forceNew);
+  }
   let page = null;
 
   try {
@@ -182,13 +212,12 @@ export async function loginToHG(credentials, forceNew = false) {
 
       if (status.hasSuccess) {
         console.log("[HgCrawler] ✅ 登录成功！");
-        mainPage = page;
-        setSharedPage(page);
+        if (!isolated) { mainPage = page; setSharedPage(page); }
         crawlerStatus.isLoggedIn = true;
         if (process.env.CRAWLER_DEBUG === "1") {
           await page.screenshot({ path: "debug-login-success.png" });
         }
-        return { success: true };
+        return isolated ? { success: true, page, browser: bi } : { success: true };
       }
 
       if ((status.hasPasscodeDialog || status.hasLoggedOutMsg) && (i - popupLastHandledAt >= 3 || i === 10)) {
@@ -1064,46 +1093,47 @@ export async function fetchAllLiveMatches() {
 }
 
 // ======================== 获取赛程（Today → CORNERS） ========================
+// ======================== 获取赛程（Today → CORNERS） ========================
 export async function fetchSchedule(_retryCount = 0) {
   console.log("[HgCrawler] === 获取赛程 (Today → CORNERS) ===");
 
-  if (!(await ensurePageReady())) {
-    return { success: false, error: "无法连接到浏览器页面" };
-  }
-
-  // 暂停角球后端轮询，避免竞态条件（fetchSchedule 和 crawlCornerMatches 共用同一浏览器页面）
-  const pollStatus = getBackendPollingStatus();
-  const wasPolling = pollStatus.isPolling && !pollStatus.isPaused;
-  if (wasPolling) {
-    pauseCornerBackendPolling();
-    console.log("[HgCrawler] 已暂停角球轮询");
-  }
+  // 使用隔离浏览器，不影响监控的共享浏览器
+  let privateBrowser = null;
+  let page = null;
 
   try {
+    const loginRes = await loginToHG(null, false, true); // isolated mode
+    if (!loginRes.success || !loginRes.page) {
+      return { success: false, error: loginRes.error || "隔离登录失败" };
+    }
+    page = loginRes.page;
+    privateBrowser = loginRes.browser;
+    console.log("[HgCrawler] 隔离浏览器就绪");
 
     // 切换到 Today 视图（仅切换上下文，不提取数据）
     console.log("[HgCrawler] 点击 Today 标签...");
-    let todayClicked = await mainPage.evaluate(() => {
+    let todayClicked = await page.evaluate(() => {
       const tab = document.getElementById("today_page");
       if (tab) { tab.click(); return true; }
       return false;
     });
-    if (!todayClicked) await clickTab(mainPage, "今日");
+    if (!todayClicked) await clickTab(page, "今日");
     // 等待 Today 页面完全渲染（tab_cn 出现 + 网络空闲 + 缓冲）
     try {
-      await mainPage.waitForFunction(() => {
+      await page.waitForFunction(() => {
         return document.getElementById('tab_cn') !== null;
       }, { timeout: 15000 });
       console.log("[HgCrawler] tab_cn 已出现，等待网络空闲...");
-      await mainPage.waitForNetworkIdle({ timeout: 20000, idleTime: 2000 });
+      await page.waitForNetworkIdle({ timeout: 20000, idleTime: 2000 });
       console.log("[HgCrawler] Today 页面完全渲染（含 network idle）");
     } catch (e) {
       console.log("[HgCrawler] Today 页面等待超时，继续尝试点击 CORNERS");
     }
     await new Promise(r => setTimeout(r, 3000));
+
     // ========== 阶段二：提取 CORNERS 盘口 ==========
     console.log("[HgCrawler] 点击 CORNERS 标签...");
-    let cornerClicked = await mainPage.evaluate(() => {
+    let cornerClicked = await page.evaluate(() => {
       const tab = document.getElementById('tab_cn');
       if (tab) { tab.scrollIntoView({block:'center'}); tab.click(); return true; }
       return false;
@@ -1112,14 +1142,14 @@ export async function fetchSchedule(_retryCount = 0) {
       console.log("[HgCrawler] CORNERS tab clicked via id");
       await new Promise(r => setTimeout(r, 2000));
     } else {
-      await clickTab(mainPage, "角球");
+      await clickTab(page, "角球");
     }
 
-    // 智能等待：等待实际盘口数据渲染完成（而非仅 DOM 存在）
+    // 智能等待：等待实际盘口数据渲染完成
     console.log("[HgCrawler] 等待 CORNERS 盘口数据渲染...");
     let oddsReady = false;
     try {
-      oddsReady = await mainPage.waitForFunction(() => {
+      oddsReady = await page.waitForFunction(() => {
         const oddsEls = document.querySelectorAll('div.box_lebet_odd');
         if (oddsEls.length === 0) return false;
         for (const od of oddsEls) {
@@ -1142,24 +1172,24 @@ export async function fetchSchedule(_retryCount = 0) {
 
     // 滚动触发懒加载
     try {
-      await mainPage.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); setTimeout(() => window.scrollTo(0, 0), 1000); });
+      await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); setTimeout(() => window.scrollTo(0, 0), 1000); });
       await new Promise(r => setTimeout(r, 3000));
     } catch (e) {}
 
-    try { await mainPage.screenshot({ path: "debug/schedule-corners.png", fullPage: true }); console.log("[HgCrawler] 截图: debug/schedule-corners.png"); } catch (e) {}
+    try { await page.screenshot({ path: "debug/schedule-corners.png", fullPage: true }); console.log("[HgCrawler] 截图: debug/schedule-corners.png"); } catch (e) {}
 
     // 解析 CORNERS 盘口（优先 parseAllMarkets，回退到 parseCornerOdds）
-    let cornerOdds = await parseAllMarkets(mainPage);
+    let cornerOdds = await parseAllMarkets(page);
     if (cornerOdds.length === 0) {
       console.log("[HgCrawler] parseAllMarkets 无结果，尝试 parseCornerOdds 直接解析...");
-      cornerOdds = await parseCornerOdds(mainPage);
+      cornerOdds = await parseCornerOdds(page);
     }
     console.log("[HgCrawler] CORNERS 盘口: " + cornerOdds.length + " 条");
 
     // 数据为空时检测是否强制登出（仅可见弹窗触发，防误判隐藏DOM模板）
     if (cornerOdds.length === 0 && _retryCount < 2) {
       try {
-        const kicked = await mainPage.evaluate(() => {
+        const kicked = await page.evaluate(() => {
           const btn = document.getElementById('kick_ok_btn');
           if (!btn || btn.offsetParent === null) return false;
           const style = window.getComputedStyle(btn);
@@ -1169,8 +1199,11 @@ export async function fetchSchedule(_retryCount = 0) {
         if (kicked) {
           console.log("[HgCrawler] 检测到强制登出，点击 OK 并重新登录...");
           await new Promise(r => setTimeout(r, 3000));
-          const loginRes = await loginToHG(null, true);
-          if (loginRes.success) {
+          const loginRes2 = await loginToHG(null, true, true);
+          if (loginRes2.success && loginRes2.page) {
+            try { await privateBrowser.close(); } catch(e) {}
+            page = loginRes2.page;
+            privateBrowser = loginRes2.browser;
             console.log("[HgCrawler] 重新登录成功，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
             return await fetchSchedule(_retryCount + 1);
           }
@@ -1212,14 +1245,10 @@ export async function fetchSchedule(_retryCount = 0) {
       );
     }
 
-
-
-
     // 等待页面稳定后再导航回主页
     await new Promise(r => setTimeout(r, 3000));
-    // 导航回主页（SPA内点击 #home_page，避免强制登出）
     try {
-      await mainPage.evaluate(() => {
+      await page.evaluate(() => {
         const homeBtn = document.getElementById('home_page');
         if (homeBtn) { homeBtn.click(); return true; }
         return false;
@@ -1238,14 +1267,19 @@ export async function fetchSchedule(_retryCount = 0) {
   } catch (err) {
     console.error("[HgCrawler] 获取赛程失败:", err.message);
     crawlerStatus.error = err.message;
-    try {
-      const loginResult = await loginToHG();
-      if (loginResult.success && _retryCount < 2) return await fetchSchedule(_retryCount + 1);
-    } catch (e) {}
     return { success: false, error: err.message };
+  } finally {
+    // 关闭隔离浏览器
+    if (privateBrowser) {
+      try {
+        await privateBrowser.close();
+        console.log("[HgCrawler] 已关闭隔离浏览器");
+      } catch (e) {
+        console.warn("[HgCrawler] 关闭隔离浏览器失败:", e.message);
+      }
+    }
   }
 }
-
 export function startMatchPolling(onUpdate) {
   if (pollingActive) {
     console.log("[HgCrawler] 轮询已在运行中");
