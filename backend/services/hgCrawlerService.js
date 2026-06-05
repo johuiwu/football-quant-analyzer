@@ -1124,6 +1124,7 @@ export async function fetchSchedule(_retryCount = 0) {
     } catch (e) {
       console.log("[HgCrawler] 动态内容等待超时，继续执行: " + e.message);
     }
+    await new Promise(r => setTimeout(r, 3000));
 
 
     // 切换到 Today 视图（仅切换上下文，不提取数据）
@@ -1140,7 +1141,7 @@ export async function fetchSchedule(_retryCount = 0) {
         return document.getElementById('tab_cn') !== null;
       }, { timeout: 15000 });
       console.log("[HgCrawler] tab_cn 已出现，等待网络空闲...");
-      await page.waitForNetworkIdle({ timeout: 20000, idleTime: 2000 });
+      await page.waitForNetworkIdle({ timeout: 15000, idleTime: 2000 });
       console.log("[HgCrawler] Today 页面完全渲染（含 network idle）");
     } catch (e) {
       console.log("[HgCrawler] Today 页面等待超时，继续尝试点击 CORNERS");
