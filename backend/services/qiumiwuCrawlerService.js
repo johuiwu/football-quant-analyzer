@@ -118,14 +118,17 @@ async function parseFixtures(page) {
     return results;
   });
 
-  console.log("[QiumiwuCrawler] 成功解析 " + fixtures.length + " 场赛程");
-  if (fixtures.length > 0) {
-    fixtures.slice(0, 5).forEach((f, i) =>
+  // 过滤已完场赛事，只保留未完场（in=进行中, wait=未开赛, other=其他状态如推迟等）
+  const unfinishedFixtures = fixtures.filter(f => f.statusAlias !== "end");
+  const filteredCount = fixtures.length - unfinishedFixtures.length;
+  console.log("[QiumiwuCrawler] 成功解析 " + fixtures.length + " 场赛程，过滤已完场 " + filteredCount + " 场，保留未完场 " + unfinishedFixtures.length + " 场");
+  if (unfinishedFixtures.length > 0) {
+    unfinishedFixtures.slice(0, 5).forEach((f, i) =>
       console.log(`  [${i}] ${f.league} | ${f.homeTeam} vs ${f.awayTeam} | ${f.matchTime} | ${f.matchStatus} | 比分: ${f.homeScore ?? "-"}-${f.awayScore ?? "-"}`)
     );
   }
 
-  return fixtures;
+  return unfinishedFixtures;
 }
 
 // ======================== 爬虫入口 ========================
