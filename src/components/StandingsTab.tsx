@@ -38,7 +38,11 @@ export default function StandingsTab({
     try {
       const data = await syncStandings(activeStandingsLeague);
       if (data && data.teams) {
-        onTeamsUpdate(data.teams);
+        const merged = teams.map(t => {
+          const updated = data.teams.find((dt: any) => dt.id === t.id);
+          return updated || t;
+        });
+        onTeamsUpdate(merged);
         onSyncMsgUpdate(data.msg || '✔️ 已同步积分榜');
         onSyncSourceUpdate(data.source || 'api');
       }
