@@ -33,8 +33,6 @@ function loadServerModule() {
     process.env.DB_DIR = dbPath;
     process.env.COOKIE_PATH = cookiePath;
     process.env.STATIC_DIR = staticDir;
-    // 禁用 qiumiwu 爬虫（其动态 import TS 文件在生产环境不可用）
-    process.env.DISABLE_CRAWLER = "true";
     process.env.DISABLE_HMR = "true";
     process.env.NODE_ENV = "production";
 
