@@ -38,7 +38,12 @@ export default function CrawlerControlPanel() {
   const [scheduleData, setScheduleData] = [useCornerStore((s) => s.scheduleData), useCornerStore((s) => s.setScheduleData)];
   const [mainMarketData, setMainMarketData] = [useCornerStore((s) => s.mainMarketData), useCornerStore((s) => s.setMainMarketData)];
   const [activeTab, setActiveTab] = useState<"matches" | "main_markets" | "schedule" | "raw" | "settings">("matches");
-  const [credentials, setCredentials] = useState({ username: "johui888", password: "aa123123" });
+  const storeAccount = useCornerStore((s) => s.accountConfig);
+  const storeSettings = useCornerStore((s) => s.settings);
+  const [credentials, setCredentials] = useState(() => ({
+    username: storeAccount.username || storeSettings.hgUsername || "",
+    password: storeAccount.password || storeSettings.hgPassword || "",
+  }));
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [expandedMatches, setExpandedMatches] = useState<Set<string>>(new Set());
   const [executingBets, setExecutingBets] = useState(false);
@@ -220,6 +225,7 @@ export default function CrawlerControlPanel() {
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    let wasAborted = false;
     try {
       const res = await fetch("/api/corner/login", {
         method: "POST",
@@ -246,7 +252,7 @@ export default function CrawlerControlPanel() {
         console.error("[登录失败]", { error: errorText, reason, detail, suggestion });
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') { wasAborted = true; return; }
       const errMsg = err.message || "登录请求失败";
       showMessage("error", "登录失败：" + errMsg + "（请确认后端服务已启动）");
     } finally {
@@ -254,7 +260,9 @@ export default function CrawlerControlPanel() {
         abortControllerRef.current = null;
       }
       setLoading(false);
-      setStoreLoginInProgress(false);
+      if (!wasAborted) {
+        setStoreLoginInProgress(false);
+      }
     }
   };
 
@@ -471,8 +479,6 @@ export default function CrawlerControlPanel() {
   useEffect(() => {
     fetchStatus();
     return () => {
-      // 组件卸载时，重置 store 中的登录进展状态
-      setStoreLoginInProgress(false);
       // 中止正在进行的登录请求
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();

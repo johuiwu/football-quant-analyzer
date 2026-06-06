@@ -323,7 +323,6 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     const username = user || (status ? state.accountConfig.username : "");
     return {
       isLoggedIn: status,
-      loginInProgress: false,
       accountConfig: { ...state.accountConfig, username, password: status ? state.accountConfig.password : "" },
       settings: { ...state.settings, hgUsername: username, hgPassword: status ? state.settings.hgPassword : "" },
     };
@@ -447,14 +446,29 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     strategies: state.strategies,
     accountConfig: state.accountConfig,
     settings: state.settings,
-    autoRefresh: state.autoRefresh
+    autoRefresh: state.autoRefresh,
+    isLoggedIn: state.isLoggedIn
   })
 }));
 
 if (typeof window !== "undefined") {
   useCornerStore.persist.onFinishHydration(() => {
-    const strategies = useCornerStore.getState().strategies;
+    const state = useCornerStore.getState();
+    const strategies = state.strategies;
     syncStrategiesToBackend(strategies);
+    // 验证持久化的登录状态：如果 isLoggedIn=true，检查后端 session 是否有效
+    if (state.isLoggedIn) {
+      fetch("/api/corner/status")
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success || !data.data?.crawler?.isLoggedIn) {
+            useCornerStore.getState().setLoginStatus(false);
+          }
+        })
+        .catch(() => {
+          // 后端未启动时不重置，下次 fetchStatus 会自动同步
+        });
+    }
   });
 }
 
