@@ -23,6 +23,21 @@ ALL_LEAGUE_TEAMS.forEach(t => {
   }
 });
 
+// qiumiwu 特有中文队名别名（补充 qiumiwu 与系统之间的命名差异，如词序颠倒、简称等）
+const teamNameAliases = {
+  '东京FC': 'fctokyo',
+  '町田泽维': 'tingtianzeweiya',
+  '名古屋鲸': 'nagoya',
+};
+Object.entries(teamNameAliases).forEach(([aliasName, realTeamId]) => {
+  if (!teamNameCnToId.has(aliasName)) {
+    const realTeam = REAL_TEAMS.find(r => r.id === realTeamId);
+    if (realTeam) {
+      teamNameCnToId.set(aliasName, { id: realTeam.id, league: realTeam.league });
+    }
+  }
+});
+
 // 联赛中文名 → 联赛ID 的映射
 const leagueNameCnToId = new Map();
 LEAGUES.forEach(l => {
