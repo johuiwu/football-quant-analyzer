@@ -28,6 +28,8 @@ const teamNameAliases = {
   '东京FC': 'fctokyo',
   '町田泽维': 'tingtianzeweiya',
   '名古屋鲸': 'nagoya',
+  '京都': 'jingdubusiniao',
+  '清水鼓动': 'qingshuixintiao',
 };
 Object.entries(teamNameAliases).forEach(([aliasName, realTeamId]) => {
   if (!teamNameCnToId.has(aliasName)) {
