@@ -1,13 +1,26 @@
 import express from 'express';
 import { REAL_FIXTURES, REAL_TEAMS, LEAGUES } from '../../src/data/realTeamsData';
+import { ALL_LEAGUE_TEAMS } from '../../src/data/leagueTeams';
 import { crawlQiumiwuFixtures } from '../services/qiumiwuCrawlerService.js';
 
 const router = express.Router();
 
-// 构建球队中文名 → 球队ID 的映射，用于匹配爬虫数据
+// 构建球队中文名 → 球队ID 的映射（基于 REAL_TEAMS）
 const teamNameCnToId = new Map();
 REAL_TEAMS.forEach(t => {
   if (t.nameCn) teamNameCnToId.set(t.nameCn, { id: t.id, league: t.league });
+});
+// 补充映射：从 leagueTeams.ts 的 name 字段（可能使用更短的中文名，如"曼城"→"曼彻斯特城"）
+ALL_LEAGUE_TEAMS.forEach(t => {
+  if (t.name && t.realTeamId) {
+    const existing = teamNameCnToId.get(t.name);
+    if (!existing) {
+      const realTeam = REAL_TEAMS.find(r => r.id === t.realTeamId);
+      if (realTeam) {
+        teamNameCnToId.set(t.name, { id: realTeam.id, league: realTeam.league });
+      }
+    }
+  }
 });
 
 // 联赛中文名 → 联赛ID 的映射
@@ -16,6 +29,35 @@ LEAGUES.forEach(l => {
   if (l.nameCn) leagueNameCnToId.set(l.nameCn, l.id);
 });
 
+// qiumiwu 联赛简称 → 系统 league ID 的别名映射
+const leagueNameAliases = {
+  '日职联': 'JLeague',
+  'J联赛': 'JLeague',
+  '韩K1': 'KLeague1',
+  '韩K2': 'KLeague2',
+  '英超': 'EPL',
+  '西甲': 'LaLiga',
+  '意甲': 'SerieA',
+  '德甲': 'Bundesliga',
+  '法甲': 'Ligue1',
+  '中超': 'CSL',
+  '荷甲': 'Eredivisie',
+  '葡超': 'PrimeiraLiga',
+  '沙特联': 'SaudiPL',
+  '瑞超': 'Allsvenskan',
+  '挪超': 'Eliteserien',
+  '芬超': 'Veikkausliiga',
+  '丹超': 'DanishSuperliga',
+  '卡塔尔联': 'QatarSL',
+};
+
+function getLeagueId(leagueName) {
+  if (!leagueName) return '';
+  const exactMatch = leagueNameCnToId.get(leagueName);
+  if (exactMatch) return exactMatch;
+  return leagueNameAliases[leagueName] || '';
+}
+
 /**
  * 将 qiumiwu 爬虫数据映射为前端期望的 RealFixture 格式
  * 尝试通过中文名匹配球队ID，无法匹配时保留原始名称
@@ -23,7 +65,7 @@ LEAGUES.forEach(l => {
 function mapQiumiwuFixture(f) {
   const homeMatch = teamNameCnToId.get(f.homeTeam);
   const awayMatch = teamNameCnToId.get(f.awayTeam);
-  const leagueId = leagueNameCnToId.get(f.league);
+  const leagueId = getLeagueId(f.league);
 
   return {
     id: f.id,
@@ -110,7 +152,13 @@ router.get('/qiumiwu-fixtures', async (req, res) => {
     if (result.success && result.count > 0) {
       const fixtures = result.data.map(mapQiumiwuFixture);
       const matchedCount = fixtures.filter(f => f.homeTeamId && f.awayTeamId).length;
-      console.log(`[FixtureRoutes] qiumiwu 赛程映射完成: ${fixtures.length} 场，其中 ${matchedCount} 场匹配到系统球队`);
+      const leagueOnlyCount = fixtures.filter(f => !f.homeTeamId && f.homeLeague).length;
+      console.log(`[FixtureRoutes] qiumiwu 赛程映射完成: 共 ${fixtures.length} 场, 球队全匹配 ${matchedCount} 场, 仅联赛匹配 ${leagueOnlyCount} 场`);
+      if (fixtures.length - matchedCount - leagueOnlyCount > 0) {
+        fixtures.filter(f => !f.homeTeamId && !f.homeLeague).slice(0, 5).forEach(f =>
+          console.log(`  [未匹配] ${f.homeTeam || '?'} vs ${f.awayTeam || '?'} (${f.league})`)
+        );
+      }
       res.json({
         fixtures,
         source: 'google_search_grounding',
