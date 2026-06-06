@@ -30,7 +30,10 @@ export default function CrawlerControlPanel() {
   });
   const [loading, setLoading] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const autoRefresh = useCornerStore((s) => s.autoRefresh);
+  const setAutoRefresh = useCornerStore((s) => s.setAutoRefresh);
+  const scheduleFreshLoaded = useCornerStore((s) => s.scheduleFreshLoaded);
+  const setScheduleFreshLoaded = useCornerStore((s) => s.setScheduleFreshLoaded);
   const [crawlerData, setCrawlerData] = [useCornerStore((s) => s.crawlerData), useCornerStore((s) => s.setCrawlerData)];
   const [scheduleData, setScheduleData] = [useCornerStore((s) => s.scheduleData), useCornerStore((s) => s.setScheduleData)];
   const [mainMarketData, setMainMarketData] = [useCornerStore((s) => s.mainMarketData), useCornerStore((s) => s.setMainMarketData)];
@@ -42,6 +45,8 @@ export default function CrawlerControlPanel() {
   const [showBetConfirm, setShowBetConfirm] = useState(false);
   const setLoginStatus = useCornerStore((s) => s.setLoginStatus);
   const storeIsLoggedIn = useCornerStore((s) => s.isLoggedIn);
+  const storeLoginInProgress = useCornerStore((s) => s.loginInProgress);
+  const setStoreLoginInProgress = useCornerStore((s) => s.setLoginInProgress);
   const isLoggedIn = status.isLoggedIn || storeIsLoggedIn;
   const [isPaused, setIsPaused] = useState(false);
 
@@ -50,6 +55,8 @@ export default function CrawlerControlPanel() {
 
   const fetchingRef = React.useRef(false);
   const messageTimerRef = React.useRef(null);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+  const startMonitorTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const normalizeMatchForRender = (item, index) => ({
     ...item,
@@ -89,7 +96,11 @@ export default function CrawlerControlPanel() {
         setAutoRefresh(true);
         showMessage("success", "启动成功，后台将自动获取数据");
         // 等待 8 秒后触发首次数据获取（先尝试即时爬取，失败则从缓存读取）
-        setTimeout(async () => {
+        if (startMonitorTimeoutRef.current) {
+          clearTimeout(startMonitorTimeoutRef.current);
+        }
+        startMonitorTimeoutRef.current = setTimeout(async () => {
+          startMonitorTimeoutRef.current = null;
           await fetchMatches(true); // forceCorner=true，走 /api/corner/fetch 即时爬取
         }, 8000);
       } else {
@@ -181,6 +192,17 @@ export default function CrawlerControlPanel() {
         if (!backendPolling && autoRefresh) {
           setAutoRefresh(false);
         }
+        // 从后端同步登录状态到 store（Tab 切回来时恢复）
+        if (crawler.isLoggedIn && !storeIsLoggedIn) {
+          setLoginStatus(true, crawler.username || "");
+        }
+        // 后端有登录在进展中，同步 store 的 loginInProgress
+        if (crawler.loginInProgress && !storeLoginInProgress) {
+          setStoreLoginInProgress(true);
+        }
+        if (!crawler.loginInProgress && storeLoginInProgress) {
+          setStoreLoginInProgress(false);
+        }
       }
     } catch (err) {
       console.error("获取状态失败:", err);
@@ -189,12 +211,21 @@ export default function CrawlerControlPanel() {
 
   const handleLogin = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
+    if (storeLoginInProgress) return;
     setLoading(true);
+    setStoreLoginInProgress(true);
+    // 取消之前未完成的请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     try {
       const res = await fetch("/api/corner/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (data.success) {
@@ -215,10 +246,15 @@ export default function CrawlerControlPanel() {
         console.error("[登录失败]", { error: errorText, reason, detail, suggestion });
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       const errMsg = err.message || "登录请求失败";
       showMessage("error", "登录失败：" + errMsg + "（请确认后端服务已启动）");
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       setLoading(false);
+      setStoreLoginInProgress(false);
     }
   };
 
@@ -345,6 +381,7 @@ export default function CrawlerControlPanel() {
             hasCornerOdds: match.hasCornerOdds || (match.handicaps && match.handicaps.length > 0),
           }));
           setScheduleData(scheduleItems);
+          setScheduleFreshLoaded(true);
         }
         // 禁用提示: showMessage("info", `获取到 ${data.count || 0} 场比赛`);
         setActiveTab("schedule");
@@ -362,6 +399,16 @@ export default function CrawlerControlPanel() {
 
   const handleClose = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
+    // 在关闭前停止所有可能触发后端请求的定时器
+    setAutoRefresh(false);
+    if (startMonitorTimeoutRef.current) {
+      clearTimeout(startMonitorTimeoutRef.current);
+      startMonitorTimeoutRef.current = null;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/corner/close", {
@@ -423,14 +470,29 @@ export default function CrawlerControlPanel() {
 
   useEffect(() => {
     fetchStatus();
+    return () => {
+      // 组件卸载时，重置 store 中的登录进展状态
+      setStoreLoginInProgress(false);
+      // 中止正在进行的登录请求
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      // 清除启动监控延迟请求
+      if (startMonitorTimeoutRef.current) {
+        clearTimeout(startMonitorTimeoutRef.current);
+        startMonitorTimeoutRef.current = null;
+      }
+    };
   }, []);
 
-  // scheduleData 有数据时自动切换到赛程子tab
+  // scheduleData 有数据时自动切换到赛程子tab（仅在新加载时，组件重挂载时不触发）
   useEffect(() => {
-    if (scheduleData && scheduleData.length > 0 && activeTab !== "schedule") {
+    if (scheduleData && scheduleData.length > 0 && scheduleFreshLoaded && activeTab !== "schedule") {
       setActiveTab("schedule");
+      setScheduleFreshLoaded(false);
     }
-  }, [scheduleData]);
+  }, [scheduleData, scheduleFreshLoaded]);
 
   useEffect(() => {
     let interval = null;
@@ -511,7 +573,7 @@ export default function CrawlerControlPanel() {
       <div className="flex flex-wrap gap-2 mb-6">
         <button key="btn-toggle-monitor" type="button"
           onClick={isBackendPolling ? handleStopMonitor : isLoggedIn ? handleStartMonitor : handleLogin}
-          disabled={loading}
+          disabled={loading || storeLoginInProgress}
           className={`flex items-center gap-2 px-4 py-2 text-white text-xs rounded-lg transition-colors ${
             isBackendPolling
               ? "bg-rose-600 hover:bg-rose-500"
@@ -520,7 +582,7 @@ export default function CrawlerControlPanel() {
               : "bg-blue-600 hover:bg-blue-500"
           } disabled:bg-slate-700 disabled:opacity-50`}
         >
-          {loading ? (
+          {loading || storeLoginInProgress ? (
             <RefreshCw key="icon-loading" className="w-3.5 h-3.5 animate-spin" />
           ) : isBackendPolling ? (
             <StopCircle key="icon-stop" className="w-3.5 h-3.5" />
@@ -529,7 +591,7 @@ export default function CrawlerControlPanel() {
           ) : (
             <LogIn key="icon-login" className="w-3.5 h-3.5" />
           )}
-          <span>{loading ? "加载中..." : isBackendPolling ? "停止监控" : isLoggedIn ? "启动监控" : "登录"}</span>
+          <span>{storeLoginInProgress ? "登录中..." : loading ? "加载中..." : isBackendPolling ? "停止监控" : isLoggedIn ? "启动监控" : "登录"}</span>
         </button>
 
         <button key="btn-refresh" type="button"

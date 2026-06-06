@@ -227,7 +227,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
 
   let bi;
   if (isolated) {
-    const headless = process.env.CRAWLER_HEADLESS !== "false";
+    const headless = true;
     bi = await puppeteer.launch({
       headless,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1920,1400"],

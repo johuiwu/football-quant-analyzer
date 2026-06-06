@@ -108,6 +108,7 @@ export interface CornerStore {
   isMonitoring: boolean;
   isLoggedIn: boolean;
   isLoading: boolean;
+  loginInProgress: boolean;
   error: string | null;
   accountConfig: AccountConfig;
   settings: CornerSettings;
@@ -118,11 +119,14 @@ export interface CornerStore {
   scheduleData: any[];
   mainMarketData: Record<string, { league?: string; time?: string; homeScore?: number | null; awayScore?: number | null; hdp?: { line: string; homeOdds: number; awayOdds: number } | null; ou?: { line: number; overOdds: number; underOdds: number } | null }>;
   betConfirmRequired: boolean;
+  scheduleFreshLoaded: boolean;
+  autoRefresh: boolean;
   setStrategies: (strategies: CornerStrategy[]) => void;
   updateStrategy: (id: number, updates: Partial<CornerStrategy>) => void;
   setAccountConfig: (config: Partial<AccountConfig>) => void;
   login: () => Promise<boolean>;
   logout: () => void;
+  setLoginInProgress: (status: boolean) => void;
   setSettings: (partial: Partial<CornerSettings>) => void;
   setLoginStatus: (status: boolean, user?: string) => void;
   setActiveCornerTab: (tab: 'crawler' | 'monitor' | 'strategy' | 'history') => void;
@@ -140,6 +144,8 @@ export interface CornerStore {
   setScheduleData: (data: any[]) => void;
   setMainMarketData: (data: any) => void;
   setBetConfirmRequired: (required: boolean) => void;
+  setScheduleFreshLoaded: (loaded: boolean) => void;
+  setAutoRefresh: (on: boolean) => void;
 }
 
 // ==================== 默认策略 ====================
@@ -243,6 +249,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   isMonitoring: false,
   isLoggedIn: false,
   isLoading: false,
+  loginInProgress: false,
   error: null,
   accountConfig: {
     username: "",
@@ -270,6 +277,8 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   scheduleData: [],
   mainMarketData: {},
   betConfirmRequired: false,
+  scheduleFreshLoaded: false,
+  autoRefresh: false,
 
   setStrategies: (strategies) => { set({ strategies }); syncStrategiesToBackend(strategies); },
   updateStrategy: (id, updates) => {
@@ -314,10 +323,12 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     const username = user || (status ? state.accountConfig.username : "");
     return {
       isLoggedIn: status,
+      loginInProgress: false,
       accountConfig: { ...state.accountConfig, username, password: status ? state.accountConfig.password : "" },
       settings: { ...state.settings, hgUsername: username, hgPassword: status ? state.settings.hgPassword : "" },
     };
   }),
+  setLoginInProgress: (status) => set({ loginInProgress: status }),
   setHistoryFilterMatchId: (matchId) => set({ historyFilterMatchId: matchId }),
   setBacktestResults: (results) => set({ backtestResults: results }),
 
@@ -327,7 +338,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       set({ error: "请填写用户名和密码" });
       return false;
     }
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, loginInProgress: true, error: null });
     try {
       const response = await fetch('/api/corner/login', {
         method: 'POST',
@@ -340,15 +351,15 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       const data = await response.json();
       const success = data.success === true;
       if (success) {
-        set({ isLoggedIn: true, isLoading: false });
+        set({ isLoggedIn: true, isLoading: false, loginInProgress: false });
         get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "登录成功", level: "info" });
         return true;
       } else {
-        set({ error: "登录失败，请检查用户名和密码", isLoading: false });
+        set({ error: "登录失败，请检查用户名和密码", isLoading: false, loginInProgress: false });
         return false;
       }
     } catch (err: any) {
-      set({ error: err.message, isLoading: false });
+      set({ error: err.message, isLoading: false, loginInProgress: false });
       return false;
     }
   },
@@ -375,7 +386,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   stopMonitor: () => {
     fetch('/api/corner/pause', { method: 'POST' }).catch(() => {});
     if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
-    set({ isMonitoring: false });
+    set({ isMonitoring: false, autoRefresh: false });
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已停止", level: "info" });
   },
 
@@ -427,13 +438,16 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   setScheduleData: (data) => set({ scheduleData: data }),
   setMainMarketData: (data) => set({ mainMarketData: data }),
   setBetConfirmRequired: (required) => set({ betConfirmRequired: required }),
+  setScheduleFreshLoaded: (loaded) => set({ scheduleFreshLoaded: loaded }),
+  setAutoRefresh: (on) => set({ autoRefresh: on }),
 }), {
   name: "corner-store",
   storage: createJSONStorage(() => localStorage),
   partialize: (state) => ({
     strategies: state.strategies,
     accountConfig: state.accountConfig,
-    settings: state.settings
+    settings: state.settings,
+    autoRefresh: state.autoRefresh
   })
 }));
 

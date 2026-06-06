@@ -26,6 +26,7 @@ let runtimeCredentials = null;
 let loginInProgress = false;
 let crawlingLock = false;
 let lastLoginErrorDetail = null;
+let browserExplicitlyClosed = false;
 let pollingActive = false;
 let pollingStopFn = null;
 
@@ -190,6 +191,8 @@ async function handlePasscodePage(page, maxRetries = 3) {
 }
 
 async function ensureLogin() {
+  // 用户主动发起登录/启动监控，允许浏览器正常启动
+  browserExplicitlyClosed = false;
   const _loginStart = Date.now();
   // 登录并发保护
   if (loginInProgress) {
@@ -1636,6 +1639,14 @@ export async function crawlCornerMatches() {
     }
   }, LOCK_TIMEOUT_MS);
 
+  // 检查浏览器是否已被用户手动关闭，不自动重启
+  if (browserExplicitlyClosed) {
+    console.log("[cornerCrawler] 浏览器已被手动关闭，跳过爬取");
+    crawlingLock = false;
+    clearTimeout(lockTimeout);
+    return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "browser_closed" };
+  }
+
   try {
     // 清空上次捕获的 XHR 响应
     capturedResponses = [];
@@ -2021,7 +2032,8 @@ export function getPollingStatus() {
     isPolling: pollingActive,
     isLoggedIn: isLoggedIn(),
     balance: getBalance(),
-    lastUpdate: pollingActive ? Date.now() : null
+    lastUpdate: pollingActive ? Date.now() : null,
+    loginInProgress
   };
 }
 
@@ -2065,6 +2077,7 @@ export { getBalance } from "./browserPool.js";
 export async function closeCrawler() {
   stopCornerPolling();
   capturedResponses = [];
+  browserExplicitlyClosed = true;
   return await closeSharedBrowser();
 }
 

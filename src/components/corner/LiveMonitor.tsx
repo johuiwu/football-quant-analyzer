@@ -1,5 +1,5 @@
-﻿import React, { useState } from "react";
-import { ExternalLink, History, DollarSign, X } from "lucide-react";
+import React, { useState } from "react";
+import { ExternalLink, History, DollarSign, RefreshCw, X } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
@@ -34,6 +34,8 @@ export default function LiveMonitor() {
   const settings = useCornerStore((s) => s.settings);
   const isRealMode = settings.isRealMode;
   const betAmount = useCornerStore((s) => s.settings.betAmount);
+  const refreshData = useCornerStore((s) => s.refreshData);
+  const [searchText, setSearchText] = useState("");
 
   const findTeamInfo = (nameCn: string) => {
     const team = REAL_TEAMS.find((t) => t.nameCn === nameCn);
@@ -41,6 +43,14 @@ export default function LiveMonitor() {
   };
 
   const enabledCount = Array.isArray(strategies) ? strategies.filter((s: any) => s.enabled).length : 0;
+
+  const searchTerm = searchText.trim().toLowerCase();
+  const filteredData = searchTerm
+    ? displayData.filter((m) =>
+        (m.homeTeam || "").toLowerCase().includes(searchTerm) ||
+        (m.awayTeam || "").toLowerCase().includes(searchTerm)
+      )
+    : displayData;
 
   const handleViewHistory = (matchId: string) => {
     setHistoryFilterMatchId(matchId);
@@ -126,7 +136,7 @@ export default function LiveMonitor() {
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <h3 className="text-sm font-semibold text-slate-200">
-              实时监控 {displayData.length > 0 && "(" + displayData.length + "场)"}
+              实时监控 {displayData.length > 0 && "(" + filteredData.length + "/" + displayData.length + "场)"}
             </h3>
           </div>
           {dataSourceBadge()}
@@ -135,6 +145,22 @@ export default function LiveMonitor() {
               追踪 {trackedMatchIds.length} 场比赛
             </span>
           )}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="搜索球队..."
+              className="w-36 px-2.5 py-1.5 text-[11px] bg-slate-800/80 border border-slate-700/80 rounded-lg text-slate-300 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 transition-colors" />
+            {searchText && (
+              <button onClick={() => setSearchText("")} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <button type="button" onClick={() => refreshData()} disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] bg-emerald-600/20 hover:bg-emerald-600/30 disabled:bg-slate-700/30 text-emerald-400 disabled:text-slate-500 rounded-lg border border-emerald-500/20 disabled:border-slate-600/30 transition-all">
+            <RefreshCw className={"w-3 h-3" + (isLoading ? " animate-spin" : "")} />
+            刷新
+          </button>
         </div>
       </div>
 
@@ -150,6 +176,12 @@ export default function LiveMonitor() {
           <p className="text-base font-medium text-slate-300 mb-1">当前没有进行中的比赛</p>
           <p className="text-sm text-slate-500">实时角球数据将在比赛开始后自动获取</p>
         </div>
+      ) : filteredData.length === 0 ? (
+        <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-12 text-center">
+          <div className="text-4xl mb-3">🔍</div>
+          <p className="text-base font-medium text-slate-300 mb-1">未找到匹配的比赛</p>
+          <p className="text-sm text-slate-500">尝试其他搜索关键词</p>
+        </div>
       ) : (
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-hidden">
           <div className="grid grid-cols-[1fr_1fr_0.3fr_0.2fr_0.2fr_0.2fr_1fr_0.2fr_0.2fr] gap-1.5 px-3 py-2.5 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
@@ -164,7 +196,7 @@ export default function LiveMonitor() {
             <div className="text-center">操作</div>
           </div>
 
-          {displayData.map((row: any) => {
+          {filteredData.map((row: any) => {
             const trig = Array.isArray(row.triggeredStrategies) ? row.triggeredStrategies : [];
             const hasSignal = trig.length > 0;
             const isHighlighted = selectedMatchId && String(row.matchId) === selectedMatchId;
