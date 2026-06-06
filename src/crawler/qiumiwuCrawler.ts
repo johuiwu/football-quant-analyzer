@@ -302,7 +302,7 @@ export async function fetchLeagueStandingsFromQiumiwu(
     });
 
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
-    await new Promise<void>(r => setTimeout(r, 10000));
+    await new Promise<void>(r => setTimeout(r, 5000));
 
     const pageContent = await page.content();
     console.log(`[crawler] 页面长度: ${pageContent.length} 字符`);

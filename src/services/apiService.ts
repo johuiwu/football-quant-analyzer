@@ -1,4 +1,4 @@
-﻿export interface ApiConfig {
+export interface ApiConfig {
   maxRetries?: number;
   retryDelay?: number;
   timeout?: number;
@@ -86,7 +86,7 @@ export async function getTeams(): Promise<any[]> {
 
 export async function syncStandings(league: string): Promise<any> {
   try {
-    return await fetchWithRetry(`/api/sync-standings?league=${encodeURIComponent(league)}`);
+    return await fetchWithRetry(`/api/sync-standings?league=${encodeURIComponent(league)}`, {}, { timeout: 120000, maxRetries: 1 });
   } catch (error) {
     console.error('[API] Failed to sync standings:', error);
     throw new Error('Failed to sync standings, please check network or retry later');
