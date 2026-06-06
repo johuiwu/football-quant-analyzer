@@ -5,6 +5,7 @@ import syncRoutes from './syncRoutes.js';
 import aiRoutes from './aiRoutes.js';
 import cornerRoutes from './cornerRoutes.js';
 import crawlerRoutes from './crawlerRoutes.js';
+import fixtureRoutes from './fixtureRoutes.js';
 
 const router = Router();
 router.use(leagueRoutes);
@@ -13,5 +14,6 @@ router.use(syncRoutes);
 router.use(aiRoutes);
 router.use(cornerRoutes);
 router.use(crawlerRoutes);
+router.use(fixtureRoutes);
 
 export default router;

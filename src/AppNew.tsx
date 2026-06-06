@@ -110,7 +110,7 @@ function AppNewContent() {
   useEffect(() => { setFixturesLoading(isFixturesLoading); }, [isFixturesLoading, setFixturesLoading]);
   useEffect(() => { setFixtureSyncMsg(fixtureSyncMsg); }, [fixtureSyncMsg, setFixtureSyncMsg]);
   useEffect(() => { setFixtureSyncSource(fixtureSyncSource); }, [fixtureSyncSource, setFixtureSyncSource]);
-  useEffect(() => { setLoadRealTimeFixtures(() => loadRealTimeFixtures); }, [loadRealTimeFixtures, setLoadRealTimeFixtures]);
+  useEffect(() => { setLoadRealTimeFixtures(loadRealTimeFixtures); }, [loadRealTimeFixtures, setLoadRealTimeFixtures]);
   useEffect(() => { setRiskAlerts(riskAlerts); }, [riskAlerts, setRiskAlerts]);
 
   // Download stand-alone custom python software file

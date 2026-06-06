@@ -94,6 +94,16 @@ router.get('/sync-fixtures', async (req, res) => {
 router.get('/qiumiwu-fixtures', async (req, res) => {
   console.log('[FixtureRoutes] 请求 qiumiwu.com 赛程爬取...');
 
+  // Electron 生产模式下爬虫被禁用
+  if (process.env.DISABLE_CRAWLER === 'true') {
+    console.log('[FixtureRoutes] 爬虫已禁用 (DISABLE_CRAWLER=true)，返回提示');
+    return res.json({
+      fixtures: [],
+      source: 'local-preset',
+      msg: '当前运行环境不支持联网爬取，请手动配置对阵队伍'
+    });
+  }
+
   try {
     const result = await crawlQiumiwuFixtures();
 
