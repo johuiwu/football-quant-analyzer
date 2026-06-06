@@ -123,6 +123,72 @@ async function saveDebugScreenshot(page, label) {
   }
 }
 
+// ======================== 简易密码页面检测与处理 ========================
+/**
+ * 检测并处理简易密码页面（多次重试，确保慢加载也能捕获）
+ * @param {Page} page - Puppeteer 页面对象
+ * @param {number} maxRetries - 最大重试次数（默认3次）
+ * @returns {Promise<{detected: boolean, handled: boolean}>} 是否检测到并成功处理
+ */
+async function handlePasscodePage(page, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const passcodeStatus = await page.evaluate(() => {
+        const backLoginBtn = document.getElementById("back_login");
+        const isBackLoginVisible = backLoginBtn
+          && getComputedStyle(backLoginBtn).display !== 'none'
+          && getComputedStyle(backLoginBtn).visibility !== 'hidden';
+        const bodyText = (document.body?.textContent || "").substring(0, 500);
+        const hasPasscodeText = bodyText.includes("Passcode Login") || bodyText.includes("简易密码");
+        const hasTwoFactorText = bodyText.includes("普通登入");
+        return { isBackLoginVisible, hasPasscodeText, hasTwoFactorText };
+      });
+
+      if (!passcodeStatus.isBackLoginVisible && !passcodeStatus.hasTwoFactorText) {
+        return { detected: false, handled: false };
+      }
+
+      console.log(`[cornerCrawler] 检测到简易密码页面 (attempt ${attempt + 1}/${maxRetries})，点击普通登入...`);
+      await page.evaluate(() => {
+        const btn = document.querySelector("#back_login");
+        if (btn) btn.click();
+      });
+      await randomDelay(3000, 4000);
+
+      // 重新输入账号密码
+      const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
+      const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
+      await page.evaluate((usr, pw) => {
+        const u = document.getElementById('usr');
+        const p = document.getElementById('pwd');
+        if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+      }, reUser, rePwd);
+      await randomDelay(500, 1000);
+      await page.evaluate(() => {
+        const btn = document.getElementById('btn_login');
+        if (btn) btn.click();
+      });
+      console.log("[cornerCrawler] 已重新登录，等待页面加载...");
+      await randomDelay(5000, 7000);
+
+      // 验证是否成功离开简易密码页面
+      const stillOnPasscode = await page.evaluate(() => {
+        const btn = document.getElementById("back_login");
+        return btn && getComputedStyle(btn).display !== 'none' && getComputedStyle(btn).visibility !== 'hidden';
+      });
+      if (!stillOnPasscode) {
+        console.log("[cornerCrawler] 简易密码页面已处理成功");
+        return { detected: true, handled: true };
+      }
+      console.log("[cornerCrawler] 简易密码页面仍存在，重试...");
+    } catch (e) {
+      console.warn("[cornerCrawler] 简易密码检测失败:", e.message);
+    }
+  }
+  return { detected: true, handled: false };
+}
+
 async function ensureLogin() {
   const _loginStart = Date.now();
   // 登录并发保护
@@ -187,6 +253,13 @@ async function ensureLogin() {
         console.log("[cornerCrawler] Cookie 快速登录成功: " + (Date.now() - _loginStart) + "ms");
         return quickPage;
       }
+      // ★ Cookie 有效但可能在简易密码页面，尝试处理
+      const passcodeResult = await handlePasscodePage(quickPage);
+      if (passcodeResult.detected && passcodeResult.handled) {
+        setSharedPage(quickPage);
+        console.log("[cornerCrawler] Cookie 登录后处理了简易密码页面: " + (Date.now() - _loginStart) + "ms");
+        return quickPage;
+      }
       console.log("[cornerCrawler] Cookie 已过期，降级到完整登录");
       await quickPage.close();
     } catch (e) {
@@ -201,6 +274,11 @@ async function ensureLogin() {
       // 检查页面是否仍然可用
       const url = await existingPage.url();
       console.log("[cornerCrawler] 复用已有登录会话，当前页面:", url);
+      // ★ 检查是否在简易密码页面
+      const passcodeResult = await handlePasscodePage(existingPage);
+      if (passcodeResult.detected && passcodeResult.handled) {
+        console.log("[cornerCrawler] 复用页面时处理了简易密码页面");
+      }
       return existingPage;
     } catch (e) {
       console.warn("[cornerCrawler] 页面不可用，需要重新登录:", e.message);
@@ -218,6 +296,11 @@ async function ensureLogin() {
     await page.setViewport({ width: 1920, height: 1400 });
     await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     await new Promise(r => setTimeout(r, 4000));
+    // ★ 检查是否跳转到简易密码页面
+    const passcodeResult = await handlePasscodePage(page);
+    if (passcodeResult.detected && passcodeResult.handled) {
+      console.log("[cornerCrawler] 新页面处理了简易密码页面");
+    }
     setSharedPage(page);
     console.log("[cornerCrawler] 新页面创建完成");
     return page;
@@ -487,6 +570,8 @@ export async function navigateToCorners(page) {
 
   await randomDelay(2000, 4000);
   await handlePopups(page);
+  // ★ 检测简易密码页面（Soccer 点击后可能触发跳转）
+  await handlePasscodePage(page);
 
 
   // ========== Step 4: HDP & O/U ==========
@@ -595,6 +680,8 @@ export async function navigateToCorners(page) {
   }
 
   await handlePopups(page);
+  // ★ 检测简易密码页面（CORNERS 点击后可能触发跳转）
+  await handlePasscodePage(page);
   return { success: true, source: "simplified", matchScores, soccerMarkets, noSoccer: false };
 }
 
@@ -609,7 +696,7 @@ async function captureMainMarkets(page, matchScores = {}) {
       let currentLeague = '';
       const leaNameEl = document.getElementById('lea_name');
       if (leaNameEl) currentLeague = (leaNameEl.textContent || '').trim();
-      const containers = document.querySelectorAll('div.box_lebet[class*="bet_type_"]');
+      const containers = document.querySelectorAll('div.box_lebet_top, div.box_lebet[class*="bet_type_"]');
       for (const box of containers) {
         let league = currentLeague;
         let prev = box.previousElementSibling;
@@ -618,15 +705,18 @@ async function captureMainMarkets(page, matchScores = {}) {
           if (lea) { league = (lea.textContent || '').trim(); break; }
           prev = prev.previousElementSibling;
         }
-        const htEl = box.querySelector('div.box_team.teamH span.text_team');
-        const atEl = box.querySelector('div.box_team.teamC span.text_team');
+        // box_lebet_top 结构：球队在 div.box_lebet_l 中，盘口在 div.box_lebet_r 中
+        // box_lebet[class*="bet_type_"] 结构：球队和盘口在同一容器中
+        const leftPanel = box.querySelector('div.box_lebet_l') || box;
+        const htEl = leftPanel.querySelector('div.box_team.teamH span.text_team');
+        const atEl = leftPanel.querySelector('div.box_team.teamC span.text_team');
         if (!htEl || !atEl) continue;
         const homeTeam = (htEl.textContent || '').trim();
         const awayTeam = (atEl.textContent || '').trim();
         if (!homeTeam || !awayTeam) continue;
         const key = (homeTeam + '|' + awayTeam).toLowerCase();
         let time = '';
-        const timeEl = box.querySelector('tt.text_time, [class*="text_time"]');
+        const timeEl = leftPanel.querySelector('tt.text_time, [class*="text_time"]');
         if (timeEl) time = (timeEl.textContent || '').replace(/\s+/g, ' ').trim();
         const scoreData = scores[key] || {};
         const homeScore = typeof scoreData.homeScore === 'number' ? scoreData.homeScore : -1;
@@ -634,7 +724,9 @@ async function captureMainMarkets(page, matchScores = {}) {
         const entry = { league, time, homeScore: homeScore >= 0 ? homeScore : null, awayScore: awayScore >= 0 ? awayScore : null, hdp: [], ou: [], hdpHalf: [], ouHalf: [] };
 
         // ★ 优先解析 hdpou_ft 结构（HDP&O/U 页面使用此结构）
-        const hdpouSections = box.querySelectorAll('div.form_lebet_hdpou');
+        // 在 box_lebet_top 中，盘口在 div.box_lebet_r 中
+        const rightPanel = box.querySelector('div.box_lebet_r') || box;
+        const hdpouSections = rightPanel.querySelectorAll('div.form_lebet_hdpou');
         for (const section of hdpouSections) {
           const headSpan = section.querySelector('div.head_lebet span');
           if (!headSpan) continue;
@@ -665,7 +757,7 @@ async function captureMainMarkets(page, matchScores = {}) {
 
         // ★ fallback: box_lebet_odd 结构（CORNERS 页面或部分 HDP&O/U 页面使用）
         if (entry.hdp.length === 0 && entry.ou.length === 0 && entry.hdpHalf.length === 0 && entry.ouHalf.length === 0) {
-          const oddBlocks = box.querySelectorAll('div.box_lebet_odd');
+          const oddBlocks = rightPanel.querySelectorAll('div.box_lebet_odd');
           for (const block of oddBlocks) {
             const headSpan = block.querySelector('div.head_lebet span');
             if (!headSpan) continue;
@@ -707,6 +799,21 @@ async function captureMainMarkets(page, matchScores = {}) {
 
 async function parseCornerMarkets(page, matchScores = {}) {
   console.log("[cornerCrawler] ===== DOM Parsing Corner Markets =====");
+
+  // 验证当前是否在 CORNERS 标签页，避免解析 HDP&O/U 页面数据
+  try {
+    const isOnCornersTab = await page.evaluate(() => {
+      const cnTab = document.getElementById('tab_cn');
+      if (!cnTab) return false;
+      return cnTab.classList.contains('on') || cnTab.classList.contains('active');
+    });
+    if (!isOnCornersTab) {
+      console.log("[cornerCrawler] 当前不在 CORNERS 标签页，跳过角球数据解析");
+      return [];
+    }
+  } catch (e) {
+    console.warn("[cornerCrawler] CORNERS 标签页检查失败:", e.message);
+  }
 
   try {
     // ---- Phase 1: Diagnostic snapshot ----
@@ -1587,35 +1694,10 @@ export async function crawlCornerMatches() {
       console.warn("[cornerCrawler] 登出检测失败:", e.message);
     }
 
-    // 简易密码页面检测：导航后可能跳转到简易密码页面
+    // 简易密码页面检测：导航后可能跳转到简易密码页面（多次重试）
     try {
-      const passcodeDetected = await page.evaluate(() => {
-        const backLoginBtn = document.getElementById("back_login");
-        return backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
-      });
-      if (passcodeDetected) {
-        console.log("[cornerCrawler] 检测到简易密码页面，点击普通登入...");
-        await page.evaluate(() => {
-          const btn = document.querySelector("#back_login");
-          if (btn) btn.click();
-        });
-        await randomDelay(3000, 4000);
-        // 重新输入账号密码
-        const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
-        const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
-        await page.evaluate((usr, pw) => {
-          const u = document.getElementById('usr');
-          const p = document.getElementById('pwd');
-          if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-          if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-        }, reUser, rePwd);
-        await randomDelay(500, 1000);
-        await page.evaluate(() => {
-          const btn = document.getElementById('btn_login');
-          if (btn) btn.click();
-        });
-        console.log("[cornerCrawler] 已重新登录，等待页面加载...");
-        await randomDelay(5000, 7000);
+      const passcodeResult = await handlePasscodePage(page, 3);
+      if (passcodeResult.detected && passcodeResult.handled) {
         // 重新导航到角球页面
         try {
           await setupXHRInterception(page);

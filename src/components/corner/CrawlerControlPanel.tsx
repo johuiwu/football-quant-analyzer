@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
@@ -177,6 +177,10 @@ export default function CrawlerControlPanel() {
         const backendPolling = backend.isPolling && !backend.isPaused;
         setIsBackendPolling(backendPolling);
         setIsPaused(!!backend.isPaused);
+        // 后端暂停/停止时，同步关闭前端自动刷新，避免持续请求 /api/corner/live
+        if (!backendPolling && autoRefresh) {
+          setAutoRefresh(false);
+        }
       }
     } catch (err) {
       console.error("获取状态失败:", err);
@@ -303,7 +307,7 @@ export default function CrawlerControlPanel() {
           setMainMarketData(recvMainMarkets);
         }
         
-        if (apiData.cacheEmpty) {
+        if (apiData.cacheEmpty && Object.keys(recvMainMarkets).length === 0) {
           showMessage("info", "数据采集中，请稍后刷新...");
         } else if (matchCount > 0) {
           // 禁用提示: showMessage("info", `获取到 ${matchCount} 场比赛`);

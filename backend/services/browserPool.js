@@ -34,9 +34,9 @@ let heartbeatTimer = null;
 
 const HG_URL = process.env.HG_URL || "https://www.hga050.com";
 
-/** 读取环境变量决定是否无头模式，默认 true（有头模式需显式设 CRAWLER_HEADLESS=false） */
+/** 角球系统浏览器固定无头模式 */
 function getHeadless() {
-  return process.env.CRAWLER_HEADLESS !== "false";
+  return true;
 }
 
 // ======================== 浏览器启动 ========================

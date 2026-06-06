@@ -1,4 +1,4 @@
-﻿import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
+import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 
@@ -11,6 +11,7 @@ let cachedMainMarkets = {};
 let pollingInterval = null;
 let pollingActive = false;
 let lastFetchTime = 0;
+let lastEmptyLogTime = 0;
 const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "15000", 10); // 调整为15秒
 const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
 
@@ -325,7 +326,17 @@ export async function getLiveCornerData(filterMatchId) {
   }
   // 无缓存时直接返回空（不自动触发爬虫，由轮询/即时爬取入口负责）
   // 标记 cacheEmpty 让前端知道需要启动监控
-  console.log("[cornerService] 无有效数据，返回空");
+  // ★ 即使角球缓存为空，也返回 mainMarkets（让球大小数据可能有效）
+  if (Object.keys(cachedMainMarkets).length > 0) {
+    console.log("[cornerService] 角球缓存为空，但 mainMarkets 有 " + Object.keys(cachedMainMarkets).length + " 场数据");
+    return { data: [], generatedAt, count: 0, cacheEmpty: true, mainMarkets: cachedMainMarkets };
+  }
+  // 限频日志：每30秒最多打印一次"无有效数据"，避免刷屏
+  const logNow = Date.now();
+  if (!lastEmptyLogTime || logNow - lastEmptyLogTime > 30000) {
+    lastEmptyLogTime = logNow;
+    console.log("[cornerService] 无有效数据，返回空");
+  }
   return { data: [], generatedAt, count: 0, cacheEmpty: true };
 }
 
