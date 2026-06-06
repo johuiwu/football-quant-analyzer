@@ -1,4 +1,7 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+puppeteer.use(StealthPlugin());
 
 // ======================== 配置常量 ========================
 const QIUMIWU_URL = "https://www.qiumiwu.com/game/zuqiu";
@@ -167,6 +170,20 @@ export async function crawlQiumiwuFixtures() {
       timeout: NAV_TIMEOUT
     });
     console.log("[QiumiwuCrawler] 页面加载完成");
+
+    // 检测反爬拦截页面（如 Cloudflare 验证、限流提示等）
+    const pageText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || "");
+    if (pageText.includes("Too many requests") || pageText.includes("429") || pageText.includes("rate limit") || pageText.includes("Just a moment")) {
+      console.log("[QiumiwuCrawler] ⚠ 检测到反爬拦截页面，跳过爬取");
+      await browser.close();
+      browser = null;
+      return {
+        success: false,
+        data: [],
+        count: 0,
+        error: "目标网站限流，请稍后再试"
+      };
+    }
 
     // 等待赛程区块渲染
     await page.waitForSelector("details.fixture__details--today", {

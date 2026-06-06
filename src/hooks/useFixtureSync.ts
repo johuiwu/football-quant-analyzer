@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { REAL_FIXTURES } from '../data/realTeamsData';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export function useFixtureSync() {
   const [fixtures, setFixtures] = useState<any[]>(REAL_FIXTURES);
@@ -23,7 +23,7 @@ export function useFixtureSync() {
       const response = await fetch(`${API_BASE}/api/qiumiwu-fixtures`, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(30000) // 30秒超时
+        signal: AbortSignal.timeout(60000) // 60秒超时（Puppeteer爬虫需要较长时间）
       });
 
       if (!response.ok) {
