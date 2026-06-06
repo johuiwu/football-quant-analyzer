@@ -1,4 +1,4 @@
-﻿import { AlertTriangle, Calculator, FileCode } from 'lucide-react';
+﻿import { AlertTriangle, Calculator } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function PageHeader() {
@@ -90,18 +90,14 @@ export default function PageHeader() {
             >
               🎯 角球系统
             </button>
-            <button
-              id="tab-python"
-              onClick={() => navigate('/python')}
-              className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-1.5 ${
-                currentPath === '/python'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <FileCode className="w-3.5 h-3.5" />
-              Windows EXE 编译中心
-            </button>
+            {window.electronAPI?.isElectron && (
+              <button
+                onClick={() => window.electronAPI?.checkForUpdates?.()}
+                className="px-4 py-1.5 text-xs font-medium rounded-lg transition-all bg-indigo-600 hover:bg-indigo-700 text-white shadow-md"
+              >
+                📦 检查更新
+              </button>
+            )}
           </div>
         </div>
       </header>

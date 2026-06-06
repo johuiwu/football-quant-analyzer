@@ -55,7 +55,7 @@ export default function StandingsTab({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            🏆 五大联赛真实量化盘路积分榜 (AI 联网自适应校准)
+            🏆 联赛真实量化盘路积分榜
           </h3>
           <p className="text-xs text-slate-400 mt-1 leading-relaxed">
             提供完整的物理积分、净胜球、得失球和近5场走势表现。支持一键全网 AI 同步以校准最新赛况。

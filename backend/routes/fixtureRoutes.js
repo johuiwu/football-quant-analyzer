@@ -179,7 +179,7 @@ router.get('/qiumiwu-fixtures', async (req, res) => {
       res.json({
         fixtures,
         source: 'google_search_grounding',
-        msg: `🟢 从 qiumiwu.com 实时爬取到 ${result.count} 场未完场足球赛程数据`
+        msg: ''
       });
     } else {
       // 爬取失败，回退到本地预设

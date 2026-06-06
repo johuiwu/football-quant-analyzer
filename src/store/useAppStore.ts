@@ -4,7 +4,7 @@ import { ModelWeights } from "../utils/quantModel";
 
 // ==================== 类型定义 ====================
 
-export type TabType = "dashboard" | "python" | "standings" | "teams" | "worldcup" | "corner";
+export type TabType = "dashboard" | "standings" | "teams" | "worldcup" | "corner";
 
 export interface LiveMatchState {
   isLive: boolean;
@@ -71,7 +71,6 @@ export interface AppStore {
   // 风险 + 权重
   riskAlerts: any[];
   customWeights: ModelWeights;
-  isExporting: boolean;
 
   // 实时比赛
   liveMatch: LiveMatchState;
@@ -112,7 +111,6 @@ export interface AppStore {
   setRiskAlerts: (alerts: any[]) => void;
   clearRiskAlert: (id: number) => void;
   setCustomWeights: (weights: ModelWeights) => void;
-  setIsExporting: (v: boolean) => void;
 
   dispatchLiveMatch: (action: LiveMatchAction) => void;
   resetLiveMatch: () => void;
@@ -152,7 +150,6 @@ const defaultState = {
 
   riskAlerts: [] as any[],
   customWeights: { odds: 0.45, strength: 0.30, homeAway: 0.15, h2h: 0.10, form: 0.05 } as ModelWeights,
-  isExporting: false,
 
   liveMatch: initialLiveMatch,
   loadRealTimeStandings: (() => {}) as () => void,
@@ -210,7 +207,6 @@ export const useAppStore = create<AppStore>((set) => ({
   resetToDefaults: () => set({
     customWeights: { odds: 0.45, strength: 0.30, homeAway: 0.15, h2h: 0.10, form: 0.05 } as ModelWeights,
     riskAlerts: [] as any[],
-    isExporting: false,
     liveMatch: initialLiveMatch,
   }),
   setTeamsPageTeam: (teamId, stats) => set({ teamsPageTeamId: teamId, teamsPageTeamStats: stats }),
@@ -230,7 +226,6 @@ export const useAppStore = create<AppStore>((set) => ({
   setRiskAlerts: (alerts) => set({ riskAlerts: alerts }),
   clearRiskAlert: (id) => set((state) => ({ riskAlerts: state.riskAlerts.filter((a: any) => a.id !== id) })),
   setCustomWeights: (weights) => set({ customWeights: weights }),
-  setIsExporting: (v) => set({ isExporting: v }),
 
   dispatchLiveMatch: (action) => set((state) => ({ liveMatch: liveMatchReducer(state.liveMatch, action) })),
   resetLiveMatch: () => set({ liveMatch: initialLiveMatch }),

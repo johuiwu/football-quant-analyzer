@@ -1,7 +1,8 @@
 // Electron 主进程 — 直接 require 后端模块，不 spawn 子进程
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { autoUpdater } = require("electron-updater");
 
 // ─── 环境判断 ───
 const isDev = !app.isPackaged;
@@ -116,7 +117,56 @@ function createWindow() {
 }
 
 // ─── 生命周期 ───
+
+// ===== 自动更新 =====
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.checkForUpdatesAndNotify();
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[autoUpdater] 发现新版本:", info.version);
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[autoUpdater] 当前已是最新版本");
+  });
+
+  autoUpdater.on("download-progress", (progressObj) => {
+    console.log("[autoUpdater] 下载进度:", progressObj.percent.toFixed(2) + "%");
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.log("[autoUpdater] 新版本已下载，准备安装");
+    dialog.showMessageBox({
+      type: "info",
+      title: "更新下载完成",
+      message: `新版本 ${info.version} 已下载完成，是否立即重启安装？`,
+      buttons: ["立即重启", "稍后安装"],
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[autoUpdater] 更新出错:", err.message);
+  });
+}
+
+// IPC: 前端手动触发检查更新
+ipcMain.on("check-for-updates", () => {
+  autoUpdater.checkForUpdatesAndNotify();
+});
+
 app.whenReady().then(async () => {
+  setupAutoUpdater();
+
   // IPC 处理器
   ipcMain.handle('get-app-version', () => app.getVersion());
   ipcMain.handle('get-is-packaged', () => app.isPackaged());

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   version: () => ipcRenderer.invoke('get-app-version'),
   isPackaged: () => ipcRenderer.invoke('get-is-packaged'),
+  checkForUpdates: () => ipcRenderer.send('check-for-updates'),
 
   // ★ 角球系统 API
   corner: {

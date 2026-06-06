@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
@@ -198,14 +198,15 @@ export default function CrawlerControlPanel() {
           setAutoRefresh(false);
         }
         // 从后端同步登录状态到 store（Tab 切回来时恢复）
-        if (crawler.isLoggedIn && !storeIsLoggedIn) {
+        const state = useCornerStore.getState();
+        if (crawler.isLoggedIn && !state.isLoggedIn) {
           setLoginStatus(true, crawler.username || "");
         }
         // 后端有登录在进展中，同步 store 的 loginInProgress
-        if (crawler.loginInProgress && !storeLoginInProgress) {
+        if (crawler.loginInProgress && !state.loginInProgress) {
           setStoreLoginInProgress(true);
         }
-        if (!crawler.loginInProgress && storeLoginInProgress) {
+        if (!crawler.loginInProgress && state.loginInProgress) {
           setStoreLoginInProgress(false);
         }
       }
@@ -237,8 +238,8 @@ export default function CrawlerControlPanel() {
       if (data.success) {
         showMessage("success", "登录成功！");
         setStatus(prev => ({ ...prev, isLoggedIn: true }));
-        await fetchStatus();
         setLoginStatus(true, credentials.username);
+        await fetchStatus();
       } else {
         // 显示详细错误原因和建议
         const errorText = data.error || "登录失败";
@@ -530,6 +531,13 @@ export default function CrawlerControlPanel() {
     const timer = setInterval(() => { fetchStatus(); }, 5000);
     return () => clearInterval(timer);
   }, [isBackendPolling]);
+
+  // 登录进行中时持续轮询后端状态（Tab 切回来后检测登录完成）
+  useEffect(() => {
+    if (!storeLoginInProgress) return;
+    const timer = setInterval(() => { fetchStatus(); }, 3000);
+    return () => clearInterval(timer);
+  }, [storeLoginInProgress]);
 
   return (
     <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-6">
