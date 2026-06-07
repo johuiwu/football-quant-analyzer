@@ -34,9 +34,11 @@ let heartbeatTimer = null;
 
 const HG_URL = process.env.HG_URL || "https://www.hga050.com";
 
-/** 角球系统浏览器固定无头模式 */
+/** 角球系统浏览器模式（通过 CRAWLER_HEADLESS 环境变量控制，默认有头） */
 function getHeadless() {
-  return true;
+  const val = (process.env.CRAWLER_HEADLESS || "").toLowerCase();
+  // true/1 -> 无头，false/0/未设置 -> 有头（默认）
+  return val === "true" || val === "1";
 }
 
 // ======================== 浏览器启动 ========================
