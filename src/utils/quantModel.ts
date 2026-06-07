@@ -1,4 +1,4 @@
-﻿import { TeamStats, REAL_H2H_RECORDS, LEAGUE_AVGS } from '../data/realTeamsData';
+import { TeamStats, REAL_H2H_RECORDS, LEAGUE_AVGS } from '../data/realTeamsData';
 
 import { LRUCache } from 'lru-cache';
 import { calculateBaseOdds } from './oddsCalculator';
@@ -1697,12 +1697,6 @@ const strengthDiff = homeStrength - awayStrength;
   }
 
 
-  // 附加大小球倾向标记
-  if (selectedLineProb && selectedLineProb.over > 0.58) {
-    recommendedReason += ` ⚽ 大小球倾向：大球（${finalGoalsLine}球盘，大球概率 ${(selectedLineProb.over * 100).toFixed(0)}%）。`;
-  } else if (selectedLineProb && selectedLineProb.under > 0.62) {
-    recommendedReason += ` ⚽ 大小球倾向：小球（${finalGoalsLine}球盘，小球概率 ${(selectedLineProb.under * 100).toFixed(0)}%）。`;
-  }
 
 
 
@@ -2886,6 +2880,7 @@ export function calculateDynamicAsianHandicap(
   return convert1X2ToAsian(baseOdds.homeOdds, baseOdds.drawOdds, baseOdds.awayOdds, homeTeam.league, getLeagueHomeAdv(homeTeam.league));
 
 }
+
 
 
 

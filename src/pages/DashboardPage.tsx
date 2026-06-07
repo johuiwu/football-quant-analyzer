@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   FileCode, Flame, TrendingUp, BarChart3, Download, CheckCircle,
   AlertTriangle, Cpu, Layers, Info, RefreshCw, Sliders, HelpCircle,
@@ -523,28 +523,6 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* 盘口大小球边界选择球线 */}
-                  <div className="pt-2 border-t border-slate-800/50">
-                    <label className="flex justify-between text-xs text-slate-300 mb-1.5">
-                      <span>盘口大小球边界球数 (Goals Line):</span>
-                      <span className="font-mono text-blue-400 font-semibold">{goalsLine}球</span>
-                    </label>
-                    <div className="flex gap-2">
-                      {[1.5, 2.25, 2.5, 2.75, 3.5].map((val) => (
-                        <button
-                          key={val}
-                          onClick={() => setGoalsLine(val)}
-                          className={`flex-1 py-1 text-xs font-mono rounded border transition-all ${
-                            goalsLine === val
-                              ? 'bg-blue-600/30 border-blue-500 text-blue-300 shadow-md scale-105'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-slate-200'
-                          }`}
-                        >
-                          {val}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="mt-4 flex gap-2">
@@ -592,7 +570,6 @@ export default function DashboardPage() {
                     setUseCustomWeights(false);
                     setCustomWeights({ odds: 0.45, strength: 0.30, homeAway: 0.15, h2h: 0.10, form: 0.05 });
                     setAsianHandicap({ handicap: -0.5, homeWater: 0.92, awayWater: 0.92 });
-                    setGoalsLine(2.5);
                     setAdvancedParams({
                       homeFatigue: 1, awayFatigue: 1,
                       homeInjuries: 3, awayInjuries: 3,
