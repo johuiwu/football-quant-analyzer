@@ -105,3 +105,59 @@ export function parseXHRResponses(capturedResponses) {
 
 // ---- 导出辅助函数供外部使用 ----
 export { mapToCornerMatch, pickBestResponse };
+
+
+// ---- 解析 game_list XML（rcn / rrnou / rb 接口返回） ----
+export function parseGameListXML(xmlText) {
+  if (!xmlText || typeof xmlText !== "string") {
+    return { success: false, matches: [], source: "xml", count: 0 };
+  }
+
+  try {
+    // 用正则提取所有 <game> 元素
+    const gameRegex = /<game[^>]*>([\s\S]*?)<\/game>/gi;
+    const matches = [];
+    let gameMatch;
+
+    while ((gameMatch = gameRegex.exec(xmlText)) !== null) {
+      const gameBlock = gameMatch[1];
+      
+      // 提取关键字段
+      const getTag = (tag) => {
+        const re = new RegExp("<" + tag + "[^>]*>([^<]*)</" + tag + ">", "i");
+        const m = gameBlock.match(re);
+        return m ? m[1].trim() : "";
+      };
+
+      const homeTeam = getTag("TEAM_H");
+      const awayTeam = getTag("TEAM_C");
+      const gid = getTag("GID");
+      const league = getTag("LEAGUE");
+      const scoreH = parseInt(getTag("SCORE_H")) || 0;
+      const scoreC = parseInt(getTag("SCORE_C")) || 0;
+      const retimeset = getTag("RETIMESET");
+
+      if (homeTeam && awayTeam) {
+        matches.push({
+          GID: gid,
+          homeTeam,
+          awayTeam,
+          league,
+          scoreH,
+          scoreC,
+          retimeset,
+        });
+      }
+    }
+
+    return {
+      success: matches.length > 0,
+      matches,
+      source: "xml",
+      count: matches.length,
+    };
+  } catch (e) {
+    console.error("[xhrParser] parseGameListXML error:", e.message);
+    return { success: false, matches: [], source: "xml", count: 0, error: e.message };
+  }
+}
