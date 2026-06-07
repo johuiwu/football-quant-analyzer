@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 亚盘 ↔ 欧赔精确转换模块
  * 基于 Dixon-Coles 双变量泊松模型（rho 按联赛差异化）
  * 替代 quantModel.ts 中的分段线性映射表
@@ -85,6 +85,7 @@ export function exact1X2ToAsian(
   homeStrength: number = 1.0,
   awayStrength: number = 1.0,
   league?: string,
+  homeAdv: number = 0.32,
 ): {
   handicap: number;
   homeWater: number;
@@ -102,7 +103,7 @@ export function exact1X2ToAsian(
 
   for (let i = 0; i <= 100; i++) {
     const mid = lo + (hi - lo) / 2;
-    const result = exactAsianTo1X2(mid, homeStrength, awayStrength, league, returnRate);
+    const result = exactAsianTo1X2(mid, homeStrength, awayStrength, league, returnRate, homeAdv);
     const modelProbs = [result.homeProb, result.drawProb, result.awayProb];
     const probDiff = modelProbs[0] - modelProbs[2];
     const targetDiff = targetProbs[0] - targetProbs[2];
@@ -120,7 +121,7 @@ export function exact1X2ToAsian(
     if (dist < minDist) { minDist = dist; finalHandicap = h; }
   }
 
-  const finalResult = exactAsianTo1X2(finalHandicap, homeStrength, awayStrength, league, returnRate);
+  const finalResult = exactAsianTo1X2(finalHandicap, homeStrength, awayStrength, league, returnRate, homeAdv);
   const homeFair = finalResult.homeProb / (finalResult.homeProb + finalResult.awayProb);
   const awayFair = finalResult.awayProb / (finalResult.homeProb + finalResult.awayProb);
   const homeWater = Math.round((returnRate / homeFair) * 100) / 100;
@@ -132,3 +133,4 @@ export function exact1X2ToAsian(
     awayWater: Math.max(0.75, Math.min(1.10, awayWater)),
   };
 }
+

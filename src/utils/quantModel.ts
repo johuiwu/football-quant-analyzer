@@ -1,4 +1,4 @@
-import { TeamStats, REAL_H2H_RECORDS, LEAGUE_AVGS } from '../data/realTeamsData';
+﻿import { TeamStats, REAL_H2H_RECORDS, LEAGUE_AVGS } from '../data/realTeamsData';
 
 import { LRUCache } from 'lru-cache';
 import { calculateBaseOdds } from './oddsCalculator';
@@ -6,7 +6,7 @@ import { poisson, dixonColesAdjustment } from '../models/poisson';
 import { getTeamElo } from '../models/elo';
 import { exactAsianTo1X2, exact1X2ToAsian } from '../models/odds';
 import { calculateLeagueTimeDecay } from '../models/bayesian';
-import { getLeagueRho, getLeagueAvgGoals } from '../config/leagueParams';
+import { getLeagueRho, getLeagueAvgGoals, getLeagueHomeAdv } from '../config/leagueParams';
 import { evaluateUpsetAlert } from '../models/heatIndex';
 
 // P3-16: LRU cache
@@ -1002,36 +1002,17 @@ const fusedTotal = fusedHomeProb + fusedDrawProb + fusedAwayProb;
 
   const payoutRate = totalImplied > 0 ? 1 / totalImplied : 0.95;
 
-  let impliedHandicap = '平手 (0)';
-
-  if (oddsHome < oddsAway) {
-
-    const margin = oddsAway - oddsHome;
-
-    if (margin > 2.0) impliedHandicap = '主让一�?球半 (-1.25)';
-
-    else if (margin > 1.2) impliedHandicap = '主让一�?(-1.0)';
-
-    else if (margin > 0.6) impliedHandicap = '主让半球/一�?(-0.75)';
-
-    else if (margin > 0.3) impliedHandicap = '主让半球 (-0.5)';
-
-    else impliedHandicap = '主让平手/半球 (-0.25)';
-
+  // 使用 Dixon-Coles 模型精确计算隐含盘口（替代原赔率差硬映射）
+  const impliedAsian = convert1X2ToAsian(oddsHome, oddsDraw, oddsAway, league);
+  let impliedHandicap: string;
+  const ih = impliedAsian.handicap;
+  if (ih === 0) {
+    impliedHandicap = '平手 (0)';
+  } else if (ih < 0) {
+    const absH = Math.abs(ih);
+    impliedHandicap = `主让${absH}球 (${ih.toFixed(2)})`;
   } else {
-
-    const margin = oddsHome - oddsAway;
-
-    if (margin > 2.0) impliedHandicap = '客让一�?球半 (+1.25)';
-
-    else if (margin > 1.2) impliedHandicap = '客让一�?(+1.0)';
-
-    else if (margin > 0.6) impliedHandicap = '客让半球/一�?(+0.75)';
-
-    else if (margin > 0.3) impliedHandicap = '客让半球 (+0.5)';
-
-    else impliedHandicap = '客让平手/半球 (+0.25)';
-
+    impliedHandicap = `客让${ih}球 (+${ih.toFixed(2)})`;
   }
 
 
@@ -1439,7 +1420,7 @@ const strengthDiff = homeStrength - awayStrength;
 
 
 
-    if (lowScoreProbability.totalLowScore > 0.65 && (Math.abs(expectedHomeGoals - expectedAwayGoals) < 0.8 || totalExpectedGoals < 2.0)) {
+    if (lowScoreProbability.totalLowScore > 0.65 && (Math.abs(expectedHomeGoals - expectedAwayGoals) < 0.35 || totalExpectedGoals < 2.0)) {
 
       finalDirection = 'UNDER';
 
@@ -1670,7 +1651,7 @@ const strengthDiff = homeStrength - awayStrength;
 
 
 
-  if (compHomeWin > 0.48 && kellyHome > 0.3) {
+  if (compHomeWin > 0.48 && kellyHome > 0.05) {
 
     const safeHomeName = homeTeam?.nameCn || 'Unknown';
     recommendedDirection = `${safeHomeName} 主胜 (凯利建议 ${kellyHome}%)`;
@@ -1679,7 +1660,7 @@ const strengthDiff = homeStrength - awayStrength;
 
     riskRating = compHomeWin > 0.65 ? 'LOW' : 'MEDIUM';
 
-  } else if (compAwayWin > 0.48 && kellyAway > 0.3) {
+  } else if (compAwayWin > 0.48 && kellyAway > 0.05) {
 
     const safeAwayName = awayTeamVal?.nameCn || 'Unknown';
     recommendedDirection = `${safeAwayName} 客胜 (凯利建议 ${kellyAway}%)`;
@@ -1687,41 +1668,42 @@ const strengthDiff = homeStrength - awayStrength;
 
     riskRating = compAwayWin > 0.65 ? 'LOW' : 'MEDIUM';
 
-  } else if (compDraw > 0.28) {
+  } else if (compDraw > 0.25) {
 
     recommendedDirection = '平局倾向 / 防冷观望';
     recommendedReason = `综合模型显示双方实力接近，平局概率 ${(compDraw * 100).toFixed(1)}% 较高。Dixon-Coles 矩阵预警低分区域概率密集，凯利建议克制投注。`;
     riskRating = 'MEDIUM';
 
+  } else if (compHomeWin >= compAwayWin && compHomeWin >= compDraw) {
+
+    const safeHomeName = homeTeam?.nameCn || 'Unknown';
+    recommendedDirection = `${safeHomeName} 主胜（综合概率 ${(compHomeWin * 100).toFixed(0)}%）`;
+    recommendedReason = `10大模型综合加权后主胜概率 ${(compHomeWin * 100).toFixed(1)}% 领先（客胜 ${(compAwayWin * 100).toFixed(1)}%，平局 ${(compDraw * 100).toFixed(1)}%）。`;
+    riskRating = 'MEDIUM';
+
+  } else if (compAwayWin >= compHomeWin && compAwayWin >= compDraw) {
+
+    const safeAwayName = awayTeamVal?.nameCn || 'Unknown';
+    recommendedDirection = `${safeAwayName} 客胜（综合概率 ${(compAwayWin * 100).toFixed(0)}%）`;
+    recommendedReason = `10大模型综合加权后客胜概率 ${(compAwayWin * 100).toFixed(1)}% 领先（主胜 ${(compHomeWin * 100).toFixed(1)}%，平局 ${(compDraw * 100).toFixed(1)}%）。`;
+    riskRating = 'MEDIUM';
+
   } else {
 
-    if (selectedLineProb.over > 0.55) {
-
-      recommendedDirection = `大球 (${finalGoalsLine}球)`;
-
-      recommendedReason = `Dixon-Coles 双变量矩阵纠偏后，低分概率稀疏。联合大小球爆率 ${(selectedLineProb.over * 100).toFixed(0)}%，预测两队总进球拉满。`;
-
-      riskRating = 'MEDIUM';
-
-    } else if (selectedLineProb.under > 0.55) {
-
-      recommendedDirection = `小球 (${finalGoalsLine}球)`;
-
-      recommendedReason = `防守韧性系数出色，且存在多轮零封记录。Dixon-Coles 矩阵锁定 1-0/0-0 高发区间，小球概率 ${(selectedLineProb.under * 100).toFixed(0)}%。`;
-
-      riskRating = 'MEDIUM';
-
-    } else {
-
-      recommendedDirection = '防冷偏硬 / 平局双';
-
-      recommendedReason = `两队 Elo 与实力接近，凯利极值指向不足。资金热度指数（主 ${heatIndexHome}，客 ${heatIndexAway}）表明博弈严重，爆冷预警指数升高。`;
-
-      riskRating = 'HIGH';
-
-    }
+    recommendedDirection = '平局（综合倾向）';
+    recommendedReason = `10大模型综合加权后平局概率 ${(compDraw * 100).toFixed(1)}% 相对最高（主胜 ${(compHomeWin * 100).toFixed(1)}%，客胜 ${(compAwayWin * 100).toFixed(1)}%）。`;
+    riskRating = 'MEDIUM';
 
   }
+
+
+  // 附加大小球倾向标记
+  if (selectedLineProb && selectedLineProb.over > 0.58) {
+    recommendedReason += ` ⚽ 大小球倾向：大球（${finalGoalsLine}球盘，大球概率 ${(selectedLineProb.over * 100).toFixed(0)}%）。`;
+  } else if (selectedLineProb && selectedLineProb.under > 0.62) {
+    recommendedReason += ` ⚽ 大小球倾向：小球（${finalGoalsLine}球盘，小球概率 ${(selectedLineProb.under * 100).toFixed(0)}%）。`;
+  }
+
 
 
 
@@ -2812,10 +2794,12 @@ export function convert1X2ToAsian(
 
   league?: string,
 
+  homeAdv?: number,
+
 ): AsianHandicapParams {
 
   // ===== v3.1: Dixon-Coles 二分搜索精确转换 =====
-  const r = exact1X2ToAsian(homeOdds, drawOdds, awayOdds, 1.0, 1.0, league || undefined);
+  const r = exact1X2ToAsian(homeOdds, drawOdds, awayOdds, 1.0, 1.0, league || undefined, homeAdv ?? getLeagueHomeAdv(league));
 
   return {
     handicap: r.handicap,
@@ -2824,16 +2808,12 @@ export function convert1X2ToAsian(
   };
 }
 export function syncMatchToAsianHandicap(matchOdds: {
-
   home: number;
-
   draw: number;
-
   away: number;
+}, league?: string, homeAdv?: number): AsianHandicapParams {
 
-}): AsianHandicapParams {
-
-  return convert1X2ToAsian(matchOdds.home, matchOdds.draw, matchOdds.away);
+  return convert1X2ToAsian(matchOdds.home, matchOdds.draw, matchOdds.away, league, homeAdv);
 
 }
 
@@ -2903,7 +2883,12 @@ export function calculateDynamicAsianHandicap(
 
 
 
-  return convert1X2ToAsian(baseOdds.homeOdds, baseOdds.drawOdds, baseOdds.awayOdds, homeTeam.league);
+  return convert1X2ToAsian(baseOdds.homeOdds, baseOdds.drawOdds, baseOdds.awayOdds, homeTeam.league, getLeagueHomeAdv(homeTeam.league));
 
 }
+
+
+
+
+
 

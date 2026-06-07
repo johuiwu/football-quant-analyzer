@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 联赛差异化 Dixon-Coles 参数配置
  * 
  * rho 参数控制低比分（0-0, 1-0, 0-1, 1-1）的修正强度：
@@ -48,4 +48,23 @@ export function getLeagueRho(league?: string): number {
 export function getLeagueAvgGoals(league?: string): number {
   if (!league) return LEAGUE_AVG_GOALS.DEFAULT;
   return LEAGUE_AVG_GOALS[league] ?? LEAGUE_AVG_GOALS.DEFAULT;
+}
+
+/** 联赛主场进球优势（场均） */
+export const LEAGUE_HOME_ADV: Record<string, number> = {
+  EPL: 0.32,
+  LaLiga: 0.35,
+  Bundesliga: 0.38,
+  SerieA: 0.30,
+  Ligue1: 0.33,
+  Championship: 0.28,
+  Eredivisie: 0.40,
+  PrimeiraLiga: 0.32,
+  DEFAULT: 0.32,
+};
+
+/** 根据联赛 ID 获取主场优势 */
+export function getLeagueHomeAdv(league?: string): number {
+  if (!league) return LEAGUE_HOME_ADV.DEFAULT;
+  return LEAGUE_HOME_ADV[league] ?? LEAGUE_HOME_ADV.DEFAULT;
 }

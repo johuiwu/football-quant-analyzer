@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   FileCode, Flame, TrendingUp, BarChart3, Download, CheckCircle,
   AlertTriangle, Cpu, Layers, Info, RefreshCw, Sliders, HelpCircle,
@@ -155,7 +155,7 @@ export default function DashboardPage() {
       if (homeTeamExists && awayTeamExists) {
         setHomeLeague(fixture.homeLeague, fixture.homeTeamId);
         setAwayLeague(fixture.awayLeague, fixture.awayTeamId);
-        const asian = syncMatchToAsianHandicap(fixture.defaultOdds);
+        const asian = syncMatchToAsianHandicap(fixture.defaultOdds, fixture.homeLeague);
         setAsianHandicap(asian);
         setGoalsLine(fixture.defaultGoalsLine);
         setIsStatsCustomized(false);
@@ -1554,3 +1554,4 @@ export default function DashboardPage() {
           </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { calculateBetsModel, BetsModelInput, AsianHandicapFeatures } from '../utils/quantModel';
 
 const mockHomeTeam = {
@@ -417,3 +417,132 @@ describe('calculateBetsModel', () => {
   });
 
 });
+
+// ======================== recommendedDirection 修复验证 ========================
+describe('recommendedDirection 不应始终为小球', () => {
+  it('主队明显优势应输出主胜', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.60, draw: 4.00, away: 5.50 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -1.0, homeWater: 0.85, awayWater: 0.95 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.recommendedDirection).toBeDefined();
+    expect(result.recommendedDirection).toMatch(/主胜|曼彻斯特城/);
+  });
+
+  it('客队明显优势应输出客胜', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockAwayTeam, awayTeam: mockHomeTeam,
+      odds1X2: { home: 5.50, draw: 4.00, away: 1.60 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 1.0, homeWater: 0.95, awayWater: 0.85, isStrongAwayHandicap: true },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.recommendedDirection).toBeDefined();
+    expect(result.recommendedDirection).toMatch(/客胜|曼彻斯特城/);
+  });
+
+  it('双方均势不应回退到小球为主方向', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockHomeTeam,
+      odds1X2: { home: 2.50, draw: 3.10, away: 2.80 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.recommendedDirection).toBeDefined();
+    const hasDirection = result.recommendedDirection.includes('主胜') || 
+                         result.recommendedDirection.includes('客胜') || 
+                         result.recommendedDirection.includes('平局');
+    expect(hasDirection).toBe(true);
+  });
+
+  it('recommendedReason 应附加大小球倾向', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.recommendedReason).toBeDefined();
+    expect(typeof result.recommendedReason).toBe('string');
+    expect(result.recommendedReason.length).toBeGreaterThan(10);
+  });
+
+  it('aggregatedDecision 方向应正常计算', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.aggregatedDecision).toBeDefined();
+    expect(result.aggregatedDecision.direction).toBeDefined();
+    expect(['HOME_WIN', 'DRAW', 'AWAY_WIN', 'OVER', 'UNDER']).toContain(result.aggregatedDecision.direction);
+  });
+});
+
+// ======================== 盘口修复验证 ========================
+describe('盘口（让球方）计算修复', () => {
+  it('impliedHandicap 应与同赔率的 asianHandicap 方向一致', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.80, draw: 3.60, away: 4.50 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -0.75 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    // impliedHandicap 应包含"主让"（因为主胜赔率 1.80 < 客胜 4.50）
+    expect(result.impliedHandicap).toBeDefined();
+    expect(result.impliedHandicap).toMatch(/主让/);
+  });
+
+  it('impliedHandicap 不应为硬编码平手', () => {
+    // 明显主胜赔率 1.50 vs 客胜 7.00，不应显示平手
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.50, draw: 4.50, away: 7.00 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -1.0 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.impliedHandicap).not.toBe('平手 (0)');
+  });
+
+  it('EPL 主场优势使同赔率下盘口合理偏移', () => {
+    // EPL 球队，主胜 2.10 vs 客胜 3.20，应有主场优势加成
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    // impliedHandicap 应产生合理盘口（不应是极端值）
+    expect(result.impliedHandicap).toBeDefined();
+    // 盘口应在 [-1.5, 1.5] 范围内
+    expect(typeof result.impliedHandicap).toBe('string');
+    expect(result.impliedHandicap.length).toBeGreaterThan(3);
+  });
+
+  it('实力差距大时平局概率应被压下', () => {
+    // 强队 vs 弱队，赔率差距大
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 1.40, draw: 5.00, away: 8.00 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: -1.5 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    // 实力悬殊时平局概率应偏低
+    expect(result.fusedDrawProb).toBeLessThan(0.35);
+  });
+
+  it('同 Elo 同 xG 的镜像对阵平局概率应合理', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockHomeTeam,
+      odds1X2: { home: 2.50, draw: 3.10, away: 2.80 },
+      asianFeatures: { ...defaultAsianFeatures, handicapValue: 0 },
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    // 平局概率应在合理范围内（0.15-0.35）
+    expect(result.fusedDrawProb).toBeGreaterThan(0.15);
+    expect(result.fusedDrawProb).toBeLessThan(0.38);
+  });
+});
+

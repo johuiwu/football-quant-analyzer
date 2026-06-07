@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 欧赔计算模块
  * 基于 Elo 评分、xG 差值、伤停等因素计算真实合理的初始欧赔（1X2）
  */
@@ -24,12 +24,12 @@ export function calculateBaseOdds(
   const returnRate = 0.94;
 
   // 1. 基于 Elo + xG 计算综合实力指数（xG 权重提升以扩大球队差距）
-  const homeStrength = homeElo / 100 + homeXG * 1.5;
-  const awayStrength = awayElo / 100 + awayXG * 1.5;
+  const homeStrength = homeElo / 100 + homeXG * 2.5;
+  const awayStrength = awayElo / 100 + awayXG * 2.5;
 
   // 2. 先算平局概率 — 实力越接近平局越高
   const strengthGap = Math.abs(homeStrength - awayStrength) / Math.max(homeStrength + awayStrength, 1);
-  const drawProb = Math.max(0.18, Math.min(0.40, 0.38 - strengthGap * 1.0));
+  const drawProb = Math.max(0.15, Math.min(0.35, 0.30 - strengthGap * 1.0));
 
   // 3. 剩余概率按实力比分配给主客胜
   const remaining = 1 - drawProb;
@@ -125,3 +125,4 @@ export function calculateReturnRate(
                 impliedProbability(awayOdds);
   return 1 / total;
 }
+
