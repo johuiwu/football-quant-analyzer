@@ -1320,6 +1320,31 @@ function buildHandicapsArray(m) {
 }
 
 // ======================== 主函数：爬取角球比赛数据 ========================
+/**
+ * 激活 Soccer 标签页，确保页面加载了角球数据
+ * @param {Page} page - Puppeteer 页面实例
+ * @returns {Promise<boolean>} - 是否成功激活
+ */
+async function activateSoccerTab(page) {
+    console.log('[cornerCrawler] 导航到 Soccer 标签页...');
+    try {
+        // 1. 确保父容器可见
+        await page.waitForSelector('#sport_total', { timeout: 10000 });
+        // 2. 等待 Soccer 标签可见，排除 display: none 的情况
+        await page.waitForSelector('#old_ft_live_league:not([style*="display: none"])', { timeout: 10000 });
+        // 3. 点击
+        await page.click('#old_ft_live_league');
+        console.log('[cornerCrawler] 已点击 Soccer 标签');
+        // 4. 等待 transform.php 请求被发出
+        await page.waitForResponse((res) => res.url().includes('transform.php'), { timeout: 15000 });
+        console.log('[cornerCrawler] transform.php 请求已发出');
+        return true;
+    } catch (e) {
+        console.warn('[cornerCrawler] 导航到 Soccer 标签页失败:', e.message);
+        return false;
+    }
+}
+
 export async function crawlCornerMatches() {
   // 并发保护：如果已有爬取在进行中，直接返回
   if (crawlingLock) {
