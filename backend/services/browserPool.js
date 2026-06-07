@@ -1,3 +1,25 @@
+
+/**
+ * 检查页面是否处于已登录状态（通过 DOM 元素判断）
+ */
+export async function isPageLoggedIn(page) {
+  if (!page || page.isClosed()) return false;
+  try {
+    return await page.evaluate(() => {
+      const bodyText = document.body?.textContent || "";
+      if (bodyText.includes("My Events") || bodyText.includes("My Bets")) return true;
+      if (bodyText.includes("In-Play") && bodyText.includes("Soccer")) return true;
+      const sportEl = document.getElementById("symbol_ft") || document.getElementById("old_ft_live_league");
+      if (sportEl) {
+        const style = getComputedStyle(sportEl);
+        if (style.display !== "none" && style.visibility !== "hidden") return true;
+      }
+      return false;
+    });
+  } catch (e) {
+    return false;
+  }
+}
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";

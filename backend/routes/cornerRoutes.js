@@ -3,6 +3,7 @@ import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHist
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
+import { getSharedPage, isPageLoggedIn, isBrowserActive } from "../services/browserPool.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
