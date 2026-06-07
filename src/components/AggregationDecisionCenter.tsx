@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
@@ -277,14 +277,6 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
             </div>
             <span className={`text-3xl font-black ${recommendation.colorClass} bg-clip-text text-transparent ${recommendation.glowClass}`}>
               {displayDirection} {handicapLabel && <span className="text-lg text-slate-400 font-normal ml-1">{handicapLabel}</span>}
-            </span>
-            <span className={`text-lg font-mono font-bold ${recommendation.colorClass} bg-clip-text text-transparent ${recommendation.glowClass} uppercase`}>
-              ({(() => {
-                const dir = results?.aggregatedDecision?.direction || recommendation.aggregatedDirection;
-                if (dir === 'HOME_WIN') return 'HOME WIN';
-                if (dir === 'AWAY_WIN') return 'AWAY WIN';
-                return 'DRAW';
-              })()})
             </span>
           </div>
           

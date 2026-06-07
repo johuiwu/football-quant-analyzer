@@ -107,48 +107,146 @@ export function parseXHRResponses(capturedResponses) {
 export { mapToCornerMatch, pickBestResponse };
 
 
-// ---- 解析 game_list XML（rcn / rrnou / rb 接口返回） ----
-export function parseGameListXML(xmlText) {
+// ---- 辅助：解析 RETIMESET + MORE 为比赛分钟数 ----
+function parseMatchTime(retimeset, more) {
+  if (!retimeset) {
+    const m = parseInt(more) || 0;
+    return m > 0 ? m : 0;
+  }
+  const match = retimeset.match(/(\d)H\^(\d+):(\d+)/);
+  if (match) {
+    const half = parseInt(match[1]);
+    const min = parseInt(match[2]);
+    const sec = parseInt(match[3]);
+    if (half === 1) return min + sec / 60;
+    if (half === 2) return 45 + min + sec / 60;
+    return min + sec / 60;
+  }
+  const otMatch = retimeset.match(/OT\^(\d+):(\d+)/);
+  if (otMatch) return 90 + parseInt(otMatch[1]) + parseInt(otMatch[2]) / 60;
+  if (retimeset.includes("HT")) return 45;
+  const m = parseInt(more) || 0;
+  return m > 0 ? m : 0;
+}
+
+// ---- 解析 game_list XML（rcn / rb / rrnou 接口返回） ----
+export function parseGameListXML(xmlText, contextHint = "") {
   if (!xmlText || typeof xmlText !== "string") {
     return { success: false, matches: [], source: "xml", count: 0 };
   }
 
   try {
-    // 用正则提取所有 <game> 元素
     const gameRegex = /<game[^>]*>([\s\S]*?)<\/game>/gi;
     const matches = [];
     let gameMatch;
 
     while ((gameMatch = gameRegex.exec(xmlText)) !== null) {
       const gameBlock = gameMatch[1];
-      
-      // 提取关键字段
+
       const getTag = (tag) => {
-        const re = new RegExp("<" + tag + "[^>]*>([^<]*)</" + tag + ">", "i");
+        const re = new RegExp("<" + tag + "[^>]*>([^<]*)<\/" + tag + ">", "i");
         const m = gameBlock.match(re);
         return m ? m[1].trim() : "";
       };
 
       const homeTeam = getTag("TEAM_H");
       const awayTeam = getTag("TEAM_C");
+      if (!homeTeam || !awayTeam) continue;
+
       const gid = getTag("GID");
       const league = getTag("LEAGUE");
       const scoreH = parseInt(getTag("SCORE_H")) || 0;
       const scoreC = parseInt(getTag("SCORE_C")) || 0;
       const retimeset = getTag("RETIMESET");
+      const more = getTag("MORE");
+      const elapsedMinutes = parseMatchTime(retimeset, more);
+      const datetime = getTag("DATETIME");
+      const running = getTag("RUNNING") === "Y";
 
-      if (homeTeam && awayTeam) {
-        matches.push({
-          GID: gid,
-          homeTeam,
-          awayTeam,
-          league,
-          scoreH,
-          scoreC,
-          retimeset,
-        });
-      }
+      // HDP 让球盘
+      const ratioRe = getTag("RATIO_RE");
+      const iorReh = getTag("IOR_REH");
+      const iorRec = getTag("IOR_REC");
+      // OU 大小球
+      const ratioRouo = getTag("RATIO_ROUO");
+      const iorRouh = getTag("IOR_ROUH");
+      const iorRouc = getTag("IOR_ROUC");
+      // 角球盘口 (rcn 才有)
+      const cnCount = getTag("CN_COUNT");
+      const ratioCrOuo = getTag("ratio_CROUO") || getTag("RATIO_CROUO");
+      const iorCrOuo = getTag("ior_CROUO") || getTag("IOR_CROUO");
+      const iorCrOuu = getTag("ior_CROUU") || getTag("IOR_CROUU");
+      const ratioCornerHdp = getTag("RATIO_CORNERHDP");
+      const iorCornerH = getTag("IOR_CORNERH");
+      const iorCorner = getTag("IOR_CORNER");
+      // 半场
+      const ratioHre = getTag("RATIO_HRE");
+      const iorHreh = getTag("IOR_HREH");
+      const iorHrec = getTag("IOR_HREC");
+      const ratioHrouo = getTag("RATIO_HROUO");
+      const iorHrouh = getTag("IOR_HROUH");
+      const iorHrouc = getTag("IOR_HROUC");
+      // 角球胜负
+      const iorRgh = getTag("IOR_RGH");
+      const iorRgc = getTag("IOR_RGC");
+      const iorRgn = getTag("IOR_RGN");
+      // IDs
+      const ecid = getTag("ECID");
+      const hgid = getTag("HGID");
+      const gidm = getTag("GIDM");
+
+      matches.push({
+        matchId: gid || ("xml_" + matches.length),
+        homeTeam, awayTeam, league,
+        time: datetime,
+        elapsedMinutes,
+        homeScore: scoreH,
+        awayScore: scoreC,
+        totalCorners: 0,
+        cornerHomeCount: 0,
+        cornerAwayCount: 0,
+        _hdpLine: ratioRe,
+        _hdpHomeOdds: iorReh,
+        _hdpAwayOdds: iorRec,
+        _ouLine: ratioRouo,
+        _ouOverOdds: iorRouh,
+        _ouUnderOdds: iorRouc,
+        // 角球让球盘（数字格式，与 DOM 输出对齐）
+        cornerHandicap: ratioCornerHdp ? parseAsianHandicap(ratioCornerHdp) : 0,
+        cornerOdds: parseFloat(iorCornerH) || 0,
+        hasCornerOdds: !!(ratioCornerHdp || ratioCrOuo),
+        // 角球让球盘（详细字段）
+        _cornerHdpLine: ratioCornerHdp,
+        _cornerHdpHomeOdds: iorCornerH,
+        _cornerHdpAwayOdds: iorCorner,
+        // 角球大小
+        _cornerOULine: ratioCrOuo,
+        _cornerOUOdds: iorCrOuo,
+        _cornerOUUnderOdds: iorCrOuu,
+        _hasCornerMarket: !!(cnCount && parseInt(cnCount) > 0),
+        _cornerHomeOdds: iorRgh,
+        _cornerAwayOdds: iorRgc,
+        _cornerDrawOdds: iorRgn,
+        _htHdpLine: ratioHre,
+        _htHdpHomeOdds: iorHreh,
+        _htHdpAwayOdds: iorHrec,
+        _htOuLine: ratioHrouo,
+        _htOuOverOdds: iorHrouh,
+        _htOuUnderOdds: iorHrouc,
+        ecid, hgid, gidm,
+        running,
+        _dataSource: "xml",
+        _cornerSource: "xml",
+        dataQuality: "full",
+        timestamp: Date.now(),
+        triggeredStrategies: [],
+        handicaps: [],
+        leagueId: "",
+        leagueName: league,
+      });
     }
+
+    console.log("[xhrParser] parseGameListXML: " + matches.length + " 场比赛 (" + (contextHint || "?") + ", " + (xmlText ? xmlText.length : 0) + " bytes)");
 
     return {
       success: matches.length > 0,

@@ -5,7 +5,7 @@
 // ★ 修复：extractFromRequest 超时后清理事件监听器，防止泄漏
 // ★ 修复：Layer1 找到 ver 时直接从 cookies API 补充 uid，跳过 Layer2
 
-import { HG_URL, setUid } from "./browserPool.js";
+import { HG_URL, setUid, getUid } from "./browserPool.js";
 import { extractVerFromRequest, getCurrentVer } from "./transformSigner.js";
 
 // ---- transform.php 基础 URL ----
@@ -28,7 +28,24 @@ function setCachedUid(uid) {
 }
 
 function getCachedUid() {
+  // 最高优先级：global.HG_UID（HgCrawler 登录时从 chk_login 提取）
+  if (global.HG_UID && global.HG_UID.length >= 10 && !global.HG_UID.endsWith("=")) {
+    cachedUid = global.HG_UID;
+    cachedUidAt = Date.now();
+    return global.HG_UID;
+  }
+  // 优先本地缓存
   if (cachedUid && (Date.now() - cachedUidAt) < CACHE_TTL) return cachedUid;
+  // 回退到 browserPool（登录时从 chk_login 提取的 uid）
+  try {
+    const bpUid = getUid();
+    if (bpUid && bpUid.length >= 10 && !bpUid.endsWith("=")) {
+      console.log("[transformApi] getCachedUid: 使用 browserPool 缓存的 uid");
+      cachedUid = bpUid;
+      cachedUidAt = Date.now();
+      return bpUid;
+    }
+  } catch(e) {}
   cachedUid = null;
   return null;
 }
@@ -59,6 +76,12 @@ async function extractFromPage(page) {
     if (params.ver) {
       extractVerFromRequest("transform.php?ver=" + params.ver);
     }
+    // 校验 uid 不是 base64 用户名（endsWith "=" 或长度 < 10）
+    const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
+    if (params.uid && !isValidUid(params.uid)) {
+      console.log("[transformApi] Layer1: cookie uid 是 base64 用户名, 丢弃");
+      params.uid = "";
+    }
     if (params.uid) setCachedUid(params.uid);
 
     // ★ 关键修复：uid 提取优先顺序
@@ -83,6 +106,11 @@ async function extractFromPage(page) {
         const allCookies = await page.cookies();
         for (const c of allCookies) {
           if (c.name.toLowerCase() === "uid" && c.value) {
+            const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
+            if (!isValidUid(c.value)) {
+              console.log("[transformApi] Layer1: page.cookies() uid 也是 base64 用户名, 跳过");
+              continue;
+            }
             params.uid = c.value;
             setCachedUid(c.value);
             console.log("[transformApi] Layer1: uid from page.cookies()");
@@ -122,7 +150,7 @@ async function extractFromRequest(page) {
       timer = setTimeout(() => {
         cleanup();
         reject(new Error("timeout"));
-      }, 5000);
+      }, 10000);
 
       eventHandler = (resp) => {
         const url = resp.url();
@@ -170,8 +198,13 @@ async function extractFromRequest(page) {
         const cookies = await page.cookies();
         for (const c of cookies) {
           if (c.name.toLowerCase() === "uid" && c.value) {
-            uid = c.value;
-            setCachedUid(uid);
+            const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
+            if (isValidUid(c.value)) {
+              uid = c.value;
+              setCachedUid(uid);
+            } else {
+              console.log("[transformApi] Layer2: page.cookies() uid 是 base64 用户名, 丢弃");
+            }
             break;
           }
         }
@@ -229,6 +262,11 @@ export async function extractParams(page) {
       const allCookies = await page.cookies();
       for (const c of allCookies) {
         if (c.name.toLowerCase() === "uid" && c.value) {
+          const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
+          if (!isValidUid(c.value)) {
+            console.log("[transformApi] extractParams: page.cookies() uid 是 base64 用户名, 跳过");
+            continue;
+          }
           setCachedUid(c.value);
           console.log("[transformApi] params from DOM (ver) + page.cookies (uid)");
           return { uid: c.value, ver: dom.ver, langx: dom.langx || "en-us" };
@@ -266,16 +304,24 @@ export async function extractParamsWithRetry(page) {
 
 // ======================== API 请求 ========================
 
-async function fetchInBrowser(page, url) {
+async function fetchInBrowser(page, url, body = null) {
   try {
-    const result = await page.evaluate(async (fetchUrl) => {
+    const result = await page.evaluate(async ({ fetchUrl, fetchBody }) => {
       try {
-        const resp = await fetch(fetchUrl, { method: "GET", credentials: "include" });
+        const opts = { credentials: "include" };
+        if (fetchBody) {
+          opts.method = "POST";
+          opts.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+          opts.body = fetchBody;
+        } else {
+          opts.method = "GET";
+        }
+        const resp = await fetch(fetchUrl, opts);
         if (!resp.ok) return { error: "http_" + resp.status, status: resp.status };
         const text = await resp.text();
         return { ok: true, text, status: resp.status };
       } catch (e) { return { error: e.message, status: 0 }; }
-    }, url);
+    }, { fetchUrl: url, fetchBody: body });
 
     if (result.error) { console.warn("[transformApi] fetch error:", result.error); return null; }
     return result.text;
@@ -283,6 +329,8 @@ async function fetchInBrowser(page, url) {
 }
 
 export async function fetchGameList(page, rtype, extraParams = {}) {
+  const cachedUidDebug = getCachedUid();
+  console.log("[transformApi] fetchGameList: 当前缓存的 uid=" + (cachedUidDebug ? cachedUidDebug.substring(0, 16) + "..." : "MISSING"));
   const params = await extractParamsWithRetry(page);
   if (!params.uid || !params.ver) {
     console.warn("[transformApi] fetchGameList: Missing uid/ver, cannot request");
@@ -290,7 +338,7 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
   }
 
   const ts = Date.now();
-  const query = new URLSearchParams({
+  const body = new URLSearchParams({
     uid: params.uid, ver: params.ver, langx: params.langx || "en-us",
     p: "get_game_list", gtype: "ft",
     showtype: extraParams.showtype || "live",
@@ -300,10 +348,11 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
     ...extraParams,
   });
 
-  const url = API_BASE + "?" + query.toString();
-  console.log("[transformApi] fetching " + rtype + " (get_game_list) ...");
+  // ver 放 URL query，其余参数放 POST body（与真实浏览器行为一致）
+  const url = API_BASE + "?ver=" + encodeURIComponent(params.ver);
+  console.log("[transformApi] fetching " + rtype + " (get_game_list, POST) ...");
 
-  const text = await fetchInBrowser(page, url);
+  const text = await fetchInBrowser(page, url, body.toString());
   if (text) console.log("[transformApi] " + rtype + " response: " + text.length + " bytes");
   return text;
 }
@@ -313,6 +362,8 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
  * 参数格式比 get_game_list 简洁，无 ltype/sorttype/chgSortTS
  */
 export async function fetchGameList_FT(page, rtype) {
+  const cachedUidDebug = getCachedUid();
+  console.log("[transformApi] fetchGameList: 当前缓存的 uid=" + (cachedUidDebug ? cachedUidDebug.substring(0, 16) + "..." : "MISSING"));
   const params = await extractParamsWithRetry(page);
   if (!params.uid || !params.ver) {
     console.warn("[transformApi] fetchGameList_FT: Missing uid/ver, cannot request");
@@ -320,7 +371,7 @@ export async function fetchGameList_FT(page, rtype) {
   }
 
   const ts = Date.now();
-  const query = new URLSearchParams({
+  const body = new URLSearchParams({
     p: "game_list_FT",
     ver: params.ver,
     langx: params.langx || "en-us",
@@ -331,10 +382,10 @@ export async function fetchGameList_FT(page, rtype) {
     rtype: rtype,
   });
 
-  const url = API_BASE + "?" + query.toString();
-  console.log("[transformApi] fetching " + rtype + " (game_list_FT) ...");
+  const url = API_BASE + "?ver=" + encodeURIComponent(params.ver);
+  console.log("[transformApi] fetching " + rtype + " (game_list_FT, POST) ...");
 
-  const text = await fetchInBrowser(page, url);
+  const text = await fetchInBrowser(page, url, body.toString());
   if (text) console.log("[transformApi] " + rtype + " (FT) response: " + text.length + " bytes");
   return text;
 }
@@ -345,13 +396,13 @@ export async function fetchGameDetail(page, ecid) {
   if (!params.uid || !params.ver) return null;
 
   const ts = Date.now();
-  const query = new URLSearchParams({
+  const body = new URLSearchParams({
     uid: params.uid, ver: params.ver, langx: params.langx || "en-us",
     p: "get_game_more", ecid: ecid, ts: String(ts),
   });
 
-  const url = API_BASE + "?" + query.toString();
-  const text = await fetchInBrowser(page, url);
+  const url = API_BASE + "?ver=" + encodeURIComponent(params.ver);
+  const text = await fetchInBrowser(page, url, body.toString());
   if (text) console.log("[transformApi] detail " + ecid + ": " + text.length + " bytes");
   return text;
 }

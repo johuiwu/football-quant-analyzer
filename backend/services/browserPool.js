@@ -1,4 +1,4 @@
-
+﻿
 /**
  * 检查页面是否处于已登录状态（通过 DOM 元素判断）
  */
@@ -49,6 +49,7 @@ let browser = null;
 let sharedPage = null;
 let loginCookies = null;
 let lastBalance = 0;
+let cachedUid = null;
 let isLaunching = false; // 防止重复启动
 let lastActivityTime = 0; // 最后活动时间
 let heartbeatPage = null; // 心跳保活页面
@@ -153,8 +154,8 @@ async function launchBrowser() {
         } catch (_) {}
       }
     });
-    startHeartbeat(bi);
-    console.log("[browserPool] 心跳已启动");
+    // startHeartbeat(bi); // 禁用心跳，避免 about:blank 页面干扰 ensureLogin
+    // console.log("[browserPool] 心跳已启动");
     isLaunching = false;
     lastActivityTime = Date.now();
     return bi;

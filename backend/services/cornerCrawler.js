@@ -175,6 +175,17 @@ async function handlePasscodePage(page, maxRetries = 3) {
         if (btn) btn.click();
       });
       console.log("[cornerCrawler] 已重新登录，等待页面加载...");
+      // 等待 chk_login 响应，确保登录真正完成
+      try {
+        const chkResp = await page.waitForResponse(
+          (resp) => resp.url().includes("chk_login") || resp.url().includes("transform_nl.php"),
+          { timeout: 30000 }
+        );
+        const chkText = await chkResp.text();
+        console.log("[cornerCrawler] handlePasscode: chk_login 响应长度 " + chkText.length);
+      } catch(e) {
+        console.warn("[cornerCrawler] handlePasscode: chk_login 等待超时，继续...");
+      }
       await randomDelay(5000, 7000);
 
       // 验证是否成功离开简易密码页面
@@ -194,8 +205,31 @@ async function handlePasscodePage(page, maxRetries = 3) {
   return { detected: true, handled: false };
 }
 
+// ======================== 轻量 Soccer 标签激活（API 模式专用） ========================
+async function activateSoccerTab(page) {
+
 async function ensureLogin() {
-  // 用户主动关闭浏览器，阻止自动重新登录
+  console.log("[cornerCrawler] API 模式: 激活 Soccer 标签页...");
+  try {
+    await page.waitForSelector("#old_ft_live_league", { timeout: 10000 });
+    await page.click("#old_ft_live_league");
+    console.log("[cornerCrawler] 已点击 Soccer 标签");
+    // 等待页面发出 transform.php 请求（Layer 2 可从中拦截 uid）
+    await page.waitForResponse(
+      (res) => res.url().includes("transform.php") || res.url().includes("transform_nl.php"),
+      { timeout: 15000 }
+    );
+    console.log("[cornerCrawler] transform.php 请求已发出，Layer 2 可拦截 uid");
+    // 等待 ver 被设置
+    await new Promise(r => setTimeout(r, 2000));
+    return true;
+  } catch (e) {
+    console.warn("[cornerCrawler] 激活 Soccer 标签失败:", e.message);
+    return false;
+  }
+}
+
+// 用户主动关闭浏览器，阻止自动重新登录
   if (browserExplicitlyClosed) {
     console.log("[cornerCrawler] 浏览器已被显式关闭，跳过登录");
     return null;
@@ -1473,10 +1507,56 @@ export async function crawlCornerMatches() {
     return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "browser_closed" };
   }
 
+  // ★ API 优先模式：绕过 DOM 导航，直接用浏览器 fetch 获取数据
+  if (process.env.CORNER_API_MODE === "true") {
+    console.log("[cornerCrawler] CORNER_API_MODE=true，使用纯 API 模式");
+    console.log("[cornerCrawler] ===== 纯 API 模式 =====");
+    try {
+      const page = await ensureLogin();
+      if (!page) throw new Error("Login failed");
+
+      // 激活 Soccer 标签页，触发页面发出 transform.php 请求（Layer 2 从中拦截真实 uid）
+      const soccerOk = await activateSoccerTab(page);
+      if (!soccerOk) {
+        console.warn("[cornerCrawler] 无法激活 Soccer 标签页，降级到 DOM 路径");
+        // 继续走 DOM 路径
+      } else {
+        const { fetchCornerMatches } = await import("./cornerApiClient.js");
+      const result = await fetchCornerMatches(page);
+        console.log("[cornerCrawler] API 模式完成: " + (result.matches?.length || 0) + " 场比赛");
+        crawlingLock = false;
+        clearTimeout(lockTimeout);
+        return {
+          success: result.success,
+          data: { matches: result.matches || [], allText: [], allElements: [] },
+          count: result.matches?.length || 0,
+          timestamp: ts,
+          source: "api",
+        };
+      }
+    } catch (apiErr) {
+      console.warn("[cornerCrawler] API 模式失败，降级到 DOM 路径:", apiErr.message);
+      // 继续走 DOM 路径
+    }
+  }
+
   try {
     // 清空上次捕获的 XHR 响应
     capturedResponses = [];
     seenRequestUrls.clear();
+
+    // 强制页面激活：如果 sharedPage 是 about:blank 或无效，重新导航
+    const existingPage2 = getSharedPage();
+    if (existingPage2) {
+      try {
+        const url = existingPage2.url();
+        if (url === "about:blank" || !url) {
+          console.log("[cornerCrawler] Shared page 是 about:blank，强制导航到 HG_URL");
+          await existingPage2.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+          await new Promise(r => setTimeout(r, 5000));
+        }
+      } catch(e) {}
+    }
 
     const page = await ensureLogin();
     if (!page) {
@@ -1642,9 +1722,9 @@ export async function crawlCornerMatches() {
       try {
         const cachedParams = { uid: apiUid, ver: apiVer, langx: "en-us" };
         const [rbXml, rcnXml, rrnouXml] = await Promise.all([
-          fetchGameList(page, RTYPE.RB, {}, cachedParams),
-          fetchGameList(page, RTYPE.RCN, {}, cachedParams),
-          fetchGameList(page, RTYPE.RNOU, {}, cachedParams),
+          fetchGameList(page, RTYPE.RB),
+          fetchGameList(page, RTYPE.RCN),
+          fetchGameList(page, RTYPE.RNOU),
         ]);
         const rcnResult = rcnXml ? parseGameListXML(rcnXml) : { matches: [] };
         const rrnouResult = rrnouXml ? parseGameListXML(rrnouXml) : { matches: [] };

@@ -3,7 +3,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import fs from "fs";
@@ -277,6 +277,17 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
     let popupLastHandledAt = 0;
     let consecutivePopupCount = 0;
 
+    const MAX_RETRIES = 3;
+    let retryCount = 0;
+    while (retryCount < MAX_RETRIES) {
+    if (retryCount > 0) {
+      console.log("[HgCrawler] 登录重试 " + retryCount + "/" + MAX_RETRIES + "...");
+      await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await new Promise((r) => setTimeout(r, 5000));
+      loginClicked = false;
+      consecutivePopupCount = 0;
+      popupLastHandledAt = 0;
+    }
     for (let i = 0; i < 80; i++) {
       await new Promise((r) => setTimeout(r, 1000));
 
@@ -346,6 +357,13 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
         // 点击普通登入后会跳转回登录页面，需要重新输入账号密码
         loginClicked = false;
         console.log("[HgCrawler] 已点击普通登入，等待登录页面加载后重新登录...");
+        // 等待登录表单出现
+        try {
+          await page.waitForSelector("#usr", { timeout: 15000 });
+          console.log("[HgCrawler] 登录表单已加载，将在下一轮自动填表");
+        } catch(e) {
+          console.warn("[HgCrawler] 登录表单未在15s内加载:", e.message);
+        }
         continue;
       }
 
@@ -418,13 +436,56 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
         loginClicked = true;
         consecutivePopupCount = 0;  // reset popup counter
         console.log("[HgCrawler] ✓ 已点击登录按钮");
+
+        // 等待 chk_login 响应以获取真实 uid
+        try {
+          console.log("[HgCrawler] 等待 chk_login 响应 (最多30s)...");
+          const chkResp = await page.waitForResponse(
+            (resp) => resp.url().includes("chk_login") || resp.url().includes("transform_nl.php"),
+            { timeout: 30000 }
+          );
+          const chkText = await chkResp.text();
+          console.log("[HgCrawler] chk_login 响应: " + chkText.substring(0, 200));
+          const uidMatch = chkText.match(/<uid>([^<]+)<\/uid>/);
+          if (uidMatch && uidMatch[1]) {
+            const realUid = uidMatch[1];
+            setUid(realUid);
+            global.HG_UID = realUid;
+            console.log("[HgCrawler] 从 chk_login 提取真实 uid: " + realUid + " (已缓存到 global)");
+          }
+        } catch (chkErr) {
+          console.warn("[HgCrawler] chk_login 等待失败: " + chkErr.message);
+          // 检测是否有验证码
+          const hasCaptcha = await page.evaluate(() => {
+            const iframes = document.querySelectorAll("iframe");
+            for (const f of iframes) {
+              if ((f.src || "").includes("captcha") || (f.src || "").includes("challenge")) return true;
+            }
+            const imgs = document.querySelectorAll("img");
+            for (const i of imgs) {
+              if ((i.src || "").includes("captcha") || (i.alt || "").includes("验证码")) return true;
+            }
+            const bodyText = (document.body?.textContent || "").toLowerCase();
+            if (bodyText.includes("captcha") || bodyText.includes("验证码")) return true;
+            return false;
+          });
+          if (hasCaptcha) {
+            console.warn("[HgCrawler] ⚠ 检测到验证码！需要手动处理。请在浏览器中完成验证码后按任意键继续...");
+            // 等待 120s 给用户手动处理
+            await new Promise(r => setTimeout(r, 120000));
+            console.log("[HgCrawler] 验证码等待结束，继续检测登录状态...");
+          }
+        }
         continue;
       }
     }
 
-    console.log("[HgCrawler] ⚠ 登录超时");
-    crawlerStatus.error = "登录超时";
-    return { success: false, error: "登录超时" };
+    retryCount++;
+    console.log("[HgCrawler] ⚠ 第" + retryCount + "次登录超时");
+    }
+    console.log("[HgCrawler] ⚠ 所有 " + MAX_RETRIES + " 次登录尝试均超时");
+    crawlerStatus.error = "登录超时(已重试" + MAX_RETRIES + "次)";
+    return { success: false, error: "登录超时(已重试" + MAX_RETRIES + "次)" };
   } catch (err) {
     console.error("[HgCrawler] 登录失败:", err.message);
     crawlerStatus.error = err.message;

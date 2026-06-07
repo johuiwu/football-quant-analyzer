@@ -88,10 +88,10 @@ async function pollOnce() {
   cachedMainMarkets = mainMk || {};
   lastFetchTime = Date.now();
 
-  // 无比赛且无主盘口数据时自动暂停轮询，避免反复登录
+  // 不再自动暂停：允许轮询持续运行，等待登录完成后获取数据
   if (matches.length === 0 && Object.keys(mainMk).length === 0) {
-    console.log("[cornerService] 暂无比赛，轮询已暂停");
-    pauseCornerBackendPolling();
+    console.log("[cornerService] 当前无有效比赛，等待下一轮轮询...");
+    // 不调用 pauseCornerBackendPolling()，让轮询持续运行
     return;
   }
 
