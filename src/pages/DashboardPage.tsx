@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   FileCode, Flame, TrendingUp, BarChart3, Download, CheckCircle,
   AlertTriangle, Cpu, Layers, Info, RefreshCw, Sliders, HelpCircle,
-  Dices, Scale, Activity, Calculator, Calendar, X
+  Dices, Scale, Activity, Calculator, Calendar
 } from 'lucide-react';
 import { TeamStats, LEAGUES } from '../data/realTeamsData';
 import { calculateBetsModel, PredictionResults, ModelWeights, AdvancedParams, LiveBayesianParams, calculateBayesianLiveUpdate, convertAsianTo1X2, syncMatchToAsianHandicap, AsianHandicapParams, calculateDynamicAsianHandicap, extractAsianHandicapFeatures, AsianHandicapFeatures, BetsModelInput } from '../utils/quantModel';
@@ -41,8 +41,6 @@ export default function DashboardPage() {
   const isFixturesLoading = useAppStore((s) => s.isFixturesLoading);
   const loadRealTimeFixtures = useAppStore((s) => s.loadRealTimeFixtures);
   const loadRealTimeStandings = useAppStore((s) => s.loadRealTimeStandings);
-  const riskAlerts = useAppStore((s) => s.riskAlerts);
-  const clearRiskAlert = useAppStore((s) => s.clearRiskAlert);
   const liveMatchState = useAppStore((s) => s.liveMatch);
   const dispatchLiveMatch = useAppStore((s) => s.dispatchLiveMatch);
 
@@ -783,59 +781,6 @@ export default function DashboardPage() {
             {/* 右边/中间：量化计算输出看板及决策结论 */}
             <div className="lg:col-span-8 flex flex-col gap-6">
               
-              {/* 动态风险警示栏 */}
-              {riskAlerts.length > 0 && (
-                <div className="space-y-2">
-                  {riskAlerts.map(alert => (
-                    <div 
-                      key={alert.id}
-                      className={`p-3 rounded-xl border flex items-center justify-between ${
-                        alert.severity === 'high' ? 'bg-red-950/70 border-red-500/50' :
-                        alert.severity === 'medium' ? 'bg-amber-950/70 border-amber-500/50' :
-                        'bg-blue-950/70 border-blue-500/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <AlertTriangle className={`w-4 h-4 ${
-                          alert.severity === 'high' ? 'text-red-400' :
-                          alert.severity === 'medium' ? 'text-amber-400' :
-                          'text-blue-400'
-                        }`} />
-                        <div>
-                          <span className={`text-xs font-bold ${
-                            alert.severity === 'high' ? 'text-red-300' :
-                            alert.severity === 'medium' ? 'text-amber-300' :
-                            'text-blue-300'
-                          }`}>
-                            {alert.type === 'line_change' ? '盘口异动' :
-                             alert.type === 'lineup_issue' ? '首发异常' :
-                             alert.type === 'injury_alert' ? '伤病预警' :
-                             '系统警告'}
-                          </span>
-                          <p className={`text-xs ${
-                            alert.severity === 'high' ? 'text-red-200' :
-                            alert.severity === 'medium' ? 'text-amber-200' :
-                            'text-blue-200'
-                          }`}>
-                            {alert.message}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {alert.timestamp.toLocaleTimeString('zh-CN', { hour12: false })}
-                        </span>
-                        <button
-                          onClick={() => clearRiskAlert(alert.id)}
-                          className="p-1 hover:bg-slate-800/50 rounded transition-colors"
-                        >
-                          <X className="w-3.5 h-3.5 text-slate-400" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
 
 
               {calculationError && (

@@ -5,7 +5,6 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { WorldCupDashboard } from "./components/WorldCupDashboard";
 import { useFixtureSync } from "./hooks/useFixtureSync";
 import { useTeamDataSync } from "./hooks/useTeamDataSync";
-import { useRiskAlerts } from "./hooks/useRiskAlerts";
 import PageHeader from "./components/PageHeader";
 import StandingsPage from "./pages/StandingsPage";
 import CornerSystemPage from "./pages/CornerSystemPage";
@@ -34,7 +33,6 @@ function AppNewContent() {
   const setFixtureSyncMsg = useAppStore((s) => s.setFixtureSyncMsg);
   const setFixtureSyncSource = useAppStore((s) => s.setFixtureSyncSource);
   const setLoadRealTimeFixtures = useAppStore((s) => s.setLoadRealTimeFixtures);
-  const setRiskAlerts = useAppStore((s) => s.setRiskAlerts);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
 
   const navigate = useNavigate();
@@ -74,7 +72,6 @@ function AppNewContent() {
   // 浣跨敤閲嶆瀯鍚庣殑 Hooks
   const fixtureSync = useFixtureSync();
   const teamDataSync = useTeamDataSync();
-  const riskAlertsHook = useRiskAlerts();
 
   const {
     fixtures,
@@ -92,7 +89,6 @@ function AppNewContent() {
     loadRealTimeStandings
   } = teamDataSync;
 
-  const { alerts: riskAlerts } = riskAlertsHook;
 
   // 灏?Hook 鏁版嵁鍚屾鍒?Store
   useEffect(() => { setTeams(teams); }, [teams, setTeams]);
@@ -104,7 +100,6 @@ function AppNewContent() {
   useEffect(() => { setFixtureSyncMsg(fixtureSyncMsg); }, [fixtureSyncMsg, setFixtureSyncMsg]);
   useEffect(() => { setFixtureSyncSource(fixtureSyncSource); }, [fixtureSyncSource, setFixtureSyncSource]);
   useEffect(() => { setLoadRealTimeFixtures(loadRealTimeFixtures); }, [loadRealTimeFixtures, setLoadRealTimeFixtures]);
-  useEffect(() => { setRiskAlerts(riskAlerts); }, [riskAlerts, setRiskAlerts]);
 
 
   return (

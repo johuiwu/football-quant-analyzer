@@ -69,7 +69,6 @@ export interface AppStore {
   fixtureSyncSource: string;
 
   // 风险 + 权重
-  riskAlerts: any[];
   customWeights: ModelWeights;
 
   // 实时比赛
@@ -108,8 +107,6 @@ export interface AppStore {
   setLoadRealTimeStandings: (fn: () => void) => void;
   setLoadRealTimeFixtures: (fn: () => void) => void;
 
-  setRiskAlerts: (alerts: any[]) => void;
-  clearRiskAlert: (id: number) => void;
   setCustomWeights: (weights: ModelWeights) => void;
 
   dispatchLiveMatch: (action: LiveMatchAction) => void;
@@ -148,7 +145,6 @@ const defaultState = {
   fixtureSyncMsg: "",
   fixtureSyncSource: "",
 
-  riskAlerts: [] as any[],
   customWeights: { odds: 0.45, strength: 0.30, homeAway: 0.15, h2h: 0.10, form: 0.05 } as ModelWeights,
 
   liveMatch: initialLiveMatch,
@@ -206,7 +202,6 @@ export const useAppStore = create<AppStore>((set) => ({
   setAwayAndGo: (teamId, league) => set({ selectedAwayId: teamId, selectedAwayLeague: league, activeTab: "dashboard" }),
   resetToDefaults: () => set({
     customWeights: { odds: 0.45, strength: 0.30, homeAway: 0.15, h2h: 0.10, form: 0.05 } as ModelWeights,
-    riskAlerts: [] as any[],
     liveMatch: initialLiveMatch,
   }),
   setTeamsPageTeam: (teamId, stats) => set({ teamsPageTeamId: teamId, teamsPageTeamStats: stats }),
@@ -223,8 +218,6 @@ export const useAppStore = create<AppStore>((set) => ({
   setLoadRealTimeStandings: (fn) => set({ loadRealTimeStandings: fn }),
   setLoadRealTimeFixtures: (fn) => set({ loadRealTimeFixtures: fn }),
 
-  setRiskAlerts: (alerts) => set({ riskAlerts: alerts }),
-  clearRiskAlert: (id) => set((state) => ({ riskAlerts: state.riskAlerts.filter((a: any) => a.id !== id) })),
   setCustomWeights: (weights) => set({ customWeights: weights }),
 
   dispatchLiveMatch: (action) => set((state) => ({ liveMatch: liveMatchReducer(state.liveMatch, action) })),

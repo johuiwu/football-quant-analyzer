@@ -205,37 +205,34 @@ async function handlePasscodePage(page, maxRetries = 3) {
   return { detected: true, handled: false };
 }
 
-// ======================== 轻量 Soccer 标签激活（API 模式专用） ========================
+// ======================== 轻量 Soccer 标签激活（API 模式专用）========================
 async function activateSoccerTab(page) {
-
-async function ensureLogin() {
-  console.log("[cornerCrawler] API 模式: 激活 Soccer 标签页...");
+  console.log('[cornerCrawler] 导航到 Soccer 标签页...');
   try {
-    await page.waitForSelector("#old_ft_live_league", { timeout: 10000 });
-    await page.click("#old_ft_live_league");
-    console.log("[cornerCrawler] 已点击 Soccer 标签");
-    // 等待页面发出 transform.php 请求（Layer 2 可从中拦截 uid）
+    await page.waitForSelector('#old_ft_live_league', { timeout: 10000 });
+    await page.click('#old_ft_live_league');
+    console.log('[cornerCrawler] 已点击 Soccer 标签');
     await page.waitForResponse(
-      (res) => res.url().includes("transform.php") || res.url().includes("transform_nl.php"),
+      (res) => res.url().includes('transform.php') || res.url().includes('transform_nl.php'),
       { timeout: 15000 }
     );
-    console.log("[cornerCrawler] transform.php 请求已发出，Layer 2 可拦截 uid");
-    // 等待 ver 被设置
-    await new Promise(r => setTimeout(r, 2000));
+    console.log('[cornerCrawler] transform.php 请求已发出');
     return true;
   } catch (e) {
-    console.warn("[cornerCrawler] 激活 Soccer 标签失败:", e.message);
+    console.warn('[cornerCrawler] 导航到 Soccer 标签页失败:', e.message);
     return false;
   }
 }
 
-// 用户主动关闭浏览器，阻止自动重新登录
+async function ensureLogin() {
+  // 用户主动关闭浏览器，阻止自动重新登录
   if (browserExplicitlyClosed) {
     console.log("[cornerCrawler] 浏览器已被显式关闭，跳过登录");
     return null;
   }
 
   browserExplicitlyClosed = false;
+
   const _loginStart = Date.now();
 
   // 登录并发保护
