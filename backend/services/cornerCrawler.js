@@ -5,10 +5,13 @@ import path from "path";
 import {
   getSharedBrowser, getSharedPage, setSharedPage,
   getLoginCookies, setLoginCookies,
-  getBalance, setBalance, isLoggedIn, isBrowserActive,
+  getBalance, setBalance, isLoggedIn, isBrowserActive, getUid,
   closeSharedBrowser, HG_URL,
   saveCookiesToDisk, loadCookiesFromDisk
 } from "./browserPool.js";
+import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
+import { fetchGameList, RTYPE } from "./transformApi.js";
+import { parseGameListXML } from "./xhrDataParser.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
 
 puppeteer.use(StealthPlugin());
@@ -1105,8 +1108,17 @@ async function setupXHRInterception(page) {
 
     try {
       const text = await response.text();
+      // Extract ver signature for subsequent API calls
+      if (url.includes("transform.php") || url.includes("transform_nl.php")) {
+        extractVerFromRequest(url);
+      }
+
+      // Try to parse as JSON (transform_nl.php returns JSON)
       let jsonData = null;
-      try { jsonData = JSON.parse(text); } catch (e) { return; }
+      try { jsonData = JSON.parse(text); } catch (e) {
+        // transform.php returns XML, JSON parse failure is expected
+        // Continue to check for XML format match data
+      }
 
       // transform.php 处理 - 扩展：尝试从任意响应提取比赛数据
       if (url.includes("transform.php") || url.includes("transform_nl.php")) {
@@ -1600,6 +1612,71 @@ export async function crawlCornerMatches() {
           }
         }
       }
+    }
+
+        
+    // ★ 混合模式：API 增强盘口数据
+    const apiUid = getUid();
+    const apiVer = getCurrentVer();
+    if (apiUid && apiVer && matches.length > 0) {
+      console.log("[cornerCrawler] 并行请求 API 增强盘口数据...");
+      try {
+        const cachedParams = { uid: apiUid, ver: apiVer, langx: "en-us" };
+        const [rbXml, rcnXml, rrnouXml] = await Promise.all([
+          fetchGameList(page, RTYPE.RB, {}, cachedParams),
+          fetchGameList(page, RTYPE.RCN, {}, cachedParams),
+          fetchGameList(page, RTYPE.RNOU, {}, cachedParams),
+        ]);
+        const rcnResult = rcnXml ? parseGameListXML(rcnXml) : { matches: [] };
+        const rrnouResult = rrnouXml ? parseGameListXML(rrnouXml) : { matches: [] };
+
+        // 按球队名建立索引（API 返回的 matchId/GID 与 DOM matchId 不同）
+        const rcnByName = new Map();
+        for (const m of (rcnResult.matches || [])) {
+          const key = (m.homeTeam + "|" + m.awayTeam).toLowerCase();
+          rcnByName.set(key, m);
+        }
+        const rrnouByName = new Map();
+        for (const m of (rrnouResult.matches || [])) {
+          const key = (m.homeTeam + "|" + m.awayTeam).toLowerCase();
+          rrnouByName.set(key, m);
+        }
+
+        let enrichedCount = 0;
+        for (const match of matches) {
+          const key = (match.homeTeam + "|" + match.awayTeam).toLowerCase();
+          const rcn = rcnByName.get(key);
+          const rrn = rrnouByName.get(key);
+
+          if (rcn) {
+            match._cornerOULine = rcn._cornerOULine || "";
+            match._cornerOUOdds = rcn._cornerOUOdds || "";
+            match._hasCornerMarket = rcn._hasCornerMarket || false;
+          }
+          if (rrn) {
+            match._hdpLine = rrn._hdpLine || "";
+            match._hdpHomeOdds = rrn._hdpHomeOdds || "";
+            match._hdpAwayOdds = rrn._hdpAwayOdds || "";
+            match._ouLine = rrn._ouLine || "";
+            match._ouOverOdds = rrn._ouOverOdds || "";
+            match._ouUnderOdds = rrn._ouUnderOdds || "";
+          }
+          if (rcn || rrn) enrichedCount++;
+        }
+        console.log("[cornerCrawler] API 增强完成: " + enrichedCount + "/" + matches.length + " 场比赛已补充盘口数据");
+        for (const m of matches) {
+          m._dataSource = "dom+api";
+        }
+      } catch (apiErr) {
+        console.warn("[cornerCrawler] API 增强失败，降级为纯 DOM 数据:", apiErr.message);
+        for (const m of matches) {
+          m._dataSource = "dom";
+        }
+      }
+    } else {
+      if (!apiUid) console.log("[cornerCrawler] 无缓存 uid，跳过 API 增强");
+      else if (!apiVer) console.log("[cornerCrawler] 无缓存 ver，跳过 API 增强");
+      else console.log("[cornerCrawler] 无比赛数据，跳过 API 增强");
     }
 
         console.log("[cornerCrawler] ===== Done: " + matches.length + " corner matches =====");

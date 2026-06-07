@@ -244,6 +244,15 @@ function setBalance(balance) {
   lastBalance = balance;
 }
 
+function getUid() {
+  return cachedUid;
+}
+
+function setUid(uid) {
+  cachedUid = uid;
+  console.log("[browserPool] uid 已缓存: " + (uid ? uid.substring(0, 16) : "null") + "...");
+}
+
 function isLoggedIn() {
   // 检查是否有共享页面且浏览器活跃
   return !!sharedPage && isBrowserActive();
@@ -323,6 +332,8 @@ export {
   setLoginCookies,
   getBalance,
   setBalance,
+  getUid,
+  setUid,
   isLoggedIn,
   isBrowserActive,
   closeSharedBrowser,
