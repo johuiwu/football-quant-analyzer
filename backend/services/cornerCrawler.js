@@ -1352,8 +1352,23 @@ export async function crawlCornerMatches() {
     console.log("[cornerCrawler] CORNER_API_MODE=true，使用纯 API 模式");
     console.log("[cornerCrawler] ===== 纯 API 模式 =====");
     try {
-      const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-      if (!loginOk || !page) throw new Error("StableLogin 登录失败");
+      let page = getSharedPage();
+      let loginOk = false;
+      try {
+        loginOk = await page.evaluate(() => {
+          const soccerTab = document.querySelector('#old_ft_live_league:not([style*="display: none"])');
+          return !!soccerTab;
+        }).catch(() => false);
+      } catch (e) {}
+
+      if (!loginOk) {
+        console.log('[cornerCrawler] 页面未登录，执行完整登录...');
+        const result = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+        if (!result.success || !result.page) throw new Error(result?.error || 'StableLogin 登录失败');
+        page = result.page;
+      } else {
+        console.log('[cornerCrawler] 页面已处于登录状态，跳过登录步骤');
+      }
 
       // 激活 Soccer 标签页，触发页面发出 transform.php 请求（Layer 2 从中拦截真实 uid）
       const soccerOk = await activateSoccerTab(page);
