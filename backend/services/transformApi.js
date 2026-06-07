@@ -53,19 +53,28 @@ function getCachedUid() {
 // ======================== 参数提取（三层 fallback）========================
 
 /**
- * Layer 1: 从 DOM context + page.cookies() 读取 uid/ver
- * 增加 page.cookies() 回退（因为 document.cookie 无法读取 HttpOnly cookie 中的 uid）
+ * Layer 1: 从 DOM context 读取 uid/ver
+ * ★ 修复：优先从 top.uid DOM 全局变量提取（页面 JS 登录后设置），
+ *   而非 cookie（uid 是 HttpOnly，document.cookie 读不到）
  */
 async function extractFromPage(page) {
   try {
     const params = await page.evaluate(() => {
-      // uid from cookie (non-HttpOnly only)
-      const cookies = document.cookie.split(";").map(c => c.trim());
+      // ★ 优先从 top.uid / window.uid 提取（页面 JS 登录后设置的全局变量）
       let uid = "";
-      for (const c of cookies) {
-        const parts = c.split("=");
-        if (parts[0].trim() === "uid") { uid = parts.slice(1).join("="); break; }
+      try { uid = top.uid || window.uid || ""; } catch(e) { uid = window.uid || ""; }
+
+      // 如果 top.uid 无效（undefined / 长度不足 / base64 用户名），再从 cookie 读取
+      const isValidUid = (u) => u && u !== "undefined" && u.length >= 10 && !u.endsWith("=");
+      if (!isValidUid(uid)) {
+        uid = "";
+        const cookies = document.cookie.split(";").map(c => c.trim());
+        for (const c of cookies) {
+          const parts = c.split("=");
+          if (parts[0].trim() === "uid") { uid = parts.slice(1).join("="); break; }
+        }
       }
+
       // ver from global
       let ver = "";
       try { ver = top.ver || window.ver || ""; } catch(e) { ver = window.ver || ""; }
@@ -76,24 +85,23 @@ async function extractFromPage(page) {
     if (params.ver) {
       extractVerFromRequest("transform.php?ver=" + params.ver);
     }
-    // 校验 uid 不是 base64 用户名（endsWith "=" 或长度 < 10）
-    const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
+    // 校验 uid 不是 base64 用户名（endsWith "=" 或长度 < 10）也不是 "undefined"
+    const isValidUid = (u) => u && u !== "undefined" && u.length >= 10 && !u.endsWith("=");
     if (params.uid && !isValidUid(params.uid)) {
-      console.log("[transformApi] Layer1: cookie uid 是 base64 用户名, 丢弃");
+      console.log("[transformApi] Layer1: cookie uid 是 base64 用户名或无效, 丢弃: " + params.uid.substring(0, 16));
       params.uid = "";
     }
-    if (params.uid) setCachedUid(params.uid);
+    if (params.uid) {
+      setCachedUid(params.uid);
+      console.log("[transformApi] Layer1: uid from top.uid/window.uid: " + params.uid.substring(0, 12) + "...");
+    }
 
-    // ★ 关键修复：uid 提取优先顺序
-    // 1) 从页面 URL 提取（登录后 uid 出现在 URL query string 中）
-    // 2) 从 page.cookies() 提取（但 UID cookie 存的是 base64 用户名，不是真正的 uid）
-    // 3) 从拦截的 POST 请求中提取（见 Layer 2）
+    // 回退：从页面 URL 提取 uid
     if (!params.uid) {
       try {
-        // 尝试从页面 URL 提取 uid
         const pageUrl = page.url();
         const urlMatch = pageUrl.match(/[?&]uid=([^&]+)/);
-        if (urlMatch && urlMatch[1]) {
+        if (urlMatch && urlMatch[1] && isValidUid(urlMatch[1])) {
           params.uid = urlMatch[1];
           setCachedUid(urlMatch[1]);
           console.log("[transformApi] Layer1: uid from page URL");
@@ -101,12 +109,12 @@ async function extractFromPage(page) {
       } catch (e) { /* ignore */ }
     }
 
+    // 回退：从 page.cookies() 提取（但 UID cookie 存的是 base64 用户名，不是真正的 uid）
     if (!params.uid) {
       try {
         const allCookies = await page.cookies();
         for (const c of allCookies) {
           if (c.name.toLowerCase() === "uid" && c.value) {
-            const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
             if (!isValidUid(c.value)) {
               console.log("[transformApi] Layer1: page.cookies() uid 也是 base64 用户名, 跳过");
               continue;
@@ -238,48 +246,101 @@ function extractFromCache() {
   return { uid: "", ver: "", langx: "en-us" };
 }
 
+// ======================== 主动 uid 获取 ========================
+
+/**
+ * 主动确保 uid 可用：如果缓存中没有，从 DOM 全局变量或请求拦截获取
+ * ★ 修复：解决 uid 提取时序问题（chk_login 响应可能还未到达）
+ */
+async function ensureUid(page) {
+  // 1. 先检查缓存（含 global.HG_UID 和 browserPool）
+  const cached = getCachedUid();
+  if (cached) return cached;
+
+  // 2. 从 DOM 全局变量获取（top.uid 是页面 JS 登录后设置的全局变量）
+  try {
+    const uid = await page.evaluate(() => {
+      try { return top.uid || window.uid || ""; } catch(e) { return window.uid || ""; }
+    });
+    if (uid && uid !== "undefined" && uid.length >= 10 && !uid.endsWith("=")) {
+      setCachedUid(uid);
+      console.log("[transformApi] ensureUid: uid from top.uid: " + uid.substring(0, 12) + "...");
+      return uid;
+    }
+  } catch (e) {}
+
+  // 3. 从页面即将发出的 POST body 拦截（等待下一个带有效 uid 的请求）
+  try {
+    console.log("[transformApi] ensureUid: 等待带 uid 的请求...");
+    const uidFromRequest = await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        page.off("request", handler);
+        resolve(null);
+      }, 8000);
+
+      const handler = (req) => {
+        const body = req.postData() || "";
+        const match = body.match(/uid=([a-zA-Z0-9]{10,})/);
+        if (match && match[1] && match[1] !== "undefined" && !match[1].endsWith("=")) {
+          clearTimeout(timer);
+          page.off("request", handler);
+          resolve(match[1]);
+        }
+      };
+      page.on("request", handler);
+    });
+    if (uidFromRequest) {
+      setCachedUid(uidFromRequest);
+      console.log("[transformApi] ensureUid: uid from request body: " + uidFromRequest.substring(0, 12) + "...");
+      return uidFromRequest;
+    }
+  } catch (e) {}
+
+  console.warn("[transformApi] ensureUid: 所有方法均失败");
+  return null;
+}
+
 // ======================== 主入口 ========================
 
 /**
- * 提取 transform.php 请求参数（三层 fallback 链）
- * Layer 1 → Layer 1.5(ver已有,用page.cookies补uid) → Layer 2 → Layer 3
+ * 提取 transform.php 请求参数（三层 fallback 链 + ensureUid）
  */
 export async function extractParams(page) {
   // 1. 缓存
   const cached = extractFromCache();
   if (cached.uid && cached.ver) return cached;
 
-  // 2. DOM context (包含 page.cookies() HttpOnly 回退)
+  // 2. DOM context（优先 top.uid，回退 cookie）
   const dom = await extractFromPage(page);
   if (dom.uid && dom.ver) {
     console.log("[transformApi] params from DOM context");
     return dom;
   }
 
-  // ★ 关键修复：如果 Layer 1 找到了 ver 但没有 uid，尝试从 page.cookies() 补充 uid
+  // 3. 如果 ver 已有但 uid 缺失，主动获取 uid
   if (dom.ver && !dom.uid) {
-    try {
-      const allCookies = await page.cookies();
-      for (const c of allCookies) {
-        if (c.name.toLowerCase() === "uid" && c.value) {
-          const isValidUid = (u) => u && u.length >= 10 && !u.endsWith("=");
-          if (!isValidUid(c.value)) {
-            console.log("[transformApi] extractParams: page.cookies() uid 是 base64 用户名, 跳过");
-            continue;
-          }
-          setCachedUid(c.value);
-          console.log("[transformApi] params from DOM (ver) + page.cookies (uid)");
-          return { uid: c.value, ver: dom.ver, langx: dom.langx || "en-us" };
-        }
-      }
-    } catch (e) { /* ignore */ }
+    const uid = await ensureUid(page);
+    if (uid) {
+      console.log("[transformApi] params from DOM (ver) + ensureUid");
+      return { uid, ver: dom.ver, langx: dom.langx || "en-us" };
+    }
   }
 
-  // 3. 请求拦截（启动监听器等待 transform 请求，最大 5s）
+  // 4. 请求拦截（等待 transform 请求）
   const intercepted = await extractFromRequest(page);
   if (intercepted.uid && intercepted.ver) {
     console.log("[transformApi] params from request interception");
     return intercepted;
+  }
+
+  // 5. 最后尝试：ver 从缓存，uid 从 ensureUid
+  const ver = getCurrentVer() || dom.ver || intercepted.ver;
+  if (ver) {
+    const uid = await ensureUid(page);
+    if (uid) {
+      console.log("[transformApi] params from fallback (ver cache + ensureUid)");
+      return { uid, ver, langx: "en-us" };
+    }
   }
 
   console.warn("[transformApi] all extraction methods failed");

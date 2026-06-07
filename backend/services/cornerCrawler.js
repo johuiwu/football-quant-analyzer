@@ -15,6 +15,16 @@ import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
 import { fetchGameList, RTYPE, extractParamsWithRetry } from "./transformApi.js";
 import { parseGameListXML } from "./xhrDataParser.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
+import {
+  extractTokenFromUrl as gismoExtractToken,
+  extractMatchIdFromUrl as gismoExtractMatchId,
+  processGismoResponse,
+  fetchCornerData,
+  fetchAllCornerData,
+  findCornerDataByTeamName,
+  getGismoStatus,
+  resetAll as gismoResetAll,
+} from "./gismoApiClient.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -1092,6 +1102,9 @@ async function setupXHRInterception(page) {
 
       // Betradar / Sportradar gismo API interception
       if (url.includes("betradar.hgapp0003.com") || url.includes("ws-fn-cdn001.akamaized.net")) {
+        // ★ gismo API：提取 token、matchId、角球数据
+        processGismoResponse(url, jsonData);
+
         if (saveCount < 5) {
           try {
             const fname = "debug/betradar-" + Date.now() + ".json";
@@ -1406,12 +1419,54 @@ export async function crawlCornerMatches() {
       const { fetchCornerMatches } = await import("./cornerApiClient.js");
       const result = await fetchCornerMatches(page);
         console.log("[cornerCrawler] API 模式完成: " + (result.matches?.length || 0) + " 场比赛");
+
+        // ★ API 模式下也补充 gismo 角球数
+        const gismoStatus = getGismoStatus();
+        const apiMatches = result.matches || [];
+        if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0 && apiMatches.length > 0) {
+          console.log("[cornerCrawler] API 模式 gismo 补充: token=" + gismoStatus.tokenAge + ", matchIds=" + gismoStatus.matchIdCount);
+          try {
+            let gismoEnriched = 0;
+            // 先匹配已缓存数据
+            for (const match of apiMatches) {
+              const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
+              if (gismoCorner) {
+                match.homeCorners = gismoCorner.homeCorners;
+                match.awayCorners = gismoCorner.awayCorners;
+                match.totalCorners = gismoCorner.totalCorners;
+                match._cornerSource = "gismo";
+                match._gismoMatchId = gismoCorner.matchId;
+                gismoEnriched++;
+              }
+            }
+            // 主动请求未匹配的
+            const unmatched = apiMatches.filter(m => m._cornerSource !== "gismo");
+            if (unmatched.length > 0) {
+              await fetchAllCornerData(page);
+              for (const match of unmatched) {
+                const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
+                if (gismoCorner) {
+                  match.homeCorners = gismoCorner.homeCorners;
+                  match.awayCorners = gismoCorner.awayCorners;
+                  match.totalCorners = gismoCorner.totalCorners;
+                  match._cornerSource = "gismo";
+                  match._gismoMatchId = gismoCorner.matchId;
+                  gismoEnriched++;
+                }
+              }
+            }
+            console.log("[cornerCrawler] API 模式 gismo 补充: " + gismoEnriched + "/" + apiMatches.length);
+          } catch (gismoErr) {
+            console.warn("[cornerCrawler] API 模式 gismo 补充失败:", gismoErr.message);
+          }
+        }
+
         crawlingLock = false;
         clearTimeout(lockTimeout);
         return {
           success: result.success,
-          data: { matches: result.matches || [], allText: [], allElements: [] },
-          count: result.matches?.length || 0,
+          data: { matches: apiMatches, allText: [], allElements: [] },
+          count: apiMatches.length,
           timestamp: ts,
           source: "api",
         };
@@ -1657,6 +1712,55 @@ export async function crawlCornerMatches() {
       if (!apiUid) console.log("[cornerCrawler] 无缓存 uid，跳过 API 增强");
       else if (!apiVer) console.log("[cornerCrawler] 无缓存 ver，跳过 API 增强");
       else console.log("[cornerCrawler] 无比赛数据，跳过 API 增强");
+    }
+
+    // ★ gismo 角球数补充：从 Sportradar CDN 获取精确角球数统计
+    const gismoStatus = getGismoStatus();
+    if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0 && matches.length > 0) {
+      console.log("[cornerCrawler] gismo 数据补充: token=" + gismoStatus.tokenAge + ", matchIds=" + gismoStatus.matchIdCount);
+      try {
+        // 1. 先尝试按球队名匹配已缓存的 gismo 数据
+        let gismoEnriched = 0;
+        for (const match of matches) {
+          const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
+          if (gismoCorner) {
+            // gismo 角球数优先级高于 DOM/XHR（更精确）
+            match.homeCorners = gismoCorner.homeCorners;
+            match.awayCorners = gismoCorner.awayCorners;
+            match.totalCorners = gismoCorner.totalCorners;
+            match._cornerSource = "gismo";
+            match._gismoMatchId = gismoCorner.matchId;
+            gismoEnriched++;
+          }
+        }
+
+        // 2. 如果还有未匹配的比赛，主动请求 gismo API
+        const unmatched = matches.filter(m => m._cornerSource !== "gismo");
+        if (unmatched.length > 0 && gismoStatus.hasToken) {
+          console.log("[cornerCrawler] 主动请求 gismo API 补充 " + unmatched.length + " 场未匹配比赛...");
+          const allCornerData = await fetchAllCornerData(page);
+          for (const match of unmatched) {
+            // 再次尝试按球队名匹配
+            const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
+            if (gismoCorner) {
+              match.homeCorners = gismoCorner.homeCorners;
+              match.awayCorners = gismoCorner.awayCorners;
+              match.totalCorners = gismoCorner.totalCorners;
+              match._cornerSource = "gismo";
+              match._gismoMatchId = gismoCorner.matchId;
+              gismoEnriched++;
+            }
+          }
+        }
+
+        console.log("[cornerCrawler] gismo 补充完成: " + gismoEnriched + "/" + matches.length + " 场比赛已获取精确角球数");
+      } catch (gismoErr) {
+        console.warn("[cornerCrawler] gismo 数据补充失败:", gismoErr.message);
+      }
+    } else {
+      if (!gismoStatus.hasToken) console.log("[cornerCrawler] 无 gismo token，跳过角球数补充");
+      else if (gismoStatus.matchIdCount === 0) console.log("[cornerCrawler] 无 gismo matchId，跳过角球数补充");
+      else console.log("[cornerCrawler] 无比赛数据，跳过 gismo 补充");
     }
 
         console.log("[cornerCrawler] ===== Done: " + matches.length + " corner matches =====");

@@ -1,4 +1,4 @@
-﻿// ======================== transform.php 签名提取与缓存 ========================
+// ======================== transform.php 签名提取与缓存 ========================
 // 从拦截到的 transform.php?ver=xxx 中提取签名参数，缓存后供直连使用
 
 import crypto from "crypto";
@@ -6,7 +6,7 @@ import crypto from "crypto";
 // ---- 签名缓存 ----
 let cachedVer = null;
 let cachedAt = 0;
-const TTL_MS = 60000; // 60s TTL
+const TTL_MS = 120000; // 120s TTL（与页面刷新频率匹配）
 
 /**
  * 从拦截到的 transform.php URL 中提取 ver 签名参数并缓存
