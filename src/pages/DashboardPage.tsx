@@ -858,6 +858,7 @@ export default function DashboardPage() {
                     results={results}
                     homeTeamName={home.nameCn}
                     awayTeamName={away.nameCn}
+                    handicap={asianHandicap.handicap}
                   />
 
                   {/* E. 推荐方向精简决策板 */}
@@ -1531,4 +1532,5 @@ export default function DashboardPage() {
           </div>
   );
 }
+
 

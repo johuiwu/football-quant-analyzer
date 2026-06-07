@@ -17,10 +17,10 @@ interface Props {
   marketOdds: MarketOdds;
   results?: any;
   homeTeamName?: string;
-  awayTeamName?: string;
+  handicap?: number;
 }
 
-export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName }: Props) {
+export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap }: Props) {
   const liveMatch = useAppStore((s) => s.liveMatch);
   const selectedHomeId = useAppStore((s) => s.selectedHomeId);
   const selectedAwayId = useAppStore((s) => s.selectedAwayId);
@@ -251,6 +251,14 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
     }
   }, [recommendation.aggregatedDirection, recommendation.direction, homeTeamDisplay, awayTeamDisplay]);
 
+  const handicapLabel = useMemo(() => {
+    if (recommendation.aggregatedDirection === 'OVER' || 
+        recommendation.aggregatedDirection === 'UNDER') return '';
+    if (handicap === undefined || handicap === null) return '';
+    if (handicap === 0) return '（平手）';
+    if (handicap < 0) return `（让${Math.abs(handicap)}球）`;
+    return `（受让${handicap}球）`;
+  }, [handicap, recommendation.aggregatedDirection]);
   const getConfidenceColor = (confidence: number) => {
     if (confidence > 0.7) return 'text-emerald-400';
     if (confidence > 0.5) return 'text-yellow-400';
@@ -268,7 +276,7 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
               <span className="text-xl font-bold text-white">终极多核推荐:</span>
             </div>
             <span className={`text-3xl font-black ${recommendation.colorClass} bg-clip-text text-transparent ${recommendation.glowClass}`}>
-              {displayDirection}
+              {displayDirection} {handicapLabel && <span className="text-lg text-slate-400 font-normal ml-1">{handicapLabel}</span>}
             </span>
             <span className={`text-lg font-mono font-bold ${recommendation.colorClass} bg-clip-text text-transparent ${recommendation.glowClass} uppercase`}>
               ({(() => {
