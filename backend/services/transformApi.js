@@ -5,7 +5,7 @@
 // ★ 修复：extractFromRequest 超时后清理事件监听器，防止泄漏
 // ★ 修复：Layer1 找到 ver 时直接从 cookies API 补充 uid，跳过 Layer2
 
-import { HG_URL } from "./browserPool.js";
+import { HG_URL, setUid } from "./browserPool.js";
 import { extractVerFromRequest, getCurrentVer } from "./transformSigner.js";
 
 // ---- transform.php 基础 URL ----
@@ -24,7 +24,7 @@ let cachedUidAt = 0;
 const CACHE_TTL = 60000; // 60s
 
 function setCachedUid(uid) {
-  if (uid) { cachedUid = uid; cachedUidAt = Date.now(); }
+  if (uid) { cachedUid = uid; cachedUidAt = Date.now(); setUid(uid); }
 }
 
 function getCachedUid() {
@@ -136,10 +136,19 @@ async function extractFromRequest(page) {
 
       page.on("response", eventHandler);
 
-      // request 事件兜底（setRequestInterception 模式）
+            // request handler (also extracts uid from POST body)
       reqHandler = (req) => {
         const url = req.url();
         if (url.includes("transform") && url.includes("ver=")) {
+          // Extract ver from URL
+          extractVerFromRequest(url);
+          // Extract uid from POST body
+          const body = req.postData() || "";
+          const uidMatch = body.match(/uid=([^&\\s]+)/);
+          if (uidMatch && uidMatch[1]) {
+            setCachedUid(uidMatch[1]);
+            console.log("[transformApi] Layer2: uid from POST body");
+          }
           clearTimeout(timer);
           cleanup();
           resolve({ url: () => url });

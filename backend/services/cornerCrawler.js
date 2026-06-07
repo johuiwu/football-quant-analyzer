@@ -9,8 +9,9 @@ import {
   closeSharedBrowser, HG_URL,
   saveCookiesToDisk, loadCookiesFromDisk
 } from "./browserPool.js";
+import { loginToHG as hgLoginToHG } from "./hgCrawlerService.js";
 import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
-import { fetchGameList, RTYPE } from "./transformApi.js";
+import { fetchGameList, RTYPE, extractParamsWithRetry } from "./transformApi.js";
 import { parseGameListXML } from "./xhrDataParser.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
 
@@ -307,8 +308,26 @@ async function ensureLogin() {
     }
   }
 
-  // 4. 未登录 → 返回 null（用户需通过前端登录按钮完成登录）
-  console.warn("[cornerCrawler] 未登录，请先通过前端登录按钮完成登录");
+  // 4. 自动完整登录回退（环境变量提供凭据时）
+  if (HG_USERNAME && HG_PASSWORD) {
+    console.log("[cornerCrawler] Cookie 过期或未登录，自动执行完整登录...");
+    try {
+      const result = await hgLoginToHG({ username: HG_USERNAME, password: HG_PASSWORD });
+      if (result?.success) {
+        const sp = getSharedPage();
+        if (sp) {
+          console.log("[cornerCrawler] 自动登录成功，耗时: " + (Date.now() - _loginStart) + "ms");
+          await handlePasscodePage(sp);
+          return sp;
+        }
+      }
+      console.warn("[cornerCrawler] 自动登录失败: " + (result?.error || "unknown"));
+    } catch (loginErr) {
+      console.error("[cornerCrawler] 自动登录异常:", loginErr.message);
+    }
+  }
+
+  console.warn("[cornerCrawler] 所有登录方式均失败，无法爬取");
   return null;
 }
 
