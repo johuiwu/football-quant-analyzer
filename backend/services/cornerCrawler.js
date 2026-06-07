@@ -10,6 +10,7 @@ import {
   saveCookiesToDisk, loadCookiesFromDisk
 } from "./browserPool.js";
 import { loginToHG as hgLoginToHG } from "./hgCrawlerService.js";
+import { performStableLogin } from "./stableLogin.js";
 import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
 import { fetchGameList, RTYPE, extractParamsWithRetry } from "./transformApi.js";
 import { parseGameListXML } from "./xhrDataParser.js";
@@ -27,7 +28,6 @@ const POLL_INTERVAL = 3000 + Math.random() * 7000;
 
 // 运行时凭据
 let runtimeCredentials = null;
-let loginInProgress = false;
 let crawlingLock = false;
 let lastLoginErrorDetail = null;
 let browserExplicitlyClosed = false;
@@ -203,163 +203,6 @@ async function handlePasscodePage(page, maxRetries = 3) {
     }
   }
   return { detected: true, handled: false };
-}
-
-// ======================== 轻量 Soccer 标签激活（API 模式专用）========================
-async function activateSoccerTab(page) {
-  console.log('[cornerCrawler] 导航到 Soccer 标签页...');
-  try {
-    await page.waitForSelector('#old_ft_live_league', { timeout: 10000 });
-    await page.click('#old_ft_live_league');
-    console.log('[cornerCrawler] 已点击 Soccer 标签');
-    await page.waitForResponse(
-      (res) => res.url().includes('transform.php') || res.url().includes('transform_nl.php'),
-      { timeout: 15000 }
-    );
-    console.log('[cornerCrawler] transform.php 请求已发出');
-    return true;
-  } catch (e) {
-    console.warn('[cornerCrawler] 导航到 Soccer 标签页失败:', e.message);
-    return false;
-  }
-}
-
-async function ensureLogin() {
-  // 用户主动关闭浏览器，阻止自动重新登录
-  if (browserExplicitlyClosed) {
-    console.log("[cornerCrawler] 浏览器已被显式关闭，跳过登录");
-    return null;
-  }
-
-  browserExplicitlyClosed = false;
-
-  const _loginStart = Date.now();
-
-  // 登录并发保护
-  if (loginInProgress) {
-    console.log("[cornerCrawler] 登录正在进行中，等待...");
-    const _waitStart = Date.now();
-    const MAX_WAIT = 60000;
-    while (loginInProgress) {
-      if (Date.now() - _waitStart > MAX_WAIT) {
-        console.warn("[cornerCrawler] loginInProgress 超时(60s)，强制释放锁");
-        loginInProgress = false;
-        break;
-      }
-      await new Promise(r => setTimeout(r, 1000));
-    }
-    const ep = getSharedPage();
-    if (ep && isBrowserActive()) {
-      try { await ep.url(); return ep; } catch (e) {}
-    }
-  }
-
-  // 1. 检查现有的共享页面是否已登录
-  const existingPage = getSharedPage();
-  if (existingPage && isBrowserActive()) {
-    try {
-      // 先验证页面可访问
-      let url = ""; try { url = existingPage.url(); } catch (_) {}
-      console.log("[cornerCrawler] Shared page URL:", url.substring(0, 100));
-
-      // 等待页面稳定（可能刚从登录跳转过来）
-      await new Promise(r => setTimeout(r, 1000));
-
-      const stillLoggedIn = await existingPage.evaluate(() => {
-        const bodyText = document.body?.textContent || "";
-        // 多种登录成功标志
-        if (bodyText.includes("My Events") || bodyText.includes("My Bets")) return true;
-        if (bodyText.includes("In-Play") && bodyText.includes("Soccer")) return true;
-        // 检查足球入口按钮
-        const el = document.getElementById("symbol_ft") || document.getElementById("old_ft_live_league") || document.getElementById("today_page") || document.getElementById("live_page");
-        if (el) { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden"; }
-        // 检查账户显示（acc_show 隐藏=已登录）
-        const acc = document.getElementById("acc_show");
-        if (acc) { const s = getComputedStyle(acc); if (s.display === "none" || acc.offsetParent === null) return true; }
-        return false;
-      }).catch(() => false);
-
-      if (stillLoggedIn) {
-        console.log("[cornerCrawler] 复用已登录会话: " + (Date.now() - _loginStart) + "ms");
-        await handlePasscodePage(existingPage);
-        return existingPage;
-      }
-      console.log("[cornerCrawler] Shared page 登录态已失效");
-    } catch (e) {
-      console.warn("[cornerCrawler] Shared page 不可用:", e.message);
-      setSharedPage(null);
-    }
-  }
-
-  // 2. 获取浏览器实例
-  const bi = await getSharedBrowser(false);
-  console.log("[cornerCrawler] [耗时] getSharedBrowser: " + (Date.now() - _loginStart) + "ms");
-  if (!bi) {
-    console.error("[cornerCrawler] 浏览器未启动");
-    return null;
-  }
-
-  // 3. Cookie 快速登录
-  const savedCookies = loadCookiesFromDisk();
-  if (savedCookies && savedCookies.length > 0) {
-    try {
-      console.log("[cornerCrawler] 尝试 Cookie 快速登录...");
-      const quickPage = await bi.newPage();
-      await quickPage.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
-      await quickPage.setViewport({ width: 1920, height: 1400 });
-      for (const ck of savedCookies) { try { await quickPage.setCookie(ck); } catch (_) {} }
-      await quickPage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 15000 });
-      await new Promise(r => setTimeout(r, 3000));
-
-      const passcodeResult = await handlePasscodePage(quickPage);
-      if (passcodeResult.detected && passcodeResult.handled) {
-        console.log("[cornerCrawler] Cookie 登录后处理了简易密码页面: " + (Date.now() - _loginStart) + "ms");
-      }
-
-      const valid = await quickPage.evaluate(() => {
-        const bodyText = document.body?.textContent || "";
-        if (bodyText.includes("My Events") || bodyText.includes("My Bets")) return true;
-        if (bodyText.includes("In-Play") && bodyText.includes("Soccer")) return true;
-        const el = document.getElementById("symbol_ft") || document.getElementById("old_ft_live_league") || document.getElementById("today_page") || document.getElementById("live_page");
-        if (el) { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden"; }
-        const acc = document.getElementById("acc_show");
-        if (acc) { const s = getComputedStyle(acc); if (s.display === "none" || acc.offsetParent === null) return true; }
-        return false;
-      }).catch(() => false);
-
-      if (valid) {
-        setSharedPage(quickPage);
-        console.log("[cornerCrawler] Cookie 快速登录成功: " + (Date.now() - _loginStart) + "ms");
-        return quickPage;
-      }
-      console.log("[cornerCrawler] Cookie 已过期");
-      await quickPage.close();
-    } catch (e) {
-      console.warn("[cornerCrawler] Cookie 快速登录失败:", e.message);
-    }
-  }
-
-  // 4. 自动完整登录回退（环境变量提供凭据时）
-  if (HG_USERNAME && HG_PASSWORD) {
-    console.log("[cornerCrawler] Cookie 过期或未登录，自动执行完整登录...");
-    try {
-      const result = await hgLoginToHG({ username: HG_USERNAME, password: HG_PASSWORD });
-      if (result?.success) {
-        const sp = getSharedPage();
-        if (sp) {
-          console.log("[cornerCrawler] 自动登录成功，耗时: " + (Date.now() - _loginStart) + "ms");
-          await handlePasscodePage(sp);
-          return sp;
-        }
-      }
-      console.warn("[cornerCrawler] 自动登录失败: " + (result?.error || "unknown"));
-    } catch (loginErr) {
-      console.error("[cornerCrawler] 自动登录异常:", loginErr.message);
-    }
-  }
-
-  console.warn("[cornerCrawler] 所有登录方式均失败，无法爬取");
-  return null;
 }
 
 export async function navigateToCorners(page) {
@@ -1509,16 +1352,18 @@ export async function crawlCornerMatches() {
     console.log("[cornerCrawler] CORNER_API_MODE=true，使用纯 API 模式");
     console.log("[cornerCrawler] ===== 纯 API 模式 =====");
     try {
-      const page = await ensureLogin();
-      if (!page) throw new Error("Login failed");
+      const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+      if (!loginOk || !page) throw new Error("StableLogin 登录失败");
 
       // 激活 Soccer 标签页，触发页面发出 transform.php 请求（Layer 2 从中拦截真实 uid）
       const soccerOk = await activateSoccerTab(page);
       if (!soccerOk) {
-        console.warn("[cornerCrawler] 无法激活 Soccer 标签页，降级到 DOM 路径");
-        // 继续走 DOM 路径
-      } else {
-        const { fetchCornerMatches } = await import("./cornerApiClient.js");
+        console.warn('[cornerCrawler] 无法激活 Soccer 标签，API 模式终止');
+        crawlingLock = false;
+        clearTimeout(lockTimeout);
+        return { success: false, matches: [] };
+      }
+      const { fetchCornerMatches } = await import("./cornerApiClient.js");
       const result = await fetchCornerMatches(page);
         console.log("[cornerCrawler] API 模式完成: " + (result.matches?.length || 0) + " 场比赛");
         crawlingLock = false;
@@ -1530,7 +1375,6 @@ export async function crawlCornerMatches() {
           timestamp: ts,
           source: "api",
         };
-      }
     } catch (apiErr) {
       console.warn("[cornerCrawler] API 模式失败，降级到 DOM 路径:", apiErr.message);
       // 继续走 DOM 路径
@@ -1555,9 +1399,9 @@ export async function crawlCornerMatches() {
       } catch(e) {}
     }
 
-    const page = await ensureLogin();
-    if (!page) {
-      console.error("[cornerCrawler] Login failed, cannot crawl");
+    const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+    if (!loginOk || !page) {
+      console.error("[cornerCrawler] StableLogin 登录失败，无法爬取");
       return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "Login failed" };
     }
 
@@ -1596,8 +1440,8 @@ export async function crawlCornerMatches() {
         console.log("[cornerCrawler] 检测到登出弹窗(kick_ok_btn)，尝试重新登录...");
         try { await page.click("#kick_ok_btn"); } catch (_) {}
         await randomDelay(1000, 2000);
-        const rePage = await ensureLogin();
-        if (rePage) {
+        const { success: reLoginOk, rePage } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+        if (reLoginOk && rePage) {
           console.log("[cornerCrawler] 重新登录成功，重新导航...");
           await setupXHRInterception(rePage);
           await navigateToCorners(rePage);
@@ -2001,7 +1845,7 @@ export function getPollingStatus() {
     isLoggedIn: isLoggedIn(),
     balance: getBalance(),
     lastUpdate: pollingActive ? Date.now() : null,
-    loginInProgress
+    loginInProgress: false
   };
 }
 
@@ -2015,8 +1859,8 @@ export async function loginToHG(username, password) {
   let lastReason = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const page = await ensureLogin();
-      if (page) {
+      const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+      if (loginOk && page) {
         return { success: true, message: "登录成功", balance: getBalance(), attempts: attempt };
       }
       lastError = "登录返回空页面";
@@ -2095,9 +1939,17 @@ export async function diagnoseCrawler() {
 
     report.steps.push("login_start");
     try {
-      const page = await ensureLogin();
-      report.loginSuccess = true;
-      report.steps.push("login_ok");
+      const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+      if (loginOk && page) {
+        report.loginSuccess = true;
+        report.steps.push("login_ok");
+      } else {
+        report.errors.push({ step: "login", message: "StableLogin failed" });
+        report.steps.push("login_failed");
+        report.status = "login_failed";
+        report.totalTimeMs = Date.now() - startTime;
+        return report;
+      }
     } catch (e) {
       report.errors.push({ step: "login", message: e.message });
       report.steps.push("login_failed");
