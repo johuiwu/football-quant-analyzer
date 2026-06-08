@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿import { useState, useMemo, useCallback } from 'react';
+﻿﻿﻿﻿﻿import { useState, useMemo, useCallback } from 'react';
 import { ShieldCheck, Search, TrendingUp, Zap, MapPin, Sparkles, Info, Award, Swords, Loader2, Check, Clock } from 'lucide-react';
 import { TeamStats, RankedValue } from '../data/realTeamsData';
 import { ALL_LEAGUES, ALL_LEAGUE_TEAMS, LeagueTeam } from '../data/leagueTeams';
@@ -313,11 +313,11 @@ export default function TeamInfoSection() {
                           : refreshing ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 cursor-wait' : 'bg-amber-600/15 hover:bg-amber-500/20 text-amber-300 border-amber-500/25 hover:scale-105'
                       }`}>
                     {justCompleted ? (
-                        <><Check className="w-3.5 h-3.5" /> 已更新</>
+                        <span key="state-completed"><Check key="icon-check" className="w-3.5 h-3.5" /> 已更新</span>
                       ) : refreshing ? (
-                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 等待更新中...{elapsedSeconds > 0 && <span className="ml-1 text-[9px] opacity-60 font-mono">{elapsedSeconds}s</span>}</>
+                        <span key="state-refreshing"><Loader2 key="icon-loading" className="w-3.5 h-3.5 animate-spin" /> 等待更新中...{elapsedSeconds > 0 && <span className="ml-1 text-[9px] opacity-60 font-mono">{elapsedSeconds}s</span>}</span>
                       ) : (
-                        <><Zap className="w-3.5 h-3.5" /> 更新数据</>
+                        <span key="state-idle"><Zap key="icon-zap" className="w-3.5 h-3.5" /> 更新数据</span>
                       )}</button>
                     {refreshing && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono bg-amber-900/30 text-amber-400 border border-amber-500/20 flex items-center gap-1 animate-pulse">
