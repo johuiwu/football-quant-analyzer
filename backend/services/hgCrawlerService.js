@@ -3,7 +3,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, acquireLoginLock, releaseLoginLock, isPageLoggedIn } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, acquireLoginLock, releaseLoginLock, isPageLoggedIn, checkDomainReachable, diagnoseNavigationError, getHeadless } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import { fetchCornerMatches, fetchCornerSchedule } from "./cornerApiClient.js";
@@ -238,10 +238,16 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
 
   let bi;
   if (isolated) {
-    const headless = true;
+    const headless = getHeadless();
+    const isolatedArgs = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--ignore-certificate-errors", "--window-size=1920,1400"];
+    const proxyServer = process.env.PUPPETEER_PROXY;
+    if (proxyServer) {
+      isolatedArgs.push(`--proxy-server=${proxyServer}`);
+      isolatedArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
+    }
     bi = await puppeteer.launch({
       headless,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1920,1400"],
+      args: isolatedArgs,
       timeout: 60000
     });
     console.log("[HgCrawler] 隔离浏览器已启动");
@@ -251,7 +257,11 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
     await cookiePage.setViewport({ width: 1920, height: 1400 });
     if (savedCookies && savedCookies.length > 0) {
       for (const ck of savedCookies) { try { await cookiePage.setCookie(ck); } catch (_) {} }
-      await cookiePage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+      try {
+        await cookiePage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+      } catch (navErr) {
+        await diagnoseNavigationError(cookiePage, HG_URL, navErr);
+      }
       await new Promise(r => setTimeout(r, 3000));
       const isValid = await safeEvaluate(cookiePage, () => {
         const body = document.body?.textContent || "";
@@ -280,7 +290,17 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
       Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
     });
 
-    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    // 域名可达性预检（仅警告，不阻止导航）
+    const dnsCheck = await checkDomainReachable(HG_URL);
+    if (!dnsCheck.reachable) {
+      console.warn("[HgCrawler] DNS 预检警告: " + dnsCheck.error + "（仍将尝试导航）");
+    }
+    try {
+      await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    } catch (navErr) {
+      await diagnoseNavigationError(page, HG_URL, navErr);
+      throw navErr;
+    }
     console.log("[HgCrawler] 等待页面完全加载...");
     await new Promise((r) => setTimeout(r, 5000));
 
@@ -293,7 +313,12 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
     while (retryCount < MAX_RETRIES) {
     if (retryCount > 0) {
       console.log("[HgCrawler] 登录重试 " + retryCount + "/" + MAX_RETRIES + "...");
-      await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+      try {
+        await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+      } catch (navErr) {
+        await diagnoseNavigationError(page, HG_URL, navErr);
+        throw navErr;
+      }
       await new Promise((r) => setTimeout(r, 5000));
       loginClicked = false;
       consecutivePopupCount = 0;

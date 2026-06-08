@@ -23,10 +23,106 @@ export async function isPageLoggedIn(page) {
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
+import dns from "dns";
 import { fileURLToPath } from "url";
 import { resolve } from "path";
 
 puppeteer.use(StealthPlugin());
+
+// ======================== 域名可达性预检 & 导航诊断 ========================
+
+/**
+ * 域名可达性预检：通过 dns.resolve 检测域名是否可解析
+ * @param {string} url - 目标 URL
+ * @returns {{ reachable: boolean, hostname: string, error?: string }}
+ */
+async function checkDomainReachable(url) {
+  let hostname;
+  try {
+    hostname = new URL(url).hostname;
+  } catch (e) {
+    return { reachable: false, hostname: url, error: "URL 格式无效: " + e.message };
+  }
+
+  return new Promise((resolve) => {
+    dns.resolve(hostname, (err, addresses) => {
+      if (err) {
+        const errCode = err.code || "UNKNOWN";
+        let hint = "";
+        if (errCode === "ENOTFOUND") hint = "域名不存在，请检查 URL 或 DNS 设置";
+        else if (errCode === "ESERVFAIL") hint = "DNS 服务器返回失败，请检查网络连接";
+        else if (errCode === "ETIMEOUT") hint = "DNS 解析超时，请检查网络连接";
+        else if (errCode === "ECONNREFUSED") hint = "DNS 服务器拒绝连接，浏览器可能仍可访问";
+        else hint = "DNS 错误码: " + errCode;
+        console.error("[browserPool] DNS 诊断: " + hostname + " 解析失败 - " + hint);
+        resolve({ reachable: false, hostname, error: hint });
+      } else {
+        console.log("[browserPool] DNS 诊断: " + hostname + " -> " + addresses[0]);
+        resolve({ reachable: true, hostname, addresses });
+      }
+    });
+  });
+}
+
+/**
+ * 导航诊断：在 page.goto 失败时输出结构化诊断信息
+ * @param {Page} page - Puppeteer 页面实例
+ * @param {string} url - 目标 URL
+ * @param {Error} error - 导航错误
+ */
+async function diagnoseNavigationError(page, url, error) {
+  const errMsg = error.message || String(error);
+  let errorType = "unknown";
+
+  if (errMsg.includes("net::ERR_NAME_NOT_RESOLVED") || errMsg.includes("ERR_NAME_NOT_RESOLVED")) {
+    errorType = "DNS";
+  } else if (errMsg.includes("net::ERR_CERT") || errMsg.includes("ERR_CERT") || errMsg.includes("SSL")) {
+    errorType = "SSL";
+  } else if (errMsg.includes("net::ERR_CONNECTION_REFUSED") || errMsg.includes("ERR_CONNECTION_REFUSED")) {
+    errorType = "connection_refused";
+  } else if (errMsg.includes("net::ERR_CONNECTION_RESET") || errMsg.includes("ERR_CONNECTION_RESET")) {
+    errorType = "connection_reset";
+  } else if (errMsg.includes("net::ERR_CONNECTION_TIMED_OUT") || errMsg.includes("ERR_CONNECTION_TIMED_OUT") || errMsg.includes("timeout")) {
+    errorType = "timeout";
+  } else if (errMsg.includes("net::ERR_ABORTED") || errMsg.includes("ERR_ABORTED")) {
+    errorType = "aborted";
+  }
+
+  console.error("[browserPool] ====== 导航诊断 ======");
+  console.error("[browserPool] 错误类型: " + errorType);
+  console.error("[browserPool] 目标 URL: " + url);
+  console.error("[browserPool] 错误信息: " + errMsg);
+
+  // 尝试获取页面实际 URL 和内容
+  if (page && !page.isClosed()) {
+    try {
+      const actualUrl = page.url();
+      console.error("[browserPool] 实际 URL: " + actualUrl);
+      if (actualUrl && actualUrl !== "about:blank") {
+        const content = await page.evaluate(() => document.body?.textContent?.substring(0, 500) || "(空)").catch(() => "(无法读取)");
+        console.error("[browserPool] 页面内容摘要: " + content.substring(0, 200));
+        // 检测反爬拦截
+        if (content.includes("Cloudflare") || content.includes("cf-browser-verification") || content.includes("Just a moment")) {
+          console.error("[browserPool] 页面诊断: 疑似被 Cloudflare 反爬拦截");
+        } else if (content.includes("Access Denied") || content.includes("403")) {
+          console.error("[browserPool] 页面诊断: 疑似被 IP 封禁或访问被拒绝");
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 针对性建议
+  const hints = {
+    DNS: "请检查网络连接、DNS 设置或 hosts 文件",
+    SSL: "已添加 --ignore-certificate-errors 参数，如仍失败请检查系统时间是否正确",
+    connection_refused: "目标服务器拒绝连接，可能网站已关闭或端口错误",
+    connection_reset: "连接被重置，可能被防火墙拦截或网站反爬机制拒绝",
+    timeout: "连接超时，请检查网络是否畅通，或尝试手动访问确认网站是否可达",
+    aborted: "导航被中断，可能页面重定向导致",
+  };
+  console.error("[browserPool] 建议: " + (hints[errorType] || "请检查网络连接和目标网站是否可达"));
+  console.error("[browserPool] ==========================");
+}
 
 // ======================== 单例浏览器管理 ========================
 
@@ -142,21 +238,32 @@ async function launchBrowser() {
 
   try {
       const vp = getRandomViewport();
+    const launchArgs = [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-blink-features=AutomationControlled",
+      "--ignore-certificate-errors",
+      `--window-size=${vp.width},${vp.height}`,
+      "--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process,TranslateUI,IPCFloodingProtection",
+      "--enable-features=NetworkService,NetworkServiceInProcess",
+      "--lang=zh-CN,zh",
+      "--accept-lang=zh-CN,zh;q=0.9"
+    ];
+    // PUPPETEER_PROXY 环境变量控制代理：有值时走代理，无值时直连
+    const proxyServer = process.env.PUPPETEER_PROXY;
+    if (proxyServer) {
+      launchArgs.push(`--proxy-server=${proxyServer}`);
+      launchArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
+      console.log("[browserPool] 使用代理: " + proxyServer);
+    } else {
+      console.log("[browserPool] 未设置 PUPPETEER_PROXY，使用直连模式");
+    }
     const bi = await puppeteer.launch({
       headless,
       slowMo: process.env.CRAWLER_DEBUG === "1" ? 100 : 0,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--disable-blink-features=AutomationControlled",
-        `--window-size=${vp.width},${vp.height}`,
-        "--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process,TranslateUI,IPCFloodingProtection",
-        "--enable-features=NetworkService,NetworkServiceInProcess",
-        "--lang=zh-CN,zh",
-        "--accept-lang=zh-CN,zh;q=0.9"
-      ],
+      args: launchArgs,
       timeout: 120000 // 启动超时 2 分钟
     });
     console.log("[browserPool] 浏览器已启动");
@@ -365,5 +472,8 @@ export {
   closeSharedBrowser,
   HG_URL,
   saveCookiesToDisk,
-  loadCookiesFromDisk
+  loadCookiesFromDisk,
+  checkDomainReachable,
+  diagnoseNavigationError,
+  getHeadless
 };
