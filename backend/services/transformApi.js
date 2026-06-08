@@ -13,9 +13,12 @@ const API_BASE = HG_URL + "/transform.php";
 
 // ---- rtype 枚举 ----
 export const RTYPE = {
-  RB: "rb",         // 滚球基本盘
-  RCN: "rcn",       // 角球盘口
-  RNOU: "rrnou",    // HDP & O/U
+  RB: "rb",         // 滚球基本盘 (live)
+  RCN: "rcn",       // 滚球角球盘口 (live)
+  RNOU: "rrnou",    // 滚球 HDP & O/U (live)
+  R: "r",           // 今日基本盘 (today)
+  CN: "cn",         // 今日角球盘口 (today)
+  RNOU_TODAY: "rnou", // 今日 HDP & O/U (today)
 };
 
 // ---- uid/ver 缓存 ----
@@ -409,20 +412,26 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
     return null;
   }
 
+  // ★ 根据 rtype 自动判断 showtype：rb/rcn/rrnou 是 live，r/cn/rnou 是 today
+  const isLiveRtype = ["rb", "rcn", "rrnou"].includes(rtype);
+  const defaultShowtype = isLiveRtype ? "live" : "today";
+
   const ts = Date.now();
   const body = new URLSearchParams({
     uid: params.uid, ver: params.ver, langx: params.langx || "en-us",
     p: "get_game_list", gtype: "ft",
-    showtype: extraParams.showtype || "live",
+    showtype: extraParams.showtype || defaultShowtype,
     rtype: rtype, ltype: "3",
     sorttype: extraParams.sorttype || "L",
     ts: String(ts), chgSortTS: String(ts),
+    // ★ today 模式需要额外参数
+    ...(isLiveRtype ? {} : { p3type: "", date: "", filter: "FT", cupFantasy: "N", specialClick: "", isFantasy: "N" }),
     ...extraParams,
   });
 
   // ver 放 URL query，其余参数放 POST body（与真实浏览器行为一致）
   const url = API_BASE + "?ver=" + encodeURIComponent(params.ver);
-  console.log("[transformApi] fetching " + rtype + " (get_game_list, POST) ...");
+  console.log("[transformApi] fetching " + rtype + " (get_game_list, POST, showtype=" + (extraParams.showtype || defaultShowtype) + ") ...");
 
   const text = await fetchInBrowser(page, url, body.toString());
 
@@ -520,9 +529,14 @@ export async function fetchViaInterception(page, rtypes, triggerFn, timeout = 15
         if (!url.includes("transform.php") && !url.includes("transform_nl.php")) return;
 
         try {
-          // 从请求的 POST body 提取 p= 和 rtype= 参数
           const request = response.request();
           const postData = request.postData() || "";
+
+          // ★ 从任何请求中提取 uid 和 ver（在 pValue 检查之前）
+          extractVerFromRequest(url);
+          const uidMatch = postData.match(/uid=([^&\s]+)/);
+          if (uidMatch && uidMatch[1] && uidMatch[1].length > 5) setCachedUid(uidMatch[1]);
+
           const pMatch = postData.match(/p=([^&]+)/);
           const rtypeMatch = postData.match(/rtype=([^&]+)/);
 
@@ -538,11 +552,6 @@ export async function fetchViaInterception(page, rtypes, triggerFn, timeout = 15
           // 读取响应体
           const body = await response.text();
           console.log("[transformApi] 拦截捕获: p=" + pValue + " rtype=" + rtype + " size=" + body.length);
-
-          // 同时提取 ver 和 uid
-          extractVerFromRequest(url);
-          const uidMatch = postData.match(/uid=([^&\s]+)/);
-          if (uidMatch && uidMatch[1]) setCachedUid(uidMatch[1]);
 
           // 校验响应格式
           if (body && !body.includes("<!DOCTYPE html>") && !body.trimStart().startsWith("<!")) {

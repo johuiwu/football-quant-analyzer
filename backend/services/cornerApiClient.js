@@ -16,68 +16,107 @@ import { parseAsianHandicap } from "./crawlerShared.js";
 export async function fetchCornerMatches(page) {
   console.log("[cornerApiClient] 获取角球比赛数据...");
   
-  // ★ 优先使用响应拦截方式（让浏览器自然发出 XHR 请求）
+  // ★ 优先使用 today 模式（rtype=r/cn），如果没有数据再尝试 live 模式（rtype=rb/rcn）
   const interceptionResult = await fetchViaInterception(
     page,
-    [RTYPE.RB, RTYPE.RCN],
+    [RTYPE.R, RTYPE.CN],
     async () => {
-      // 触发页面操作：依次点击 Soccer 和 Corners 标签
       try {
-        // 先确保在 Soccer 标签
+        // 先点击 Today 标签
+        await page.evaluate(() => {
+          const todayBtn = document.getElementById("today_page");
+          if (todayBtn) todayBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // 再点击 Soccer 标签
         await page.evaluate(() => {
           const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
           if (soccerBtn) soccerBtn.click();
         });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
         
-        // 点击 Corners 标签触发 rcn 请求
+        // 点击 Corners 标签触发 cn 请求
         await page.evaluate(() => {
           const cnTab = document.getElementById("tab_cn");
           if (cnTab) cnTab.click();
-        });
-        await new Promise(r => setTimeout(r, 1000));
-        
-        // 再点击回 Full Time 标签触发 rb 请求
-        await page.evaluate(() => {
-          const ftTab = document.getElementById("tab_pd") || document.getElementById("tab_re");
-          if (ftTab) ftTab.click();
         });
       } catch (e) {
         console.warn("[cornerApiClient] 触发页面操作失败:", e.message);
       }
     },
-    15000
+    20000
   );
   
-  let rbXml = interceptionResult[RTYPE.RB] || null;
-  let rcnXml = interceptionResult[RTYPE.RCN] || null;
+  let rbXml = interceptionResult[RTYPE.R] || null;
+  let rcnXml = interceptionResult[RTYPE.CN] || null;
+  
+  // 如果 today 模式无数据，尝试 live 模式
+  if (!rbXml && !rcnXml) {
+    console.log("[cornerApiClient] today 模式无数据，尝试 live 模式...");
+    const liveResult = await fetchViaInterception(
+      page,
+      [RTYPE.RB, RTYPE.RCN],
+      async () => {
+        try {
+          await page.evaluate(() => {
+            const liveBtn = document.getElementById("live_page");
+            if (liveBtn) liveBtn.click();
+          });
+          await new Promise(r => setTimeout(r, 2000));
+          await page.evaluate(() => {
+            const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
+            if (soccerBtn) soccerBtn.click();
+          });
+          await new Promise(r => setTimeout(r, 3000));
+          await page.evaluate(() => {
+            const cnTab = document.getElementById("tab_cn");
+            if (cnTab) cnTab.click();
+          });
+        } catch (e) {
+          console.warn("[cornerApiClient] live 触发失败:", e.message);
+        }
+      },
+      15000
+    );
+    rbXml = liveResult[RTYPE.RB] || null;
+    rcnXml = liveResult[RTYPE.RCN] || null;
+  }
   
   // 如果拦截方式未获取到数据，回退到 fetchInBrowser 方式
   if (!rbXml && !rcnXml) {
     console.log("[cornerApiClient] 拦截方式未获取到数据，回退到 fetchInBrowser...");
+    // ★ 优先 today 模式
     [rbXml, rcnXml] = await Promise.all([
-      fetchGameList(page, RTYPE.RB),
-      fetchGameList(page, RTYPE.RCN),
+      fetchGameList(page, RTYPE.R),
+      fetchGameList(page, RTYPE.CN),
     ]);
+    // 如果 today 无数据，尝试 live
+    if (!rbXml && !rcnXml) {
+      [rbXml, rcnXml] = await Promise.all([
+        fetchGameList(page, RTYPE.RB),
+        fetchGameList(page, RTYPE.RCN),
+      ]);
+    }
   }
   
   // 如果 get_game_list 全部失败，尝试 game_list_FT
   if (!rbXml && !rcnXml) {
     console.log("[cornerApiClient] get_game_list 全部失败，尝试 game_list_FT...");
     [rbXml, rcnXml] = await Promise.all([
-      fetchGameList_FT(page, RTYPE.RB),
-      fetchGameList_FT(page, RTYPE.RCN),
+      fetchGameList_FT(page, RTYPE.R),
+      fetchGameList_FT(page, RTYPE.CN),
     ]);
   }
 
-  const rbResult = rbXml ? parseGameListXML(rbXml, "rb") : { matches: [], count: 0 };
-  const rcnResult = rcnXml ? parseGameListXML(rcnXml, "rcn") : { matches: [], count: 0 };
+  const rbResult = rbXml ? parseGameListXML(rbXml, "r") : { matches: [], count: 0 };
+  const rcnResult = rcnXml ? parseGameListXML(rcnXml, "cn") : { matches: [], count: 0 };
 
-  console.log("[cornerApiClient] 解析: rb=" + (rbResult.matches?.length || 0) + " 场, rcn=" + (rcnResult.matches?.length || 0) + " 场");
+  console.log("[cornerApiClient] 解析: r=" + (rbResult.matches?.length || 0) + " 场, cn=" + (rcnResult.matches?.length || 0) + " 场");
 
   const merged = mergeByName(rbResult.matches || [], rcnResult.matches || []);
 
-  console.log("[cornerApiClient] 合并完成: " + merged.length + " 场比赛 (rb=" + (rbResult.matches?.length || 0) + " rcn=" + (rcnResult.matches?.length || 0) + ")");
+  console.log("[cornerApiClient] 合并完成: " + merged.length + " 场比赛 (r=" + (rbResult.matches?.length || 0) + " cn=" + (rcnResult.matches?.length || 0) + ")");
   return { success: merged.length > 0, matches: merged, rbCount: rbResult.matches?.length || 0, rcnCount: rcnResult.matches?.length || 0 };
 }
 
