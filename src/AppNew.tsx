@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import TeamInfoSection from "./components/TeamInfoSection";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -125,10 +125,10 @@ function AppNewContent() {
           </p>
           <div className="inline-flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3.5 py-1.5 rounded-lg text-[10px] text-slate-400">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span>2026 璧涘璧涙灉鏁版嵁鐘舵€侊細澧為噺鏇存柊宸插畬鎴?(瑕嗙洊鑻辫秴/鎰忕敳/瑗跨敳/寰风敳 200+鍔叉梾瀹屾暣瀵硅禌鍘嗗彶)</span>
+            <span>2026 全部赛事数据已完成增量更新(覆盖英超/意甲/西甲/德甲 200+球队完整对战历史)</span>
           </div>
           <p className="text-[10px] text-red-500/80 max-w-2xl mx-auto leading-relaxed">
-            * 鍐嶆澹版槑锛氭湰杞欢涓哄紑婧愭暀瀛︽ā鍨嬶紝缁濅笉鍚戜换浣曞崥褰╀紒涓氥€佺珵褰╁簵閾烘彁渚涜繛閫氥€佷唬璐湇鍔°€傜悊鎬у寰呭璧涜绠楃粨鏋滐紝鍙嶅璧屽崥锛岄伒瀹堟硶寰嬫硶瑙勩€?
+            * 再次声明：本软件为开源教学模型，严禁向任何投注企业、投注网站提供连接、代购服务。理性对待预测结果，反对赌球，遵守法律法规。
           </p>
         </div>
       </footer>
