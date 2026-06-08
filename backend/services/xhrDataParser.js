@@ -193,33 +193,73 @@ export function parseGameListXML(xmlText, contextHint = "") {
         const iorRouh = g.IOR_ROUH || "";
         const iorRouc = g.IOR_ROUC || "";
         // 角球盘口 (rcn 才有)
-        // ★ 关键修正：rcn 响应中，RATIO_RE 是角球让球盘口线，RATIO_ROUO 是角球大小盘线
-        // ★ IOR_RNCH/IOR_RNCC 是角球让球赔率，IOR_ROUH/IOR_ROUC 是角球大小盘赔率
-        // ★ PTYPE 包含 "Corners" 标识角球市场（非 CN_COUNT）
+        // ★ 关键修正：rcn 响应中，RATIO_RE 是角球让球盘口线，IOR_REH/IOR_REC 是角球让球赔率
+        // ★ IOR_RNCH/IOR_RNCC 是 Next Corner（下个角球）赔率
+        // ★ IOR_REOE/IOR_REOO 是角球单/双赔率
+        // ★ RATIO_HRE/IOR_HREH/IOR_HREC 是角球半场让球（rcn有字段但可能为空）
+        // ★ RATIO_HROUO/IOR_HROUH/IOR_HROUC 是角球半场大小（rcn有字段但可能为空）
+        // ★ PTYPE 包含 "Corners" 标识角球市场
+        // ★ rcn 中无角球独赢(IOR_RGH等)字段
         const ptype = g.PTYPE || "";
         // ★ 根据 contextHint 区分：rb 是基本盘数据（不含角球），cn/rcn 是角球数据
         const isCornerContext = contextHint === "cn" || contextHint === "rcn";
         const isCornerMarket = isCornerContext && (ptype.includes("Corners") || !!(g.IOR_RNCH || g.IOR_RNCC));
-        // 角球让球盘（rcn 中 RATIO_RE 即角球让球线，IOR_RNCH/IOR_RNCC 即角球让球赔率）
+        // 角球让球盘（rcn 中 RATIO_RE 即角球让球线，IOR_REH/IOR_REC 即角球让球赔率）
         // ★ 角球字段：只在 cn/rcn 上下文中填充，rb 数据不填充（避免 RATIO_RE 被误认为角球让球线）
-        const ratioCornerHdp = isCornerContext ? (g.RATIO_RE || g.RATIO_RNCH || g.RATIO_CORNERHDP || "") : "";
-        const iorCornerH = isCornerContext ? (g.IOR_RNCH || g.IOR_CORNERH || "") : "";
-        const iorCorner = isCornerContext ? (g.IOR_RNCC || g.IOR_CORNER || "") : "";
+        const ratioCornerHdp = isCornerContext ? (g.RATIO_RE || "") : "";
+        const iorCornerH = isCornerContext ? (g.IOR_REH || "") : "";
+        const iorCorner = isCornerContext ? (g.IOR_REC || "") : "";
         // 角球大小盘（rcn 中 RATIO_ROUO/IOR_ROUH/IOR_ROUC 即角球大小盘）
-        const ratioCrOuo = isCornerContext ? (g.RATIO_ROUO || g.RATIO_RNOU || g.RATIO_CROUO || g.ratio_CROUO || "") : "";
-        const iorCrOuo = isCornerContext ? (g.IOR_ROUH || g.IOR_RNOUH || g.IOR_CROUO || g.ior_CROUO || "") : "";
-        const iorCrOuu = isCornerContext ? (g.IOR_ROUC || g.IOR_RNOUC || g.IOR_CROUU || g.ior_CROUU || "") : "";
-        // 半场
-        const ratioHre = g.RATIO_HRE || "";
-        const iorHreh = g.IOR_HREH || "";
-        const iorHrec = g.IOR_HREC || "";
-        const ratioHrouo = g.RATIO_HROUO || "";
-        const iorHrouh = g.IOR_HROUH || "";
-        const iorHrouc = g.IOR_HROUC || "";
-        // 角球胜负
-        const iorRgh = g.IOR_RGH || "";
-        const iorRgc = g.IOR_RGC || "";
-        const iorRgn = g.IOR_RGN || "";
+        const ratioCrOuo = isCornerContext ? (g.RATIO_ROUO || "") : "";
+        const iorCrOuo = isCornerContext ? (g.IOR_ROUH || "") : "";
+        const iorCrOuu = isCornerContext ? (g.IOR_ROUC || "") : "";
+        // Next Corner（下个角球）- IOR_RNCH/IOR_RNCC
+        const iorNextCornerH = isCornerContext ? (g.IOR_RNCH || "") : "";
+        const iorNextCornerC = isCornerContext ? (g.IOR_RNCC || "") : "";
+        // 角球半场让球（rcn 中有 RATIO_HRE/IOR_HREH/IOR_HREC 字段但可能为空）
+        const ratioCornerHtHdp = isCornerContext ? (g.RATIO_HRE || "") : "";
+        const iorCornerHtHdpH = isCornerContext ? (g.IOR_HREH || "") : "";
+        const iorCornerHtHdpC = isCornerContext ? (g.IOR_HREC || "") : "";
+        // 角球半场大小（rcn 中有 RATIO_HROUO/IOR_HROUH/IOR_HROUC 字段但可能为空）
+        const ratioCornerHtOu = isCornerContext ? (g.RATIO_HROUO || "") : "";
+        const iorCornerHtOuH = isCornerContext ? (g.IOR_HROUH || "") : "";
+        const iorCornerHtOuC = isCornerContext ? (g.IOR_HROUC || "") : "";
+        // 半场让球/大小（rrnou 上下文才有值，rb/rcn 中这些字段属于角球半场）
+        const ratioHre = !isCornerContext ? (g.RATIO_HRE || "") : "";
+        const iorHreh = !isCornerContext ? (g.IOR_HREH || "") : "";
+        const iorHrec = !isCornerContext ? (g.IOR_HREC || "") : "";
+        const ratioHrouo = !isCornerContext ? (g.RATIO_HROUO || "") : "";
+        const iorHrouh = !isCornerContext ? (g.IOR_HROUH || "") : "";
+        const iorHrouc = !isCornerContext ? (g.IOR_HROUC || "") : "";
+        // 角球单/双（rcn 中 IOR_REOE=单赔率，IOR_REOO=双赔率）
+        const iorCornerOdd = isCornerContext ? (g.IOR_REOE || "") : "";
+        const iorCornerEven = isCornerContext ? (g.IOR_REOO || "") : "";
+        // 角球独赢（rcn 中 IOR_RGH=主胜/IOR_RGC=客胜/IOR_RGN=平局）
+        const iorRgh = isCornerContext ? (g.IOR_RGH || "") : (g.IOR_RGH || "");
+        const iorRgc = isCornerContext ? (g.IOR_RGC || "") : (g.IOR_RGC || "");
+        const iorRgn = isCornerContext ? (g.IOR_RGN || "") : (g.IOR_RGN || "");
+        // 角球上半场独赢（IOR_HRGH/IOR_HRGC/IOR_HRGN）
+        const iorCornerHtHomeOdds = isCornerContext ? (g.IOR_HRGH || "") : "";
+        const iorCornerHtDrawOdds = isCornerContext ? (g.IOR_HRGN || "") : "";
+        const iorCornerHtAwayOdds = isCornerContext ? (g.IOR_HRGC || "") : "";
+        // 角球上半场单/双（IOR_HREOE/IOR_HREOO）
+        const iorCornerHtOddOdds = isCornerContext ? (g.IOR_HREOE || "") : "";
+        const iorCornerHtEvenOdds = isCornerContext ? (g.IOR_HREOO || "") : "";
+        // 角球编号（CN_COUNT）
+        const cnCount = isCornerContext ? (g.CN_COUNT || "") : "";
+        // rb 上下文中的独赢和单/双
+        const iorRb1x2Home = !isCornerContext ? (g.IOR_RGH || "") : "";
+        const iorRb1x2Away = !isCornerContext ? (g.IOR_RGC || "") : "";
+        const iorRb1x2Draw = !isCornerContext ? (g.IOR_RGN || "") : "";
+        const iorRbOddOdds = !isCornerContext ? (g.IOR_REOE || "") : "";
+        const iorRbEvenOdds = !isCornerContext ? (g.IOR_REOO || "") : "";
+        // rb 上半场独赢（IOR_HRGH/IOR_HRGC/IOR_HRGN）
+        const iorRbHt1x2Home = !isCornerContext ? (g.IOR_HRGH || "") : "";
+        const iorRbHt1x2Away = !isCornerContext ? (g.IOR_HRGC || "") : "";
+        const iorRbHt1x2Draw = !isCornerContext ? (g.IOR_HRGN || "") : "";
+        // rb 上半场单/双（IOR_HREOE/IOR_HREOO）
+        const iorRbHtOddOdds = !isCornerContext ? (g.IOR_HREOE || "") : "";
+        const iorRbHtEvenOdds = !isCornerContext ? (g.IOR_HREOO || "") : "";
         // IDs
         const ecid = g.ECID || "";
         const hgid = g.HGID || "";
@@ -254,14 +294,50 @@ export function parseGameListXML(xmlText, contextHint = "") {
           _cornerHomeOdds: iorRgh,
           _cornerAwayOdds: iorRgc,
           _cornerDrawOdds: iorRgn,
+          // Next Corner（下个角球）
+          _nextCornerHomeOdds: iorNextCornerH,
+          _nextCornerAwayOdds: iorNextCornerC,
+          _nextCornerNum: cnCount,
+          // 角球半场让球（rcn 中有字段但可能为空）
+          _cornerHtHdpLine: ratioCornerHtHdp,
+          _cornerHtHdpHomeOdds: iorCornerHtHdpH,
+          _cornerHtHdpAwayOdds: iorCornerHtHdpC,
+          // 角球半场大小（rcn 中有字段但可能为空）
+          _cornerHtOULine: ratioCornerHtOu,
+          _cornerHtOUOverOdds: iorCornerHtOuH,
+          _cornerHtOUUnderOdds: iorCornerHtOuC,
+          // 角球半场独赢
+          _cornerHtHomeOdds: iorCornerHtHomeOdds,
+          _cornerHtDrawOdds: iorCornerHtDrawOdds,
+          _cornerHtAwayOdds: iorCornerHtAwayOdds,
+          // 角球单/双（IOR_REOE/IOR_REOO）
+          _cornerOddOdds: iorCornerOdd,
+          _cornerEvenOdds: iorCornerEven,
+          // 角球半场单/双
+          _cornerHtOddOdds: iorCornerHtOddOdds,
+          _cornerHtEvenOdds: iorCornerHtEvenOdds,
+          // ★ 半场让球/大小（rrnou 上下文才有值，rb/rcn 中这些字段属于角球半场）
           _htHdpLine: ratioHre,
           _htHdpHomeOdds: iorHreh,
           _htHdpAwayOdds: iorHrec,
           _htOuLine: ratioHrouo,
           _htOuOverOdds: iorHrouh,
           _htOuUnderOdds: iorHrouc,
+          // ★ rb 独赢和单/双
+          _1x2HomeOdds: iorRb1x2Home,
+          _1x2AwayOdds: iorRb1x2Away,
+          _1x2DrawOdds: iorRb1x2Draw,
+          _oddOdds: iorRbOddOdds,
+          _evenOdds: iorRbEvenOdds,
+          // ★ rb 上半场独赢和单/双
+          _ht1x2HomeOdds: iorRbHt1x2Home,
+          _ht1x2AwayOdds: iorRbHt1x2Away,
+          _ht1x2DrawOdds: iorRbHt1x2Draw,
+          _htOddOdds: iorRbHtOddOdds,
+          _htEvenOdds: iorRbHtEvenOdds,
           ecid, hgid, gidm,
           running,
+          _ptype: ptype,
           _dataSource: "xml",
           _cornerSource: "xml",
           dataQuality: "full",
@@ -281,9 +357,13 @@ export function parseGameListXML(xmlText, contextHint = "") {
           " | context=" + contextHint +
           " | hdp=" + m._hdpLine + " " + m._hdpHomeOdds + "/" + m._hdpAwayOdds +
           " | ou=" + m._ouLine + " " + m._ouOverOdds + "/" + m._ouUnderOdds +
-          " | cornerHdp=" + m._cornerHdpLine + " cornerHdpOdds=" + m._cornerHdpHomeOdds + "/" + m._cornerHdpAwayOdds +
+          " | cornerHdp=" + m._cornerHdpLine + " " + m._cornerHdpHomeOdds + "/" + m._cornerHdpAwayOdds +
           " | cornerOU=" + m._cornerOULine + " " + m._cornerOUOdds + "/" + m._cornerOUUnderOdds +
-          " | hasCorner=" + m._hasCornerMarket + " ptype=" + ptype);
+          " | nextCorner=" + m._nextCornerHomeOdds + "/" + m._nextCornerAwayOdds +
+          " | cornerHtHdp=" + m._cornerHtHdpLine + " cornerHtOu=" + m._cornerHtOULine +
+          " | cornerOE=" + m._cornerOddOdds + "/" + m._cornerEvenOdds +
+          " | htHdp=" + m._htHdpLine + " htOu=" + m._htOuLine +
+          " | hasCorner=" + m._hasCornerMarket + " ptype=" + (m._ptype || ""));
       }
 
       return {
