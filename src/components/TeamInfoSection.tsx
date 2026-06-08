@@ -19,6 +19,7 @@ export default function TeamInfoSection() {
   const setHomeAndGo = useAppStore((s) => s.setHomeAndGo);
   const setAwayAndGo = useAppStore((s) => s.setAwayAndGo);
   const setTeamsPageTeam = useAppStore((s) => s.setTeamsPageTeam);
+  const updateTeamStats = useAppStore((s) => s.updateTeamStats);
   
 
   // ── fetchWithTimeout：60 秒超时，避免请求挂起导致页面空白 ──
@@ -53,6 +54,21 @@ export default function TeamInfoSection() {
         if (!stats.homeStats) stats.homeStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
         if (!stats.awayStats) stats.awayStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
         setTeamsPageTeam(teamId, stats);
+        // 同步更新 store.teams 数组，使 DashboardPage 的 calculateBetsModel 使用最新数据
+        const syncLeagueEntry = ALL_LEAGUE_TEAMS.find(t => t.id === teamId);
+        const storeTeamId = syncLeagueEntry?.realTeamId || teamId;
+        if (teams.find(t => t.id === storeTeamId)) {
+          updateTeamStats(storeTeamId, {
+            homeStats: stats.homeStats,
+            awayStats: stats.awayStats,
+            rank: stats.rank ?? undefined,
+            cleanSheets: stats.cleanSheets ?? undefined,
+            shotsPerGame: stats.shotsPerGame ?? undefined,
+            shotAccuracy: stats.shotAccuracy ?? undefined,
+            homeXg: stats.homeXg ?? undefined,
+            awayXg: stats.awayXg ?? undefined,
+          });
+        }
         setError('');
       } else {
         // API 返回空数据，尝试从内置 REAL_TEAMS 中查找
@@ -113,7 +129,7 @@ export default function TeamInfoSection() {
         }
       }
     } finally { setLoading(false); }
-  }, [selectedTeamId, setTeamsPageTeam, teams]);
+  }, [selectedTeamId, setTeamsPageTeam, updateTeamStats, teams]);
 
   // ── handleUpdateStats：?refresh=true 触发爬虫 ──
   const handleUpdateStats = useCallback(async () => {
@@ -149,6 +165,21 @@ export default function TeamInfoSection() {
         if (!stats.homeStats) stats.homeStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
         if (!stats.awayStats) stats.awayStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
         setTeamsPageTeam(selectedTeamId, stats);
+        // 同步更新 store.teams 数组，使 DashboardPage 的 calculateBetsModel 使用最新数据
+        const syncLeagueEntry = ALL_LEAGUE_TEAMS.find(t => t.id === selectedTeamId);
+        const storeTeamId = syncLeagueEntry?.realTeamId || selectedTeamId;
+        if (teams.find(t => t.id === storeTeamId)) {
+          updateTeamStats(storeTeamId, {
+            homeStats: stats.homeStats,
+            awayStats: stats.awayStats,
+            rank: stats.rank ?? undefined,
+            cleanSheets: stats.cleanSheets ?? undefined,
+            shotsPerGame: stats.shotsPerGame ?? undefined,
+            shotAccuracy: stats.shotAccuracy ?? undefined,
+            homeXg: stats.homeXg ?? undefined,
+            awayXg: stats.awayXg ?? undefined,
+          });
+        }
         setError('');
         // 短暂成功反馈
         setRefreshing(false);
@@ -174,7 +205,7 @@ export default function TeamInfoSection() {
         setError('刷新失败：网络或服务异常');
       }
     } finally { setRefreshing(false); clearInterval(timer); }
-  }, [selectedTeamId, setTeamsPageTeam, teams]);
+  }, [selectedTeamId, setTeamsPageTeam, updateTeamStats, teams]);
 
   // ── 本地球队 ── (不再回退到 teams[0]，未找到时返回 undefined)
   const LGA: Record<string, string> = { EPL: '英超', LaLiga: '西甲', SerieA: '意甲', Bundesliga: '德甲', Ligue1: '法甲', CSL: '中超', JLeague: 'J1', KLeague1: '韩K1', KLeague2: '韩K2', Eliteserien: '挪超', Veikkausliiga: '芬超', Eredivisie: '荷甲', PrimeiraLiga: '葡超', SaudiPL: '沙特联', Allsvenskan: '瑞超' };

@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { TeamStats } from "../data/realTeamsData";
 import { ModelWeights } from "../utils/quantModel";
 
@@ -94,6 +94,7 @@ export interface AppStore {
   setAwayAndGo: (teamId: string, league: string) => void;
   resetToDefaults: () => void;
   setTeamsPageTeam: (teamId: string, stats: any) => void;
+  updateTeamStats: (teamId: string, stats: Partial<TeamStats>) => void;
 
   setTeams: (teams: TeamStats[]) => void;
   setTeamsLoading: (loading: boolean) => void;
@@ -205,6 +206,11 @@ export const useAppStore = create<AppStore>((set) => ({
     liveMatch: initialLiveMatch,
   }),
   setTeamsPageTeam: (teamId, stats) => set({ teamsPageTeamId: teamId, teamsPageTeamStats: stats }),
+  updateTeamStats: (teamId, stats) => set((s) => ({
+    teams: s.teams.map((t) =>
+      t.id === teamId ? { ...t, ...stats } : t
+    ),
+  })),
 
   setTeams: (teams) => set({ teams }),
   setTeamsLoading: (loading) => set({ isTeamsLoading: loading }),
