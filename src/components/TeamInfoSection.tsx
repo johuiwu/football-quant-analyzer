@@ -281,13 +281,13 @@ export default function TeamInfoSection() {
         {/* ── 右侧 ── */}
         <div className="col-span-8 space-y-5">
           {loading ? (
-            <div className="text-center text-slate-400 py-16 bg-[#0b0b0f] rounded-2xl border border-[#2a2a30]"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" /><span className="text-sm">正在加载数据...</span></div>
+            <div key="panel-loading" className="text-center text-slate-400 py-16 bg-[#0b0b0f] rounded-2xl border border-[#2a2a30]"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" /><span className="text-sm">正在加载数据...</span></div>
           ) : error && !teamStats ? (
-            <div className="text-center text-red-400 py-16 bg-[#0b0b0f] rounded-2xl border border-[#2a2a30]"><span className="text-sm">{error}</span></div>
+            <div key="panel-error" className="text-center text-red-400 py-16 bg-[#0b0b0f] rounded-2xl border border-[#2a2a30]"><span className="text-sm">{error}</span></div>
           ) : !teamStats ? (
-            <div className="text-center text-slate-500 py-16 bg-[#0b0b0f] rounded-2xl border border-[#2a2a30]">请从左侧选择一支球队</div>
+            <div key="panel-empty" className="text-center text-slate-500 py-16 bg-[#0b0b0f] rounded-2xl border border-[#2a2a30]">请从左侧选择一支球队</div>
           ) : (
-            <>
+            <div key="panel-content">
               {/* 区块A */}
               <div className="bg-[#0b0b0f] rounded-2xl border border-[#2a2a30] p-5 relative overflow-hidden">
                 <div className="absolute right-0 bottom-0 top-0 w-1/3 bg-gradient-to-l from-blue-500/5 to-transparent pointer-events-none" />
@@ -421,7 +421,7 @@ export default function TeamInfoSection() {
                 <pre className="text-[11px] text-slate-300 whitespace-pre-wrap leading-relaxed font-sans overflow-x-auto max-h-80 overflow-y-auto bg-slate-950/50 rounded-lg p-4">{teamProfile}</pre>
                 <div className="pt-2 text-[10px] text-amber-500/70 flex items-center gap-1"><Info className="w-3 h-3" /> AI 模块暂不可用，使用本地离线分析引擎</div>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
