@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   FileCode, Flame, TrendingUp, BarChart3, Download, CheckCircle,
   AlertTriangle, Cpu, Layers, Info, RefreshCw, Sliders, HelpCircle,
@@ -644,6 +644,27 @@ export default function DashboardPage() {
                           </div>
                         </div>
                       </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400">主场xG(期望进球/丢球)</label>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={customStats.homeXgFor}
+                            onChange={(e) => setCustomStats({ ...customStats, homeXgFor: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-900 text-center border border-slate-800 rounded py-0.5 font-mono text-xs"
+                            title="期望进球"
+                          />
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={customStats.homeXgAgainst}
+                            onChange={(e) => setCustomStats({ ...customStats, homeXgAgainst: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-900 text-center border border-slate-800 rounded py-0.5 font-mono text-xs"
+                            title="期望丢球"
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div>
@@ -688,6 +709,27 @@ export default function DashboardPage() {
                               className="w-full bg-slate-900 text-center border border-slate-800 rounded py-0.5 font-mono text-xs"
                             />
                           </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400">客场xG(期望进球/丢球)</label>
+                        <div className="flex gap-1">
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={customStats.awayXgFor}
+                            onChange={(e) => setCustomStats({ ...customStats, awayXgFor: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-900 text-center border border-slate-800 rounded py-0.5 font-mono text-xs"
+                            title="期望进球"
+                          />
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={customStats.awayXgAgainst}
+                            onChange={(e) => setCustomStats({ ...customStats, awayXgAgainst: parseFloat(e.target.value) || 0 })}
+                            className="w-full bg-slate-900 text-center border border-slate-800 rounded py-0.5 font-mono text-xs"
+                            title="期望丢球"
+                          />
                         </div>
                       </div>
                     </div>
@@ -907,7 +949,7 @@ export default function DashboardPage() {
                         <TrendingUp className="w-4 h-4 text-rose-500" />
                         亚盘折算隐含概率 V.S. 数学量化期望 (10维空间)
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">Weights: 45/30/15/10/5</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Weights: {useCustomWeights && !useSystemWeights ? `${Math.round(customWeights.odds*100)}/${Math.round(customWeights.strength*100)}/${Math.round(customWeights.homeAway*100)}/${Math.round(customWeights.h2h*100)}/${Math.round(customWeights.form*100)}` : '45/30/15/10/5'}</span>
                     </h3>
 
                     {/* 可视化条形对比图 */}

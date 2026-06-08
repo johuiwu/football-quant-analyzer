@@ -1,8 +1,7 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Zap, TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
-import { REAL_TEAMS } from '../data/realTeamsData';
 import { calculateLeagueTimeDecay } from '../models/bayesian';
 import { calculateBaseOdds } from '../utils/oddsCalculator';
 import { getTeamElo } from '../models/elo';
