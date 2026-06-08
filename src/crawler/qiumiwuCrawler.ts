@@ -111,10 +111,21 @@ const TEAM_SLUG: Record<string, string> = {
   // === 芬超 ===
   "赫尔辛基":"heerxinji","古比斯":"gubisi",
   // === 日职 ===
-  // === 世界杯 ===
-  "阿根廷":"agenting","巴西":"baxi","德国":"deguo","西班牙":"xibanya",
-  "英格兰":"yinggelan","葡萄牙":"putaoya","荷兰":"helan","比利时":"bilishi",
-  "法国":"faguo","意大利":"yidali","克罗地亚":"keluodiya",
+  // === 世界杯 === (球米屋slug规则：有同名篮球队的加1后缀为足球，无同名篮球队的不带1为足球)
+  "阿根廷":"agenting","巴西":"baxi1","德国":"deguo1","西班牙":"xibanya1",
+  "英格兰":"yinggelan","葡萄牙":"putaoya","荷兰":"helan1","比利时":"bilishi1",
+  "法国":"faguo1","意大利":"yidali1","克罗地亚":"keluodiya1",
+  "韩国":"hanguo1","瑞士":"ruishi","加纳":"jiana1","塞内加尔":"saineijiaer",
+  "日本":"riben1","厄瓜多尔":"eguaduoer","澳大利亚":"aodaliya1","伊朗":"yilang1",
+  "沙特阿拉伯":"shatealabo","美国":"meiguo1","加拿大":"jianada1","墨西哥":"moxige1",
+  "乌拉圭":"wulagui","卡塔尔":"kataer1","摩洛哥":"moluoge",
+  // 2026世界杯新增球队
+  "南非":"nanfei","捷克":"jieke1","波黑":"bohei1","巴拉圭":"balagui",
+  "海地":"haidi","苏格兰":"sugelan","土耳其":"tuerqi1","库拉索":"kulasuo",
+  "科特迪瓦":"ketediwa1","瑞典":"ruidian1","突尼斯":"tunisi1","佛得角":"fodejiao1",
+  "埃及":"aiji1","新西兰":"xinxilan1","伊拉克":"yilake1","挪威":"nuowei",
+  "阿尔及利亚":"aerjiliya","奥地利":"aodili","民主刚果":"minzhugangguo",
+  "乌兹别克斯坦":"wuzibiekesitan","哥伦比亚":"gelunbiya","巴拿马":"banama","约旦":"yuedan1",
 };
 
 // ======================== 锚点 Hash → 字段 映射表 ========================

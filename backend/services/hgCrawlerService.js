@@ -6,7 +6,7 @@ puppeteer.use(StealthPlugin());
 import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, acquireLoginLock, releaseLoginLock, isPageLoggedIn } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
-import { fetchCornerMatches } from "./cornerApiClient.js";
+import { fetchCornerMatches, fetchCornerSchedule } from "./cornerApiClient.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -1350,9 +1350,10 @@ export async function fetchSchedule(_retryCount = 0) {
     if (USE_API_MODE) {
       console.log("[HgCrawler] fetchSchedule: 尝试 API 模式...");
       try {
-        const apiResult = await fetchCornerMatches(page);
+        // ★ 获取赛程只获取 today 的角球数据（rtype=cn）
+        const apiResult = await fetchCornerSchedule(page);
         if (apiResult.success && apiResult.matches && apiResult.matches.length > 0) {
-          console.log("[HgCrawler] API 模式成功: " + apiResult.matches.length + " 场比赛");
+          console.log("[HgCrawler] API 模式成功: " + apiResult.matches.length + " 场角球赛程");
 
           // 将 API matches 映射为 scheduleData 格式（兼容 DOM 模式返回格式）
           const scheduleData = apiResult.matches.map((match, idx) => {

@@ -1,4 +1,4 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
@@ -19,12 +19,18 @@ router.get("/corner/live", async (req, res) => {
     const matchId = req.query.matchId || null;
     const result = await getLiveCornerData(matchId);
     const matchList = (result && Array.isArray(result.data)) ? result.data : [];
+    const cornerMatchList = (result && Array.isArray(result.cornerMatches)) ? result.cornerMatches : [];
+    const hdpMatchData = result.hdpMatches || {};
     res.json({
       success: true,
       data: matchList,
+      cornerMatches: cornerMatchList,
+      hdpMatches: hdpMatchData,
       mainMarkets: result.mainMarkets || {},
       generatedAt: (result && result.generatedAt) || new Date().toISOString(),
       count: matchList.length,
+      cornerCount: cornerMatchList.length,
+      hdpCount: Object.keys(hdpMatchData).length,
       cacheAge: (result && result.cacheAge != null) ? result.cacheAge : null,
       cacheEmpty: (result && result.cacheEmpty) ? true : false,
       source: (result && result.source) || "cache"
@@ -55,8 +61,10 @@ router.post("/corner/fetch", async (req, res) => {
       return res.status(500).json({ success: false, error: errMsg });
     }
     const matches = result.data?.matches || [];
-    console.log("[cornerRoutes] /corner/fetch 完成:", matches.length, "场比赛");
-    res.json({ success: true, data: matches, mainMarkets: result.mainMarkets || {}, count: matches.length, source: "live-fetch" });
+    const cornerMatches = result.data?.cornerMatches || [];
+    const hdpMatches = result.data?.hdpMatches || [];
+    console.log("[cornerRoutes] /corner/fetch 完成:", matches.length, "场比赛 (角球=" + cornerMatches.length + " 让球=" + hdpMatches.length + ")");
+    res.json({ success: true, data: matches, cornerMatches, hdpMatches, mainMarkets: result.mainMarkets || {}, count: matches.length, cornerCount: cornerMatches.length, hdpCount: hdpMatches.length, source: "live-fetch" });
   } catch (err) {
     const msg = err.message || String(err);
     console.error("[cornerRoutes] /corner/fetch error:", msg);

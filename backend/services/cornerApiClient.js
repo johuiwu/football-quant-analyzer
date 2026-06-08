@@ -9,17 +9,18 @@ import { parseAsianHandicap } from "./crawlerShared.js";
 // ======================== 数据获取 ========================
 
 /**
- * 在浏览器上下文内并行获取 rb (基本盘) + rcn (角球) 数据
+ * 获取赛程：只获取 today 的角球赛程数据（rtype=cn）
+ * 用于"获取赛程"按钮，数据展示在赛程 tab
  * @param {Page} page - 已登录的 Puppeteer page
- * @returns {{ success: boolean, matches: Array, rbCount: number, rcnCount: number }}
+ * @returns {{ success: boolean, matches: Array, cnCount: number }}
  */
-export async function fetchCornerMatches(page) {
-  console.log("[cornerApiClient] 获取角球比赛数据...");
-  
-  // ★ 优先使用 today 模式（rtype=r/cn），如果没有数据再尝试 live 模式（rtype=rb/rcn）
+export async function fetchCornerSchedule(page) {
+  console.log("[cornerApiClient] 获取角球赛程 (today cn)...");
+
+  // ★ 只获取 today 的 cn 数据
   const interceptionResult = await fetchViaInterception(
     page,
-    [RTYPE.R, RTYPE.CN],
+    [RTYPE.CN],
     async () => {
       try {
         // 先点击 Today 标签
@@ -28,14 +29,14 @@ export async function fetchCornerMatches(page) {
           if (todayBtn) todayBtn.click();
         });
         await new Promise(r => setTimeout(r, 2000));
-        
+
         // 再点击 Soccer 标签
         await page.evaluate(() => {
           const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
           if (soccerBtn) soccerBtn.click();
         });
         await new Promise(r => setTimeout(r, 3000));
-        
+
         // 点击 Corners 标签触发 cn 请求
         await page.evaluate(() => {
           const cnTab = document.getElementById("tab_cn");
@@ -47,65 +48,87 @@ export async function fetchCornerMatches(page) {
     },
     20000
   );
-  
-  let rbXml = interceptionResult[RTYPE.R] || null;
-  let rcnXml = interceptionResult[RTYPE.CN] || null;
-  
-  // 如果 today 模式无数据，尝试 live 模式
-  if (!rbXml && !rcnXml) {
-    console.log("[cornerApiClient] today 模式无数据，尝试 live 模式...");
-    const liveResult = await fetchViaInterception(
-      page,
-      [RTYPE.RB, RTYPE.RCN],
-      async () => {
-        try {
-          await page.evaluate(() => {
-            const liveBtn = document.getElementById("live_page");
-            if (liveBtn) liveBtn.click();
-          });
-          await new Promise(r => setTimeout(r, 2000));
-          await page.evaluate(() => {
-            const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
-            if (soccerBtn) soccerBtn.click();
-          });
-          await new Promise(r => setTimeout(r, 3000));
-          await page.evaluate(() => {
-            const cnTab = document.getElementById("tab_cn");
-            if (cnTab) cnTab.click();
-          });
-        } catch (e) {
-          console.warn("[cornerApiClient] live 触发失败:", e.message);
-        }
-      },
-      15000
-    );
-    rbXml = liveResult[RTYPE.RB] || null;
-    rcnXml = liveResult[RTYPE.RCN] || null;
+
+  let cnXml = interceptionResult[RTYPE.CN] || null;
+
+  // 拦截方式未获取到数据，回退到 fetchInBrowser
+  if (!cnXml) {
+    console.log("[cornerApiClient] 拦截方式未获取到 cn 数据，回退到 fetchInBrowser...");
+    cnXml = await fetchGameList(page, RTYPE.CN);
   }
+
+  // fetchInBrowser 也失败，尝试 game_list_FT
+  if (!cnXml) {
+    console.log("[cornerApiClient] fetchInBrowser 也失败，尝试 game_list_FT...");
+    cnXml = await fetchGameList_FT(page, RTYPE.CN);
+  }
+
+  const cnResult = cnXml ? parseGameListXML(cnXml, "cn") : { matches: [], count: 0 };
+  const matches = cnResult.matches || [];
+
+  console.log("[cornerApiClient] 角球赛程: " + matches.length + " 场比赛");
+  return { success: matches.length > 0, matches, cnCount: matches.length };
+}
+
+/**
+ * 启动监控：获取有角球盘口的比赛和让球大小的比赛
+ * 返回分类数据：cornerMatches（角球 tab）+ hdpMatches（让球 tab）
+ * @param {Page} page - 已登录的 Puppeteer page
+ * @returns {{ success: boolean, cornerMatches: Array, hdpMatches: Array, rbCount: number, rcnCount: number }}
+ */
+export async function fetchCornerMatches(page) {
+  console.log("[cornerApiClient] 获取监控数据 (live 角球 + 让球)...");
   
-  // 如果拦截方式未获取到数据，回退到 fetchInBrowser 方式
+  // ★ 只获取 live 模式数据（rb/rcn），不获取 today 模式（赛程数据由 fetchCornerSchedule 单独获取）
+  const interceptionResult = await fetchViaInterception(
+    page,
+    [RTYPE.RB, RTYPE.RCN],
+    async () => {
+      try {
+        // 点击 In-Play 标签
+        await page.evaluate(() => {
+          const liveBtn = document.getElementById("live_page");
+          if (liveBtn) liveBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // 点击 Soccer 标签
+        await page.evaluate(() => {
+          const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
+          if (soccerBtn) soccerBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 3000));
+        
+        // 点击 Corners 标签触发 rcn 请求
+        await page.evaluate(() => {
+          const cnTab = document.getElementById("tab_cn");
+          if (cnTab) cnTab.click();
+        });
+      } catch (e) {
+        console.warn("[cornerApiClient] 触发页面操作失败:", e.message);
+      }
+    },
+    20000
+  );
+  
+  let rbXml = interceptionResult[RTYPE.RB] || null;
+  let rcnXml = interceptionResult[RTYPE.RCN] || null;
+  
+  // 如果拦截方式未获取到数据，回退到 fetchInBrowser 方式（live 模式）
   if (!rbXml && !rcnXml) {
-    console.log("[cornerApiClient] 拦截方式未获取到数据，回退到 fetchInBrowser...");
-    // ★ 优先 today 模式
+    console.log("[cornerApiClient] 拦截方式未获取到数据，回退到 fetchInBrowser (live)...");
     [rbXml, rcnXml] = await Promise.all([
-      fetchGameList(page, RTYPE.R),
-      fetchGameList(page, RTYPE.CN),
+      fetchGameList(page, RTYPE.RB),
+      fetchGameList(page, RTYPE.RCN),
     ]);
-    // 如果 today 无数据，尝试 live
-    if (!rbXml && !rcnXml) {
-      [rbXml, rcnXml] = await Promise.all([
-        fetchGameList(page, RTYPE.RB),
-        fetchGameList(page, RTYPE.RCN),
-      ]);
-    }
   }
   
-  // 如果 get_game_list 全部失败，尝试 game_list_FT
+  // 如果 fetchInBrowser 也失败，尝试 game_list_FT（live 模式）
   if (!rbXml && !rcnXml) {
-    console.log("[cornerApiClient] get_game_list 全部失败，尝试 game_list_FT...");
+    console.log("[cornerApiClient] fetchInBrowser 也失败，尝试 game_list_FT (live)...");
     [rbXml, rcnXml] = await Promise.all([
-      fetchGameList_FT(page, RTYPE.R),
-      fetchGameList_FT(page, RTYPE.CN),
+      fetchGameList_FT(page, RTYPE.RB),
+      fetchGameList_FT(page, RTYPE.RCN),
     ]);
   }
 
@@ -116,8 +139,12 @@ export async function fetchCornerMatches(page) {
 
   const merged = mergeByName(rbResult.matches || [], rcnResult.matches || []);
 
-  console.log("[cornerApiClient] 合并完成: " + merged.length + " 场比赛 (r=" + (rbResult.matches?.length || 0) + " cn=" + (rcnResult.matches?.length || 0) + ")");
-  return { success: merged.length > 0, matches: merged, rbCount: rbResult.matches?.length || 0, rcnCount: rcnResult.matches?.length || 0 };
+  // ★ 分类：角球 tab（有角球盘口的比赛）+ 让球 tab（有 HDP/OU 盘口的比赛）
+  const cornerMatches = merged.filter(m => m._hasCornerMarket);
+  const hdpMatches = merged.filter(m => m._hdpLine || m._ouLine);
+
+  console.log("[cornerApiClient] 合并完成: " + merged.length + " 场 → 角球=" + cornerMatches.length + " 让球=" + hdpMatches.length + " (r=" + (rbResult.matches?.length || 0) + " cn=" + (rcnResult.matches?.length || 0) + ")");
+  return { success: merged.length > 0, matches: merged, cornerMatches, hdpMatches, rbCount: rbResult.matches?.length || 0, rcnCount: rcnResult.matches?.length || 0 };
 }
 
 // ======================== 合并逻辑 ========================
@@ -228,15 +255,19 @@ function buildHandicapsArray(rcn, rb) {
   const result = [];
   let order = 0;
 
-  // 角球让球盘 (来自 rcn 的 RATIO_CORNERHDP)
+  // 角球让球盘 (来自 rcn)
   if (rcn?._cornerHdpLine) {
+    const hHome = parseFloat(rcn._cornerHdpHomeOdds) || 0;
+    const hAway = parseFloat(rcn._cornerHdpAwayOdds) || 0;
     result.push({
       order: order++,
       category: "HDP",
       categoryLabel: "角球让球",
       period: "full",
       line: parseAsianHandicap(rcn._cornerHdpLine) || 0,
-      odds: { home: parseFloat(rcn._cornerHdpHomeOdds) || 0, away: parseFloat(rcn._cornerHdpAwayOdds) || 0 },
+      odds: { home: hHome, away: hAway },
+      homeOdds: hHome,
+      awayOdds: hAway,
       source: "api",
       marketGroup: "corner",
     });
@@ -244,13 +275,17 @@ function buildHandicapsArray(rcn, rb) {
 
   // 角球大小 (来自 rcn)
   if (rcn?._cornerOULine) {
+    const oOver = parseFloat(rcn._cornerOUOdds) || 0;
+    const oUnder = parseFloat(rcn._cornerOUUnderOdds) || 0;
     result.push({
       order: order++,
       category: "O/U",
       categoryLabel: "角球大小",
       period: "full",
-      line: parseFloat(rcn._cornerOULine) || 0,
-      odds: { over: parseFloat(rcn._cornerOUOdds) || 0, under: parseFloat(rcn._cornerOUUnderOdds) || 0 },
+      line: parseAsianHandicap(rcn._cornerOULine) || 0,
+      odds: { over: oOver, under: oUnder },
+      overOdds: oOver,
+      underOdds: oUnder,
       source: "api",
       marketGroup: "corner",
     });
@@ -258,13 +293,17 @@ function buildHandicapsArray(rcn, rb) {
 
   // 让球盘 (来自 rb)
   if (rb?._hdpLine) {
+    const hHome = parseFloat(rb._hdpHomeOdds) || 0;
+    const hAway = parseFloat(rb._hdpAwayOdds) || 0;
     result.push({
       order: order++,
       category: "HDP",
       categoryLabel: "让球",
       period: "full",
-      line: parseFloat(rb._hdpLine) || 0,
-      odds: { home: parseFloat(rb._hdpHomeOdds) || 0, away: parseFloat(rb._hdpAwayOdds) || 0 },
+      line: parseAsianHandicap(rb._hdpLine) || 0,
+      odds: { home: hHome, away: hAway },
+      homeOdds: hHome,
+      awayOdds: hAway,
       source: "api",
       marketGroup: "hdp",
     });
@@ -272,13 +311,17 @@ function buildHandicapsArray(rcn, rb) {
 
   // 大小球 (来自 rb)
   if (rb?._ouLine) {
+    const oOver = parseFloat(rb._ouOverOdds) || 0;
+    const oUnder = parseFloat(rb._ouUnderOdds) || 0;
     result.push({
       order: order++,
       category: "O/U",
       categoryLabel: "大小球",
       period: "full",
-      line: parseFloat(rb._ouLine) || 0,
-      odds: { over: parseFloat(rb._ouOverOdds) || 0, under: parseFloat(rb._ouUnderOdds) || 0 },
+      line: parseAsianHandicap(rb._ouLine) || 0,
+      odds: { over: oOver, under: oUnder },
+      overOdds: oOver,
+      underOdds: oUnder,
       source: "api",
       marketGroup: "ou",
     });

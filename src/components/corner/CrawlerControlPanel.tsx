@@ -313,6 +313,10 @@ export default function CrawlerControlPanel() {
         const rawMatches = apiData.data || [];
         const matchCount = Array.isArray(rawMatches) ? rawMatches.length : (rawMatches?.matches?.length || 0);
         
+        // ★ 分类数据：角球 tab 使用 cornerMatches，让球 tab 使用 hdpMatches
+        const cornerMatches = apiData.cornerMatches || [];
+        const hdpMatches = apiData.hdpMatches || [];
+        
         if (matchCount > 0 || !apiData.cacheEmpty) {
           // 检查数据来源
           const firstDataSource = rawMatches.length > 0 ? (rawMatches[0]._dataSource || "") : "";
@@ -320,8 +324,9 @@ export default function CrawlerControlPanel() {
             showMessage("info", "当前无实时比赛，展示赛程数据");
           }
           
+          // ★ 角球 tab：严格只使用 cornerMatches（有角球盘口的比赛），不回退
           setCrawlerData({
-            matches: (Array.isArray(rawMatches) ? rawMatches : (rawMatches?.matches || [])).map(normalizeMatchForRender),
+            matches: cornerMatches.map(normalizeMatchForRender),
             allText: apiData.data?.allText || [],
             allElements: apiData.data?.allElements || []
           } as any);
@@ -352,9 +357,34 @@ export default function CrawlerControlPanel() {
           
         }
 
-        // ★ 始终同步主盘口数据（无论角球数据是否存在）
+        // ★ 让球 tab：优先使用 hdpMatches 构建 mainMarketData，否则使用原有 mainMarkets
         const recvMainMarkets = apiData.mainMarkets || {};
-        if (Object.keys(recvMainMarkets).length > 0) {
+        // hdpMatches 可能是数组（来自 /corner/fetch）或对象（来自 /corner/live）
+        if (Array.isArray(hdpMatches) && hdpMatches.length > 0) {
+          // 从 hdpMatches 数组构建 mainMarketData 格式
+          const hdpMarketData: Record<string, any> = {};
+          for (const m of hdpMatches) {
+            const key = (m.homeTeam || "") + "|" + (m.awayTeam || "");
+            const hdp = m.handicaps?.find((h: any) => h.category === "HDP" && h.period === "full" && h.marketGroup !== "corner");
+            const ou = m.handicaps?.find((h: any) => h.category === "O/U" && h.period === "full" && h.marketGroup !== "corner");
+            const hdpHalf = m.handicaps?.find((h: any) => h.category === "HDP" && h.period === "half");
+            const ouHalf = m.handicaps?.find((h: any) => h.category === "O/U" && h.period === "half");
+            hdpMarketData[key] = {
+              league: m.league || "",
+              time: m.time || "",
+              homeScore: m.homeScore || 0,
+              awayScore: m.awayScore || 0,
+              hdp: hdp ? [hdp] : [],
+              ou: ou ? [ou] : [],
+              hdpHalf: hdpHalf ? [hdpHalf] : [],
+              ouHalf: ouHalf ? [ouHalf] : [],
+            };
+          }
+          setMainMarketData(hdpMarketData);
+        } else if (typeof hdpMatches === "object" && Object.keys(hdpMatches).length > 0) {
+          // hdpMatches 已经是 mainMarketData 格式的对象
+          setMainMarketData(hdpMatches);
+        } else if (Object.keys(recvMainMarkets).length > 0) {
           setMainMarketData(recvMainMarkets);
         }
         
@@ -737,7 +767,7 @@ export default function CrawlerControlPanel() {
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {!crawlerData || !(crawlerData.matches || []).length ? (
             <div className="text-center py-8 text-slate-500 text-sm">
-              {isBackendPolling ? "监控中，等待数据更新..." : isPaused ? "暂无比赛，轮询已暂停" : "暂无比赛数据，请点击刷新获取数据。"}
+              {isBackendPolling ? "监控中，等待角球盘口数据更新..." : isPaused ? "暂无角球盘口比赛，轮询已暂停" : "暂无角球盘口比赛，请启动监控获取数据。"}
             </div>
           ) : (
             (crawlerData.matches || []).map((match) => {

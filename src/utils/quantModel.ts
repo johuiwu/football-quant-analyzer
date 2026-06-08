@@ -1043,7 +1043,7 @@ const fusedTotal = fusedHomeProb + fusedDrawProb + fusedAwayProb;
 
       const pAway = poisson(a, expectedAwayGoals);
 
-      const cellDixonAdj = dixonColesAdjustment(h, a, expectedHomeGoals, expectedAwayGoals, -0.075);
+      const cellDixonAdj = dixonColesAdjustment(h, a, expectedHomeGoals, expectedAwayGoals, getLeagueRho(league));
 
       const prob = pHome * pAway * cellDixonAdj;
 
@@ -1573,9 +1573,9 @@ const strengthDiff = homeStrength - awayStrength;
 
   const duelSeverity = Math.min(2.5, 3.5 / (0.5 + Math.abs(htRank - atRank) * 0.15));
 
-  const expectedHomeCards = parseFloat(Math.max(0.5, 1.4 + (duelSeverity * 0.45) + (adv.homeFatigue * 0.12)).toFixed(1));
+  const expectedHomeCards = parseFloat(Math.min(3.5, Math.max(0.5, 1.4 + (duelSeverity * 0.45) + (adv.homeFatigue * 0.12))).toFixed(1));
 
-  const expectedAwayCards = parseFloat(Math.max(0.5, 1.8 + (duelSeverity * 0.40) + (adv.awayFatigue * 0.15)).toFixed(1));
+  const expectedAwayCards = parseFloat(Math.min(3.5, Math.max(0.5, 1.8 + (duelSeverity * 0.40) + (adv.awayFatigue * 0.15))).toFixed(1));
 
 
 
@@ -2000,7 +2000,7 @@ export function calculateBayesianLiveUpdate(
   
 
   // ===== v4.0: 非线性时间衰减（幂函数替代线性） =====
-  const rawRemaining = calculateLeagueTimeDecay(elapsedMinutes, homeTeam?.league || awayTeamVal?.league);
+  const rawRemaining = calculateLeagueTimeDecay(elapsedMinutes, homeTeam?.league || awayTeam?.league);
 
   
 
@@ -2124,9 +2124,15 @@ export function calculateBayesianLiveUpdate(
 
   // Combine Corners and Yellow Cards dynamic live expected increments
 
-  const liveCornerHomeLeft = parseFloat((preMatchResults.expectedHomeCorners * rawRemaining).toFixed(1));
+  // 角球时间分布权重：后段权重高于前段（角球多发生在比赛后段）
+  const cornerTimeWeight = elapsedMinutes < 45 
+    ? 1.0   // 上半场：均匀分布
+    : elapsedMinutes < 60 
+      ? 1.15 // 45-60分钟：角球频率开始上升
+      : 1.3; // 60分钟后：角球频率显著上升
 
-  const liveCornerAwayLeft = parseFloat((preMatchResults.expectedAwayCorners * rawRemaining).toFixed(1));
+  const liveCornerHomeLeft = Math.max(0, Math.round(preMatchResults.expectedHomeCorners * rawRemaining * cornerTimeWeight));
+  const liveCornerAwayLeft = Math.max(0, Math.round(preMatchResults.expectedAwayCorners * rawRemaining * cornerTimeWeight));
 
   const liveCardsHomeLeft = parseFloat((preMatchResults.expectedHomeCards * rawRemaining * redCardHomeDefenseLeak).toFixed(1));
 

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-type" content="text/html; charset=UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+		<meta http-equiv="X-UA-Compatible" content="ie=edge">
+		<script>
+top.ver = '96605be0021f52142cf88292a7f55aa8_1780552993656';
+function announcement(_win,_dom,_post){var _self=this;var win=_win;var dom=_dom;var postHash=_post;var parentClass;var eventHandler=new Object;var util;var LS;var notice_ver="202404";var ann_sw="N";var _mc=new Object;var classname="announcement";var myhash={};var timetype="sysTime";var config_set=new win.config_set;var msg_id="";_self.init=function(){config_set.init();document.getElementById("body_show").classList.add("scroll_lock");parentClass.dispatchEvent("showLoading",{"isShow":false});document.getElementById("home_show").removeAttribute("style");
+if(document.getElementById("home_touch_div_320"))document.getElementById("home_touch_div_320").classList.remove("sideshow_hide");if(document.getElementById("home_touch_div_640"))document.getElementById("home_touch_div_640").classList.remove("sideshow_hide");if(document.getElementById("home_touch_div_320_ios"))document.getElementById("home_touch_div_320_ios").classList.remove("sideshow_hide");if(document.getElementById("home_touch_div_640_ios"))document.getElementById("home_touch_div_640_ios").classList.remove("sideshow_hide");
+util.addEvent(dom.getElementById("goPage_2fa"),"click",_self.close_btn,{"btn":"goPage","page":"help2FA_page"});util.addEvent(dom.getElementById("close_btn"),"click",_self.close_btn,{"btn":"close","act":"confirm"});util.addEvent(dom.getElementById("close_btn1"),"click",_self.close_btn,{"btn":"close1"});util.addEvent(dom.getElementById("close_ann_2fa"),"click",_self.close_btn,{"btn":"close"})};_self.setMemSet=function(){top["memSet"].annIsRead="Y";if(top.userData["editdate"])top["memSet"].ann2FAReadDate=
+top.userData["editdate"];var par="";par+="p=memSet";par+="&langx="+top.langx;par+="&uid="+top["userData"].uid;par+="&action=send";par+="&val="+JSON.stringify(top["memSet"]);var hr=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"memSet",needTimeout:true});hr.addEventListener("onError",function(){show_Errmsg(top["connect_retry"])});hr.addEventListener("LoadComplete",_self.setMemSetFinish);hr.loadURL(top.m2_url,"POST",par)};_self.get2FAData=
+function(){document.getElementById("announcement_show").className="popup on";var show2FA=false;if(top.mem_force_2FA_sw=="Y"){if(top["userData"].sw_2fa!="Y"){show2FA=true;util.addClass(dom.getElementById("show_ann_2fa"),"stage2nd")}}else{util.removeClass(dom.getElementById("show_ann_2fa"),"stage2nd");if(top["userData"].sw_2fa!="Y"){var codnition1=top["memSet"].annIsRead!="Y";var codnition2=top["memSet"].ann2FAReadDate&&top.userData["editdate"]!=top["memSet"].ann2FAReadDate;if(top["userData"].sw_2fa!=
+"noData"){if(codnition1||codnition2)show2FA=true}else if(codnition1)show2FA=true}}if(top.notice_sw=="Y"&&show2FA){parentClass.dispatchEvent("addbodylock");dom.getElementById("notice").style.display="none";util.addClass(dom.getElementById("show_ann_2fa"),"on");dom.getElementById("show_ann_2fa").style.display=""}else{parentClass.dispatchEvent("annlock",{"sw":false});parentClass.dispatchEvent("removebodylock",{});document.getElementById("announcement_show").className="popup";dom.getElementById("notice").style.display=
+"none";dom.getElementById("show_ann_2fa").style.display="none";dom.getElementById("ann").style.display="none"}parentClass.dispatchEvent("checkCount",{});if(show2FA)_self.setMemSet()};_self.setMemSetFinish=function(data){var errorMsg=util.showConnectMsg(data);if(util.alertConnectMsg(errorMsg))return};_self.setTimetype=function(e,param){dom.getElementById("ann_"+param.timetype).checked=true;timetype=param.timetype};_self.goToNewFun=function(e,param){_self.close_btn(e,{"btn":"close"});_self.chgPage(e,
+param)};_self.chgPage=function(e,param){parentClass.dispatchEvent("bodyGoToPage",param)};_self.setParentclass=function(_parentclass){parentClass=_parentclass;util=parentClass.getThis("util");LS=parentClass.getThis("LS")};_self.getThis=function(varible){if(!myhash[varible]){var msg="no myhash["+varible+"]";util.writeLog(classname,msg)}return myhash[varible]};_self.addEventListener=function(eventname,eventFunction){eventHandler[eventname]=eventFunction};_self.dispatchEvent=function(eventname,param){if(eventHandler[eventname])eventHandler[eventname](param)};
+_self.close_btn=function(e,param){_self.hide_announcement(param);parentClass.dispatchEvent("annlock",{"sw":false});parentClass.dispatchEvent("removebodylock",{})};_self.showCloseBtn=function(){document.getElementById("close_btn1").style.display=""};_self.roll=function(){if(document.getElementById("ann_scroll01").scrollTop>0)document.getElementById("ann_title01").classList.add("active");else document.getElementById("ann_title01").classList.remove("active")};_self.ann_message=function(){var urlParams=
+"";urlParams+="username="+top["userData"].username;urlParams+="&uid="+top["userData"].uid;urlParams+="&langx="+top.langx;urlParams+="&select_date=-4";urlParams+="&t_important=4";urlParams="p=messageget&ver="+top.ver+"&"+urlParams;var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"messageget",needTimeout:true});getHTML.addEventListener("LoadComplete",_self.connectComplete);getHTML.loadURL(top.m2_url,"POST",urlParams)};_self.connectComplete=
+function(xml){var errorMsg=util.showConnectMsg(xml);if(util.alertConnectMsg(errorMsg))return;var xmlnode=util.parseXml(xml);var ann_msg=util.showTxt(xmlnode.Node(xmlnode.Root[0],"annmsg").innerHTML);var message_id=util.showTxt(xmlnode.Node(xmlnode.Root[0],"id").innerHTML);if(ann_msg!=""&&message_id!=msg_id){ann_sw="Y";msg_id=message_id}else ann_sw="N";_self.show_announcement({"id":msg_id,"msg":ann_msg,"ann_sw":ann_sw})};_self.show_announcement=function(obj){if(obj.notice_ver)notice_ver=obj.notice_ver;
+if(obj.id!="")msg_id=obj.id;document.getElementById("announcement_show").className="popup on";show_sw=top.notice_sw=="Y"&&top["memSet"].notice!=notice_ver?"Y":"N";if(obj.ann_sw=="Y"){parentClass.dispatchEvent("addbodylock");dom.getElementById("notice").style.display="none";dom.getElementById("show_ann").style.display="none";dom.getElementById("ann").style.display="";dom.getElementById("now_msg").innerHTML=util.showTxt(obj.msg)}else if(show_sw=="Y"){parentClass.dispatchEvent("addbodylock");dom.getElementById("notice").style.display=
+"none";dom.getElementById("show_ann").classList.add("on");dom.getElementById("show_ann").style.display=""}else{parentClass.dispatchEvent("annlock",{"sw":false});parentClass.dispatchEvent("removebodylock",{});document.getElementById("announcement_show").className="popup";dom.getElementById("notice").style.display="none";dom.getElementById("show_ann").style.display="none";dom.getElementById("ann").style.display="none"}parentClass.dispatchEvent("checkCount",{})};_self.hide_announcement=function(param){if(param.btn==
+"close"||param.btn=="goPage"){dom.getElementById("show_ann_2fa").style.display="none";dom.getElementById("announcement_show").className="popup";if(param.btn=="goPage")parentClass.dispatchEvent("bodyGoToPage",param);if(param.btn=="close"&&param.act=="confirm")if(timetype!=top["userData"].timetype){top["userData"].timetype=timetype;_self.sendTimetype(timetype)}else _self.setNotice();else _self.setNotice();_self.ann_message()}else if(param.btn=="close1"){_self.setMessage(msg_id);dom.getElementById("ann").style.display=
+"none";dom.getElementById("announcement_show").className="popup"}};_self.sendTimetype=function(timetype){var action="send";var code='{"timetype":"'+timetype+'","notice":"'+notice_ver+'"}';top["memSet"].notice=notice_ver;var urlParams="p=memSet";urlParams+="&"+top.param;urlParams+="&uid="+top["userData"].uid;urlParams+="&val="+code;urlParams+="&action="+action;var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"memSet",needTimeout:true});
+getHTML.addEventListener("onError",_self.onError);getHTML.addEventListener("LoadComplete",_self.sendTimetypeComplete);getHTML.loadURL(top.m2_url,"POST",urlParams)};_self.sendTimetypeComplete=function(xml){var errorMsg=util.showConnectMsg(xml);if(util.alertConnectMsg(errorMsg))return;top["memSet"].timetype=top["userData"].timetype;parentClass.dispatchEvent("setFooterTimetype",{})};_self.setNotice=function(){var code='{"notice":"'+notice_ver+'"}';top["memSet"].notice=notice_ver;var urlParams="p=memSet";
+urlParams+="&"+top.param;urlParams+="&uid="+top["userData"].uid;urlParams+="&val="+code;urlParams+="&action=send";var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"memSet",needTimeout:true});getHTML.addEventListener("onError",_self.onError);getHTML.addEventListener("LoadComplete",_self.setNoticeComplete);getHTML.loadURL(top.m2_url,"POST",urlParams)};_self.setNoticeComplete=function(xml){var errorMsg=util.showConnectMsg(xml);
+if(util.alertConnectMsg(errorMsg))return};_self.setMessage=function(id){var code='{"msgid":"'+id+'"}';top["memSet"].msgid=id;var urlParams="p=memSet";urlParams+="&"+top.param;urlParams+="&uid="+top["userData"].uid;urlParams+="&val="+code;urlParams+="&action=send";var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"memSet",needTimeout:true});getHTML.addEventListener("onError",_self.onError);getHTML.addEventListener("LoadComplete",
+_self.setMessageComplete);getHTML.loadURL(top.m2_url,"POST",urlParams)};_self.setMessageComplete=function(xml){var errorMsg=util.showConnectMsg(xml);if(util.alertConnectMsg(errorMsg))return}};
+
+function CookieManager(){var _self=this;var _domain=document.domain;var MainDomain=getDomain(_domain);_self.set=function(cname,cvalue,exdays,path){exdays=exdays||30;path=path||"/";var d=new Date;d.setTime(d.getTime()+exdays*24*60*60*1E3);var expires="expires="+d.toUTCString();var paths="path="+path;if(top.cookieEncode_sw=="Y")try{document.cookie=cname+"="+btoa(cvalue)+"; "+expires+"; "+paths+"; "+MainDomain}catch(e){console.log(e);document.cookie=cname+"='';"+expires+"; "+paths+"; "+MainDomain}else document.cookie=
+cname+"="+cvalue+"; "+expires+"; "+paths+"; "+MainDomain};_self.get=function(cname){var name=cname+"=";var ca=document.cookie.split(";");for(var i=0;i<ca.length;i++){var c=ca[i];while(c.charAt(0)==" ")c=c.substring(1);if(c.indexOf(name)==0){var tmp_val=c.substring(name.length,c.length);if(top.cookieEncode_sw=="Y")try{return atob(tmp_val)}catch(e){console.log("[",cname,"]=>",e);return""}else return tmp_val}}return undefined};_self.del=function(cname){var d=new Date;d.setTime(d.getTime()-1);var cookieVal=
+_self.get(cname);if(cookieVal!=null)document.cookie=cname+"="+cookieVal+";expires="+d.toGMTString()+"; "+MainDomain};function getDomain(_domain){var domainAry=_domain.split(".");var ret="";switch(domainAry.length){case 2:ret="domain=.";ret+=_domain;break;case 3:ret="domain=.";domainAry.shift();ret+=domainAry.join(".");break;default:ret=_domain;break}return ret}};
+
+var artjson = {
+	"ART_ann_title": "NEW SPORTSBOOK",
+	"ART_ann_txt01": "Welcome to our new Sportsbook. We are still enhancing and fine-tuning but we wanted to give you an early chance to experience the new features. We hope you like it!",
+	"ART_ann_txt02": "Thank you.",
+	"ART_ann_immediate": "SYSTEM MESSAGE",
+	"ART_ann_ok": "OK",
+	"ART_ann_lang": "en",
+	"ART_features_title01": "Introducing Our New Design",
+	"ART_features_txt01_1": "A modern look, with new features.",
+	"ART_features_txt01_2": "Welcome to our new modern look, with many new features. You can learn about some of these new features below. We will have many more features coming, which we will announce to you when available.",
+	"ART_features_txt01_3": "We hope you like the new design and thank you for your continued support.",
+	"ART_features_title02": "More Markets",
+	"ART_features_txt02_1": "View more markets on the Events page.",
+	"ART_features_title03": "Market to Market Swiping",
+	"ART_features_txt03_1": "On smaller devices, swipe left and right to see more markets on the Events page.",
+	"ART_features_title04": "Parlay Anywhere",
+	"ART_features_txt04_1": "Add selections to your Bet Slip from any odds page and place a Parlay.",
+	"ART_features_title05": "Parlay Price",
+	"ART_features_txt05_1": "While creating a parlay, you can see the Parlay price in the Bet Slip button.",
+	"ART_features_title06": "Remember My Stake",
+	"ART_features_txt06_1": "If you usually bet the same stake, you can select the ‘Remember Stake’ option when entering your stake.",
+	"ART_features_txt07": "My Event is finally here! Selecting the star icon, for any event, will add it to the My Events section. Here, you can group and easily access all the events you are interested in.",
+	"ART_forecast_title": "INTRODUCING WIN / LOSS FORECAST",
+	"ART_ann_forecast_tx01": "Win/Loss Forecast is a feature enabling you to see your potential or settled Win/Loss values, based on the period scoreline.",
+	"ART_ann_forecast_tx02": "Press the icon on the event to view your Win/Loss Forecast.",
+	"*ART_ann_ok_btn*": "Learn More",
+	"*ART_ann_got_btn*":"GOT IT",
+
+	"*ART_ann_bethold*": "ANNOUNCEMENT",
+	"*ART_ann_bethold_title*": "My Events",
+	"*ART_ann_bethold_txt*": "My Events is finally here! Selecting the star icon, for any event, will add it to the My Events section. Here, you can group and easily access all the events you are interested in.",
+
+	"ART_ann_timetype_title": "ANNOUNCEMENT",
+	"ART_ann_timetype_txt01": "EVENT START DISPLAY TIME",
+	"ART_ann_timetype_txt02": "Select your preferred Event Start Display Time:",
+	"ART_ann_timetype_sys": "System Time (GMT-4, same as now)",
+	"ART_ann_timetype_dev": "Device Time (Match the time setting on your device)",
+	"ART_ann_timetype_txt03": "At any time, you can go to the Settings section and change the Event Start Time Display.",
+	"ART_ann_timetype_btn_more": "Learn More",
+	"ART_ann_timetype_btn_ok": "CONFIRM",
+
+	"ART_ann_2fa_title": "ACCOUNT SECURITY",
+	"ART_ann_2fa_new": "New",
+	"ART_ann_2fa_txt01": "Two-Factor Authentication (2FA)",
+	"ART_ann_2fa_txt02": "Make your account even more secure 2FA is an extra layer of security for logging into an account",
+	"ART_ann_2fa_txt03": "After you enter your credentials, the authenticator provides a one-time code that you must enter to complete the login process.",
+	"ART_ann_2fa_btn": "ENABLE 2FA LOGIN",
+};
+</script>
+		
+		<link href="https://www.hga050.com/style/message.css" rel="stylesheet" type="text/css">
+		<link href="https://www.hga050.com/style/share_tool.css" rel="stylesheet" type="text/css">
+
+		<link href="../../style/reset.css" rel="stylesheet" type="text/css">
+		<link href="../../style/message.css" rel="stylesheet" type="text/css">
+		<link href="../../style/share_tool.css" rel="stylesheet" type="text/css">
+
+		<title></title>
+	</head>
+	<body>
+		<div>
+			<!-- 新版公告 -->
+			<div id="notice" class="ann_mask _features" style="display:;">
+				<!-- <div class="ann_box">
+					<div id="ann_title01" class="ann_title">
+						<span>*ART_ann_title*</span>
+						<button id="close_btn" type="button" class="btn_ann_close minimouse_hover" style="display:none;">
+							<i><svg><use xlink:href="#icon_close_bold"/></svg></i>
+						</button>
+					</div>
+					<div id="ann_scroll01" class="ann_txt *ART_ann_lang*">
+						<div class="ann_model">
+							<h1>*ART_features_title07*</h1>
+							<div class="ann_imgload">
+								<img class="tw" src="../../images/fea_img07.jpg">
+								<img class="cn" src="../../images/fea_img07_cn.jpg">
+								<img class="en" src="../../images/fea_img07_en.jpg">
+							</div>
+							<ul class="ann_more_txt">
+								<li>*ART_features_txt07*</li>
+							</ul>
+						</div>
+
+						<div id="ann_more_btn" class="btn_more">*ART_ann_btn*</div>
+					</div>
+				</div> -->
+			</div>
+
+
+			<!-- Password Recovery Gmail unsupport -->
+			<!-- <div id="show_ann" class="ann_mask" style="display: none;">
+				<div class="ann_auto_box ann_gmail">
+					<div id="" class="ann_title">
+						<span>*ART_forecast_title*</span>
+						<button id="close_ann" type="button" class="btn_ann_close minimouse_hover">
+							<i><svg><use xlink:href="#icon_close_bold"/></svg></i>
+						</button>
+					</div>
+					<div class="ann_txt *ART_ann_lang*">
+						<ul>
+							<li>*ART_ann_forecast_tx01*</li>
+							<li>
+							</li>
+							<li class="word_black">*ART_ann_forecast_tx02*</li>
+						</ul>
+					</div>
+					<div class="ann_foot">
+						<button id="goPage" type="button" class="btn_blue">*ART_ann_ok_btn*</button>
+						<button id="close_btn" type="button" class="btn_gray --gray85">*ART_ann_got_btn*</button>
+					</div>
+				</div>
+			</div> -->
+
+
+			<!-- Bethold -->
+			<!--
+			<div id="betHold_ann" class="ann_mask" style="display:none;">
+				<div class="ann_auto_box">
+					<div id="" class="ann_title">
+						<span>*ART_ann_bethold*</span>
+						<button id="betHold_close" type="button" class="btn_ann_close minimouse_hover">
+							<i><svg><use xlink:href="#icon_close_bold"/></svg></i>
+						</button>
+					</div>
+					<div class="ann_txt  *ART_ann_lang*">
+						<ul>
+							<li class="word_bold word_black">*ART_ann_bethold_title*</li>
+							<li>
+								<img class="tw" src="../../images/fea_img07.jpg">
+								<img class="cn" src="../../images/fea_img07_cn.jpg">
+								<img class="en" src="../../images/fea_img07_en.jpg">
+							</li>
+							<li>*ART_ann_bethold_txt*</li>
+						</ul>
+					</div>
+					<div class="ann_foot">
+						<button id="betHold_confirm" type="button" class="btn_green_full">*ART_ann_ok*</button>
+					</div>
+				</div>
+			</div>
+			-->
+
+
+			<!-- Time Type -->
+			<div id="show_ann" class="ann_mask _timetype *ART_ann_lang*" style="display: none;">
+
+				<div class="ann_box">
+					<div id="" class="ann_title">
+						<span>*ART_ann_timetype_title*</span>
+						<button id="close_ann" type="button" class="btn_ann_close minimouse_hover">
+							<i><svg><use xlink:href="#icon_close_bold"/></svg></i>
+						</button>
+					</div>
+					<div class="ann_txt *ART_ann_lang*">
+						<h1>*ART_ann_timetype_txt01*</h1>
+						<div class="img_ann_timetype"></div>
+
+						<p>*ART_ann_timetype_txt02*</p>
+
+						<label class="ann_radio">
+							<input type="radio" id="ann_sysTime" name="ann_timetype" value="sysTime" checked />
+							<i class="checkmark"></i>
+							<tt>*ART_ann_timetype_sys*</tt>
+						</label>
+						<label class="ann_radio">
+							<input type="radio" id="ann_devTime" name="ann_timetype" value="devTime"/>
+							<i class="checkmark"></i>
+							<tt>*ART_ann_timetype_dev*</tt>
+						</label>
+
+						<p>*ART_ann_timetype_txt03*</p>
+					</div>
+					<div class="ann_foot">
+						<button id="goPage" type="button" class="btn_blue">*ART_ann_timetype_btn_more*</button>
+						<button id="close_btn" type="button" class="btn_green">*ART_ann_timetype_btn_ok*</button>
+					</div>
+				</div>
+
+			</div>
+
+
+			<!-- 2FA Type -->
+			<div id="show_ann_2fa" class="ann_mask _2fa *ART_ann_lang*" style="display: none;"><!--第二階段新增class=""stage2nd-->
+
+				<div class="ann_box">
+					<div id="" class="ann_title">
+						<span>*ART_ann_2fa_title* <i class="icon_new">*ART_ann_2fa_new*</i></span>
+						<button id="close_ann_2fa" type="button" class="btn_ann_close minimouse_hover">
+							<i><svg><use xlink:href="#icon_close_bold"/></svg></i>
+						</button>
+					</div>
+					<div class="ann_txt *ART_ann_lang*">
+						<h1>*ART_ann_2fa_txt01*</h1>
+						<div class="img_ann_2fa"></div>
+
+						<p>*ART_ann_2fa_txt02*</p>
+
+						<p>*ART_ann_2fa_txt03*</p>
+					</div>
+					<div class="ann_foot">
+						<button id="goPage_2fa" type="button" class="btn_green_full">*ART_ann_2fa_btn*</button>
+					</div>
+				</div>
+
+			</div>
+
+			<!-- 控端跑馬燈公告 -->
+			<div id="ann" class="ann_mask" style="display:none;">
+				<div class="ann_auto_box">
+					<div id="ann_title02" class="ann_title">
+						<span>*ART_ann_immediate*</span>
+					</div>
+					<div id="ann_scroll02" class="ann_txt">
+						<ul>
+							<li id="now_msg"></li>
+						</ul>
+					</div>
+					<div class="ann_foot">
+						<button id="close_btn1" type="button" class="btn_gray_full">*ART_ann_ok*</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>

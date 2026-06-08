@@ -19,7 +19,7 @@ export interface LeagueInfo {
 }
 
 export const ALL_LEAGUES: LeagueInfo[] = [
-  { name: "世界杯", key: "WorldCup", teamCount: 32, hasFullData: false },
+  { name: "世界杯", key: "WorldCup", teamCount: 48, hasFullData: false },
   { name: "英超", key: "EPL", teamCount: 20, hasFullData: true },
   { name: "西甲", key: "LaLiga", teamCount: 20, hasFullData: true },
   { name: "意甲", key: "SerieA", teamCount: 20, hasFullData: true },
@@ -327,8 +327,8 @@ export const ALL_LEAGUE_TEAMS: LeagueTeam[] = [
   { id:"aoergelite",       name:"奥尔格里特", englishName:"Örgryte IS",          league:"Allsvenskan", leagueKey:"Allsvenskan", slug:"aoergelite", realTeamId:"aoergelite" },
   { id:"hamusitade",      name:"哈尔姆斯",   englishName:"Halmstads BK",         league:"Allsvenskan", leagueKey:"Allsvenskan", slug:"hamusitade", realTeamId:"hamusitade" },
 
-  // ======================== 世界杯 (WorldCup) - 32 队 ========================
-  // 世界杯32支参赛球队 - 根据 python/世界杯国家队名单.md
+  // ======================== 世界杯 (WorldCup) - 48 队 ========================
+  // 世界杯48支参赛球队 - 2026美加墨世界杯
   { id:"faguo", name:"法国", englishName:"France", league:"WorldCup", leagueKey:"WorldCup", slug:"faguo", realTeamId:undefined },
   { id:"agenting", name:"阿根廷", englishName:"Argentina", league:"WorldCup", leagueKey:"WorldCup", slug:"agenting", realTeamId:undefined },
   { id:"yinggelan", name:"英格兰", englishName:"England", league:"WorldCup", leagueKey:"WorldCup", slug:"yinggelan", realTeamId:undefined },
@@ -339,24 +339,43 @@ export const ALL_LEAGUE_TEAMS: LeagueTeam[] = [
   { id:"keluodiya", name:"克罗地亚", englishName:"Croatia", league:"WorldCup", leagueKey:"WorldCup", slug:"keluodiya", realTeamId:undefined },
   { id:"deguo", name:"德国", englishName:"Germany", league:"WorldCup", leagueKey:"WorldCup", slug:"deguo", realTeamId:undefined },
   { id:"moluoge", name:"摩洛哥", englishName:"Morocco", league:"WorldCup", leagueKey:"WorldCup", slug:"moluoge", realTeamId:undefined },
-  { id:"saierweiya", name:"塞尔维亚", englishName:"Serbia", league:"WorldCup", leagueKey:"WorldCup", slug:"saierweiya", realTeamId:undefined },
   { id:"hanguo", name:"韩国", englishName:"Korea Republic", league:"WorldCup", leagueKey:"WorldCup", slug:"hanguo", realTeamId:undefined },
   { id:"ruishi", name:"瑞士", englishName:"Switzerland", league:"WorldCup", leagueKey:"WorldCup", slug:"ruishi", realTeamId:undefined },
   { id:"jiana", name:"加纳", englishName:"Ghana", league:"WorldCup", leagueKey:"WorldCup", slug:"jiana", realTeamId:undefined },
   { id:"saineijiaer", name:"塞内加尔", englishName:"Senegal", league:"WorldCup", leagueKey:"WorldCup", slug:"saineijiaer", realTeamId:undefined },
   { id:"riben", name:"日本", englishName:"Japan", league:"WorldCup", leagueKey:"WorldCup", slug:"riben", realTeamId:undefined },
   { id:"eguaduoer", name:"厄瓜多尔", englishName:"Ecuador", league:"WorldCup", leagueKey:"WorldCup", slug:"eguaduoer", realTeamId:undefined },
-  { id:"kamailong", name:"喀麦隆", englishName:"Cameroon", league:"WorldCup", leagueKey:"WorldCup", slug:"kamailong", realTeamId:undefined },
   { id:"aodaliya", name:"澳大利亚", englishName:"Australia", league:"WorldCup", leagueKey:"WorldCup", slug:"aodaliya", realTeamId:undefined },
   { id:"yilang", name:"伊朗", englishName:"Iran", league:"WorldCup", leagueKey:"WorldCup", slug:"yilang", realTeamId:undefined },
   { id:"shatealabo", name:"沙特阿拉伯", englishName:"Saudi Arabia", league:"WorldCup", leagueKey:"WorldCup", slug:"shatealabo", realTeamId:undefined },
-  { id:"bolan", name:"波兰", englishName:"Poland", league:"WorldCup", leagueKey:"WorldCup", slug:"bolan", realTeamId:undefined },
-  { id:"gesida", name:"哥斯达", englishName:"Costa Rica", league:"WorldCup", leagueKey:"WorldCup", slug:"gesida", realTeamId:undefined },
   { id:"meiguo", name:"美国", englishName:"United States", league:"WorldCup", leagueKey:"WorldCup", slug:"meiguo", realTeamId:undefined },
   { id:"jianada", name:"加拿大", englishName:"Canada", league:"WorldCup", leagueKey:"WorldCup", slug:"jianada", realTeamId:undefined },
   { id:"moxige", name:"墨西哥", englishName:"Mexico", league:"WorldCup", leagueKey:"WorldCup", slug:"moxige", realTeamId:undefined },
   { id:"wulagui", name:"乌拉圭", englishName:"Uruguay", league:"WorldCup", leagueKey:"WorldCup", slug:"wulagui", realTeamId:undefined },
   { id:"bilishi", name:"比利时", englishName:"Belgium", league:"WorldCup", leagueKey:"WorldCup", slug:"bilishi", realTeamId:undefined },
-  { id:"danmai", name:"丹麦", englishName:"Denmark", league:"WorldCup", leagueKey:"WorldCup", slug:"danmai", realTeamId:undefined },
   { id:"kataer", name:"卡塔尔", englishName:"Qatar", league:"WorldCup", leagueKey:"WorldCup", slug:"kataer", realTeamId:undefined },
+  // ---- 2026世界杯新增球队 ----
+  { id:"nanfei", name:"南非", englishName:"South Africa", league:"WorldCup", leagueKey:"WorldCup", slug:"nanfei", realTeamId:undefined },
+  { id:"jieke1", name:"捷克", englishName:"Czech Republic", league:"WorldCup", leagueKey:"WorldCup", slug:"jieke1", realTeamId:undefined },
+  { id:"bohei1", name:"波黑", englishName:"Bosnia and Herzegovina", league:"WorldCup", leagueKey:"WorldCup", slug:"bohei1", realTeamId:undefined },
+  { id:"balagui", name:"巴拉圭", englishName:"Paraguay", league:"WorldCup", leagueKey:"WorldCup", slug:"balagui", realTeamId:undefined },
+  { id:"haidi", name:"海地", englishName:"Haiti", league:"WorldCup", leagueKey:"WorldCup", slug:"haidi", realTeamId:undefined },
+  { id:"sugelan", name:"苏格兰", englishName:"Scotland", league:"WorldCup", leagueKey:"WorldCup", slug:"sugelan", realTeamId:undefined },
+  { id:"tuerqi1", name:"土耳其", englishName:"Turkey", league:"WorldCup", leagueKey:"WorldCup", slug:"tuerqi1", realTeamId:undefined },
+  { id:"kulasuo", name:"库拉索", englishName:"Curaçao", league:"WorldCup", leagueKey:"WorldCup", slug:"kulasuo", realTeamId:undefined },
+  { id:"ketediwa1", name:"科特迪瓦", englishName:"Côte d'Ivoire", league:"WorldCup", leagueKey:"WorldCup", slug:"ketediwa1", realTeamId:undefined },
+  { id:"ruidian1", name:"瑞典", englishName:"Sweden", league:"WorldCup", leagueKey:"WorldCup", slug:"ruidian1", realTeamId:undefined },
+  { id:"tunisi1", name:"突尼斯", englishName:"Tunisia", league:"WorldCup", leagueKey:"WorldCup", slug:"tunisi1", realTeamId:undefined },
+  { id:"fodejiao1", name:"佛得角", englishName:"Cape Verde", league:"WorldCup", leagueKey:"WorldCup", slug:"fodejiao1", realTeamId:undefined },
+  { id:"aiji1", name:"埃及", englishName:"Egypt", league:"WorldCup", leagueKey:"WorldCup", slug:"aiji1", realTeamId:undefined },
+  { id:"xinxilan1", name:"新西兰", englishName:"New Zealand", league:"WorldCup", leagueKey:"WorldCup", slug:"xinxilan1", realTeamId:undefined },
+  { id:"yilake1", name:"伊拉克", englishName:"Iraq", league:"WorldCup", leagueKey:"WorldCup", slug:"yilake1", realTeamId:undefined },
+  { id:"nuowei", name:"挪威", englishName:"Norway", league:"WorldCup", leagueKey:"WorldCup", slug:"nuowei", realTeamId:undefined },
+  { id:"aerjiliya", name:"阿尔及利亚", englishName:"Algeria", league:"WorldCup", leagueKey:"WorldCup", slug:"aerjiliya", realTeamId:undefined },
+  { id:"aodili", name:"奥地利", englishName:"Austria", league:"WorldCup", leagueKey:"WorldCup", slug:"aodili", realTeamId:undefined },
+  { id:"minzhugangguo", name:"民主刚果", englishName:"DR Congo", league:"WorldCup", leagueKey:"WorldCup", slug:"minzhugangguo", realTeamId:undefined },
+  { id:"wuzibiekesitan", name:"乌兹别克斯坦", englishName:"Uzbekistan", league:"WorldCup", leagueKey:"WorldCup", slug:"wuzibiekesitan", realTeamId:undefined },
+  { id:"gelunbiya", name:"哥伦比亚", englishName:"Colombia", league:"WorldCup", leagueKey:"WorldCup", slug:"gelunbiya", realTeamId:undefined },
+  { id:"banama", name:"巴拿马", englishName:"Panama", league:"WorldCup", leagueKey:"WorldCup", slug:"banama", realTeamId:undefined },
+  { id:"yuedan1", name:"约旦", englishName:"Jordan", league:"WorldCup", leagueKey:"WorldCup", slug:"yuedan1", realTeamId:undefined },
 ];

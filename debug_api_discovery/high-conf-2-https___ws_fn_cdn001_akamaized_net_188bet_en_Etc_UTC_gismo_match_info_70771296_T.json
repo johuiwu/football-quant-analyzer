@@ -1,0 +1,345 @@
+{
+  "queryUrl": "match_info/70771296",
+  "doc": [
+    {
+      "event": "match_info",
+      "_dob": 1780852389,
+      "_maxage": 10,
+      "data": {
+        "_doc": "match_info",
+        "match": {
+          "_doc": "match",
+          "_doctype": "soccer",
+          "_id": 70771296,
+          "_sid": 1,
+          "_seasonid": 141172,
+          "_rcid": 392,
+          "_tid": 82153,
+          "_utid": 2183,
+          "_dt": {
+            "_doc": "time",
+            "time": "16:30",
+            "date": "07/06/26",
+            "tz": "UTC",
+            "tzoffset": 0,
+            "uts": 1780849800
+          },
+          "round": 1,
+          "roundname": {
+            "_doc": "tableround",
+            "_id": 1,
+            "name": 1
+          },
+          "week": 23,
+          "coverage": {
+            "lineup": 0,
+            "formations": 0,
+            "livetable": 106854,
+            "injuries": 0,
+            "ballspotting": false,
+            "cornersonly": true,
+            "multicast": false,
+            "scoutmatch": 1,
+            "scoutcoveragestatus": 0,
+            "scoutconnected": true,
+            "liveodds": true,
+            "deepercoverage": false,
+            "tacticallineup": false,
+            "basiclineup": false,
+            "hasstats": true,
+            "inlivescore": true,
+            "advantage": null,
+            "tiebreak": null,
+            "paperscorecard": null,
+            "insights": false,
+            "penaltyshootout": 1,
+            "scouttest": false,
+            "lmtsupport": 3,
+            "venue": true,
+            "matchdatacomplete": false,
+            "mediacoverage": false,
+            "substitutions": false,
+            "live": {
+              "id": 843,
+              "level": {
+                "name": "Level 4",
+                "value": 4
+              }
+            },
+            "match_creation": {
+              "id": 841,
+              "level": {
+                "name": "Level 5",
+                "value": 5
+              }
+            },
+            "resulting": {
+              "id": 853,
+              "level": {
+                "name": "Level 2",
+                "value": 2
+              }
+            },
+            "stats_creation_cup": {
+              "id": 845,
+              "level": {
+                "name": "Cup 1",
+                "value": 1
+              }
+            },
+            "stats_creation_table": {
+              "id": 847,
+              "level": {
+                "name": "Level 1",
+                "value": 1
+              }
+            }
+          },
+          "result": {
+            "home": 0,
+            "away": 1,
+            "winner": "away"
+          },
+          "periods": null,
+          "updated_uts": 1780852388,
+          "ended_uts": false,
+          "p": "1",
+          "ptime": 1780849786,
+          "timeinfo": {
+            "injurytime": null,
+            "ended": null,
+            "started": "1780849786",
+            "played": "2598",
+            "remaining": null,
+            "running": true
+          },
+          "teams": {
+            "home": {
+              "_doc": "team",
+              "_id": 12300129,
+              "_sid": 1,
+              "uid": 585807,
+              "virtual": false,
+              "name": "China",
+              "mediumname": "China",
+              "abbr": "CHI",
+              "nickname": null,
+              "iscountry": true,
+              "haslogo": false,
+              "cc": {
+                "_doc": "countrycode",
+                "_id": 44,
+                "a2": "cn",
+                "name": "China",
+                "a3": "CHN",
+                "ioc": "CHN",
+                "continentid": 5,
+                "continent": "Asia",
+                "population": 1339724852
+              },
+              "homerealcategoryid": 392,
+              "countrycode": null
+            },
+            "away": {
+              "_doc": "team",
+              "_id": 21567619,
+              "_sid": 1,
+              "uid": 1342248,
+              "virtual": false,
+              "name": "Tunisia Youth",
+              "mediumname": "Tunisia Youth",
+              "abbr": "TUN",
+              "nickname": null,
+              "iscountry": true,
+              "haslogo": false,
+              "cc": {
+                "_doc": "countrycode",
+                "_id": 217,
+                "a2": "tn",
+                "name": "Tunisia",
+                "a3": "TUN",
+                "ioc": "TUN",
+                "continentid": 4,
+                "continent": "Africa",
+                "population": 11299000
+              },
+              "homerealcategoryid": 392,
+              "countrycode": null
+            }
+          },
+          "status": {
+            "_doc": "status",
+            "_id": 6,
+            "name": "1st half",
+            "shortName": "H1"
+          },
+          "removed": false,
+          "facts": false,
+          "localderby": false,
+          "weather": 1,
+          "pitchcondition": 1,
+          "temperature": null,
+          "wind": null,
+          "windadvantage": 0,
+          "matchstatus": "live",
+          "postponed": false,
+          "cancelled": false,
+          "walkover": false,
+          "hf": 3.8,
+          "periodlength": 45,
+          "numberofperiods": 2,
+          "overtimelength": 15,
+          "tobeannounced": false,
+          "cards": {
+            "home": {
+              "yellow_count": 0,
+              "red_count": 0
+            },
+            "away": {
+              "yellow_count": 0,
+              "red_count": 0
+            }
+          }
+        },
+        "stadium": null,
+        "tournament": {
+          "_doc": "tournament",
+          "_id": 82153,
+          "_sid": 1,
+          "_rcid": 392,
+          "_isk": 1000,
+          "_tid": 82153,
+          "_utid": 2183,
+          "_gender": "men",
+          "name": "Tournoi Maurice Revello, Group A",
+          "abbr": "TMRA",
+          "livetable": 106854,
+          "friendly": false,
+          "ground": null,
+          "tournamentlevelorder": null,
+          "tournamentlevelname": null,
+          "outdated": false,
+          "roundbyround": true,
+          "seasontype": "21",
+          "seasontypename": "Group stage",
+          "seasontypeunique": "91",
+          "groupname": "A",
+          "seasonid": 141172,
+          "currentseason": 141172,
+          "year": "2026"
+        },
+        "uniquetournament": {
+          "_doc": "uniquetournament",
+          "_id": 2183,
+          "_utid": 2183,
+          "_sid": 1,
+          "_rcid": 392,
+          "name": "Toulon Tournament",
+          "currentseason": 141172,
+          "friendly": false
+        },
+        "sport": {
+          "_doc": "sport",
+          "_id": 1,
+          "_sid": 1,
+          "name": "Soccer"
+        },
+        "realcategory": {
+          "_doc": "realcategory",
+          "_id": 392,
+          "_sid": 1,
+          "_rcid": 392,
+          "name": "International Youth",
+          "cc": null
+        },
+        "season": {
+          "_id": "141172",
+          "_doc": "season",
+          "_utid": 2183,
+          "_sid": 1,
+          "name": "Toulon Tournament 2026",
+          "abbr": "TMR 2026",
+          "start": {
+            "_doc": "time",
+            "time": "00:00",
+            "date": "31/05/26",
+            "tz": "UTC",
+            "tzoffset": 0,
+            "uts": 1780185600
+          },
+          "end": {
+            "_doc": "time",
+            "time": "23:59",
+            "date": "13/06/26",
+            "tz": "UTC",
+            "tzoffset": 0,
+            "uts": 1781395199
+          },
+          "neutralground": false,
+          "friendly": false,
+          "currentseasonid": 141172,
+          "year": "2026"
+        },
+        "jerseys": {
+          "home": {
+            "player": {
+              "base": "D8D8D8",
+              "sleeve": "D8D8D8",
+              "number": "000000",
+              "real": false,
+              "type": "short_sleeves"
+            },
+            "GK": {
+              "base": "efc131",
+              "sleeve": "333333",
+              "number": "000000",
+              "real": false,
+              "type": "short_sleeves"
+            }
+          },
+          "away": {
+            "player": {
+              "base": "585858",
+              "sleeve": "585858",
+              "number": "ffffff",
+              "real": false,
+              "type": "short_sleeves"
+            },
+            "GK": {
+              "base": "efc131",
+              "sleeve": "333333",
+              "number": "000000",
+              "real": false,
+              "type": "short_sleeves"
+            }
+          }
+        },
+        "statscoverage": {
+          "complexstat": true,
+          "halftimetable": true,
+          "overunder": true,
+          "overunderhalftime": true,
+          "fixtures": true,
+          "leaguetable": true,
+          "headtohead": true,
+          "formtable": true,
+          "secondhalftables": true,
+          "divisionview": true,
+          "cuproster": true,
+          "goalscorer": true,
+          "goalminscorer": true,
+          "staffmanagers": false,
+          "staffteamofficials": false,
+          "staffassistantcoaches": false,
+          "jerseys": false,
+          "deepercoverage": false,
+          "referee": false,
+          "squadservice": false,
+          "stadium": false,
+          "insights": false,
+          "tablerules": true
+        }
+      }
+    }
+  ]
+}

@@ -197,15 +197,18 @@ export function parseGameListXML(xmlText, contextHint = "") {
         // ★ IOR_RNCH/IOR_RNCC 是角球让球赔率，IOR_ROUH/IOR_ROUC 是角球大小盘赔率
         // ★ PTYPE 包含 "Corners" 标识角球市场（非 CN_COUNT）
         const ptype = g.PTYPE || "";
-        const isCornerMarket = ptype.includes("Corners") || !!(g.IOR_RNCH || g.IOR_RNCC);
+        // ★ 根据 contextHint 区分：rb 是基本盘数据（不含角球），cn/rcn 是角球数据
+        const isCornerContext = contextHint === "cn" || contextHint === "rcn";
+        const isCornerMarket = isCornerContext && (ptype.includes("Corners") || !!(g.IOR_RNCH || g.IOR_RNCC));
         // 角球让球盘（rcn 中 RATIO_RE 即角球让球线，IOR_RNCH/IOR_RNCC 即角球让球赔率）
-        const ratioCornerHdp = g.RATIO_RE || g.RATIO_RNCH || g.RATIO_CORNERHDP || "";
-        const iorCornerH = g.IOR_RNCH || g.IOR_CORNERH || "";
-        const iorCorner = g.IOR_RNCC || g.IOR_CORNER || "";
+        // ★ 角球字段：只在 cn/rcn 上下文中填充，rb 数据不填充（避免 RATIO_RE 被误认为角球让球线）
+        const ratioCornerHdp = isCornerContext ? (g.RATIO_RE || g.RATIO_RNCH || g.RATIO_CORNERHDP || "") : "";
+        const iorCornerH = isCornerContext ? (g.IOR_RNCH || g.IOR_CORNERH || "") : "";
+        const iorCorner = isCornerContext ? (g.IOR_RNCC || g.IOR_CORNER || "") : "";
         // 角球大小盘（rcn 中 RATIO_ROUO/IOR_ROUH/IOR_ROUC 即角球大小盘）
-        const ratioCrOuo = g.RATIO_ROUO || g.RATIO_RNOU || g.RATIO_CROUO || g.ratio_CROUO || "";
-        const iorCrOuo = g.IOR_ROUH || g.IOR_RNOUH || g.IOR_CROUO || g.ior_CROUO || "";
-        const iorCrOuu = g.IOR_ROUC || g.IOR_RNOUC || g.IOR_CROUU || g.ior_CROUU || "";
+        const ratioCrOuo = isCornerContext ? (g.RATIO_ROUO || g.RATIO_RNOU || g.RATIO_CROUO || g.ratio_CROUO || "") : "";
+        const iorCrOuo = isCornerContext ? (g.IOR_ROUH || g.IOR_RNOUH || g.IOR_CROUO || g.ior_CROUO || "") : "";
+        const iorCrOuu = isCornerContext ? (g.IOR_ROUC || g.IOR_RNOUC || g.IOR_CROUU || g.ior_CROUU || "") : "";
         // 半场
         const ratioHre = g.RATIO_HRE || "";
         const iorHreh = g.IOR_HREH || "";
@@ -275,9 +278,12 @@ export function parseGameListXML(xmlText, contextHint = "") {
       for (let i = 0; i < Math.min(3, matches.length); i++) {
         const m = matches[i];
         console.log("[xhrParser] 比赛" + i + ": " + m.homeTeam + " vs " + m.awayTeam +
+          " | context=" + contextHint +
+          " | hdp=" + m._hdpLine + " " + m._hdpHomeOdds + "/" + m._hdpAwayOdds +
+          " | ou=" + m._ouLine + " " + m._ouOverOdds + "/" + m._ouUnderOdds +
           " | cornerHdp=" + m._cornerHdpLine + " cornerHdpOdds=" + m._cornerHdpHomeOdds + "/" + m._cornerHdpAwayOdds +
           " | cornerOU=" + m._cornerOULine + " " + m._cornerOUOdds + "/" + m._cornerOUUnderOdds +
-          " | hasCorner=" + m._hasCornerMarket + " ptype=" + (matches[i]._ptype || ""));
+          " | hasCorner=" + m._hasCornerMarket + " ptype=" + ptype);
       }
 
       return {

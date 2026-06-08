@@ -1435,16 +1435,18 @@ export async function crawlCornerMatches() {
 
       // ★ 纯 API 获取比赛数据（fetchCornerMatches 并行获取 rb + rcn）
       const apiResult = await fetchCornerMatches(page);
-      console.log("[cornerCrawler] API 获取完成: " + (apiResult.matches?.length || 0) + " 场比赛 (rb=" + apiResult.rbCount + " rcn=" + apiResult.rcnCount + ")");
+      console.log("[cornerCrawler] API 获取完成: " + (apiResult.matches?.length || 0) + " 场比赛 (角球=" + (apiResult.cornerMatches?.length || 0) + " 让球=" + (apiResult.hdpMatches?.length || 0) + " rb=" + apiResult.rbCount + " rcn=" + apiResult.rcnCount + ")");
 
       if (!apiResult.success || !apiResult.matches?.length) {
         console.log("[cornerCrawler] API 模式未获取到比赛数据");
         crawlingLock = false;
         clearTimeout(lockTimeout);
-        return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "api_no_matches" };
+        return { success: false, data: { matches: [], cornerMatches: [], hdpMatches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "api_no_matches" };
       }
 
       const matches = apiResult.matches;
+      const cornerMatches = apiResult.cornerMatches || [];
+      const hdpMatches = apiResult.hdpMatches || [];
 
       // ★ gismo 补充角球数
       const gismoStatus = getGismoStatus();
@@ -1488,8 +1490,10 @@ export async function crawlCornerMatches() {
       clearTimeout(lockTimeout);
       return {
         success: true,
-        data: { matches, allText: [], allElements: [] },
+        data: { matches, cornerMatches, hdpMatches, allText: [], allElements: [] },
         count: matches.length,
+        cornerCount: cornerMatches.length,
+        hdpCount: hdpMatches.length,
         timestamp: ts,
         source: "api",
       };

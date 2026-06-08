@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="/style/aspen_stylesheet.css" rel="stylesheet" type="text/css">
+<!--link href="/style/aspen_LMT2.css" rel="stylesheet" type="text/css"-->
+<!-- <link href="/style/mt.css" rel="stylesheet" type="text/css"> -->
+<script>
+var uid = "xg5xkfhm41972882l8746595b1";
+var langx = "en-us";
+var gtype = "";
+var USERNAME = "cAAG2ys7qj";
+var ver = "96605be0021f52142cf88292a7f55aa8_1780552993656";
+var par = "";
+par += "langx="+langx.substr(3,2);
+par += "&ver="+ver;
+
+console.log(par,'[MT 參數]');
+function retry(obj){
+	 	var _url = obj.src;
+		var tmp = document.createElement("script");
+		tmp.id = obj.id;
+		tmp.src = _url;
+		tmp.onerror = function(){retry(tmp)};
+		setTimeout(addScript, 1000, tmp);
+}
+
+function addScript(obj){
+		try{
+	  		var rmObj = document.getElementById(obj.id);
+            rmObj.parentNode.removeChild(rmObj);
+		}catch(e){}
+			
+		(document.getElementsByTagName("head")[0] || document.body).appendChild(obj);	
+}	
+
+</script>
+<script id="scriptMT" src="../../app/member/tv/script_MT.php?ver=96605be0021f52142cf88292a7f55aa8_1780552993656&langx=us" onerror="retry(this)"></script>
+
+<style>
+	html,body{
+		height: 100%;
+	}
+	.main_div{
+		height: 100%;
+	}
+</style>
+
+</head>
+<body onload="init();"  scrolling="no" frameborder="0" framespacing="0" cellspacing="0" cellpadding="0" >
+    <div id="loading" class="mt_loading" style="display:none;"> <!--mt時使用 class="tv_loading"-->
+        <div class="fading-circle"></div>
+    </div>
+    <div id="title_div" class="mt_pop_title" style="display:none;">
+		<span id="mt_pop_title">數據統計</span>
+    </div>
+    <div id="timeline_div" class=""></div>
+    <div id="main_div" class=""></div>
+</body>
+</html>

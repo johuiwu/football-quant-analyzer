@@ -1,0 +1,1619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name='viewport' content='maximum-scale=1, width=device-width, user-scalable=no, minimum-scale=1.0, viewport-fit=cover'/>
+	<title>FT 外層盤面 HDP & O/U</title>
+	<script id="homeJS">
+top.ver = '96605be0021f52142cf88292a7f55aa8_1780552993656';
+top.game_model = 'ft_live_game_rnou';
+var artjson = {
+	"ART_lang": "EN",
+	"ART_game_nodata": "There are no events available.",
+
+	"ART_game_re": "Handicap",
+	"ART_game_rou": "Goals O/U",
+
+	"ART_game_pk_re": "Pens HDP",
+	"ART_game_pk_rou": "Pens O/U",
+	"ART_game_pk_rsh": "Next",
+
+	"ART_game_1h": "1H",
+
+	"ART_game_over": "O",
+	"ART_game_under": "U",
+	"ART_game_rsh_goal": "Score",
+	"ART_game_rsh_nogoal": "Miss",
+}
+</script>
+
+	<link href="https://www.hga050.com/style/bet_game.css" rel="stylesheet" type="text/css">
+	<link href="https://www.hga050.com/style/score_board.css" rel="stylesheet" type="text/css">
+	<link href="https://www.hga050.com/style/flag.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+	<div class="content_l">
+		<div class="box_league box_live ft *ART_lang*">
+
+			<!-- no data -->
+			<div id="div_nodata" name="div_nodata" class="no_event" style="display: none;"><i></i><span>*ART_game_nodata*</span></div>
+
+			<!-- outer bet page content -->
+			<div id="div_show" class="box_outer ft_outer ft_rou"></div>
+
+			<!-- pagination -->
+			<div id="pageDiv" class="box_page" style="display: none;"></div>
+			<div id="page_model" class="box_page page_5" style="display: none;"><!-- class="page_5 / page_3 / page_2" -->
+				<!-- 反灰按鈕class="off" -->
+				<span id="pg_first" class="btn_page_arr"><svg><use xlink:href="#icon_pagearr2"/></svg></span>
+				<span id="pg_prev" class="btn_page_arr"><svg><use xlink:href="#icon_pagearr"/></svg></span>
+				*PAGES*
+				<span id="pg_next" class="btn_page_arr"><svg><use xlink:href="#icon_pagearr"/></svg></span>
+			</div>
+			<div id="pageBtn_model" style="display: none;">
+				<span id="pg_*PAGENUM*" class="btn_page">*PAGENUM*</span>
+			</div>
+
+			<!-- lazy loading / progressive loading -->
+			<div id="parse_loading" class="lazy_loading" style="display: none;"><i class="icon_load"></i></div>
+
+			<!-- outer bet page models -->
+			<div id="div_model" class="box_outer ft_outer ft_rou" style="display: none;">
+				<div>
+					<!-- league name -->
+					<div *ST* class="btn_title_le *DIS_LINE*"><tt id="lea_name">*LEAGUE*</tt><i class="icon_flag *LEAGUE_FLAG*"></i></div>
+					<div id="game_*ECID*" class="box_lebet bet_type_rnou *SHOW_1H*" *DIS_GAME*>
+						<div class="tag_sort sort_time" *CUP_DIS*><span>*CUP_GAMEDATE*</span></div>
+						<div class="box_lebet_top">
+							<div id="mainShow_*ECID*" class="box_lebet_l">*MAIN_SHOW*</div>
+							<div id="ratioShow_*ECID*" class="box_lebet_r *scroll_lock*">*RATIO_SHOW*</div>
+							<div id= right_info_*ECID* class="box_lebet_btn">*RIGHT_INFO*</div>
+						</div>
+
+						<!-- 點球大戰 -->
+						<div id="div_pen" class="box_live_rps" *DIS_PEN*>
+							<i id="pen_h1" class="*SCORE_1_H*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_h2" class="*SCORE_2_H*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_h3" class="*SCORE_3_H*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_h4" class="*SCORE_4_H*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_h5" class="*SCORE_5_H*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<div class="text_round">
+								<span id="PEN_now" class="*GAMESET_CLASS*"><p>*GAMESET*</p></span>
+								<tt id="PEN_format">*PK_METHOD*</tt>
+							</div>
+							<i id="pen_c1" class="*SCORE_1_C*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_c2" class="*SCORE_2_C*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_c3" class="*SCORE_3_C*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_c4" class="*SCORE_4_C*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+							<i id="pen_c5" class="*SCORE_5_C*">
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+								<div class="obj_rps_ani"></div>
+							</i>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Time sort tag Model -->
+			<div id="timeSort_model" style="display: none;"><div class="tag_sort"><span>*TIMESORT_DATE*</span></div></div>
+
+			<!-- league content Model -->
+			<div id="left_info" name="left_info" style="display:none;">
+				<div class="box_star">
+					<i id="star_*ECID*" class="icon_star"><svg><use xlink:href="#icon_star"/></svg></i>
+				</div>
+				<div id="div_icon_info" class="box_state">
+					<tt class="text_time">
+						<i id="icon_info" class="*TXT_BLUE*">*RETIMESET*</i><!-- blue text class="txt_bl"-->
+					</tt>
+					<i id="icon_N" class="icon_n" style="display:*MIDFIELD_SHOW*"></i>
+				</div>
+				<div class="box_total">
+					<i id="icon_rb" class="icon_inplay" style="display:*RB_SHOW*"></i>
+					<div id="info_more" class="btn_total">
+						<span class="game_total">*MORE*</span>
+						<i class="icon_arrow"><svg><use xlink:href="#icon_morearr"/></svg></i>
+					</div>	
+				</div>
+				<label class="">
+					<div id="info_team" class="btn_inn_team">
+						<div class="box_score">
+							<span class="text_point *LASTESTSCORE_H*"><!-- 最後入球 Add class="last_goal" -->
+								*SCORE_H*
+								<tt class="text_total">*SCROE_H_PAST*</tt>
+							</span>
+							<span class="text_point *LASTESTSCORE_C*">
+								*SCORE_C*
+								<tt class="text_total">*SCROE_C_PAST*</tt>
+							</span>
+							<span class="icon_redcard teamH *RED_CLASS_H*">*REDCARD_H*</span><!-- Red card class="red_[number]" -->
+							<span class="icon_redcard teamC *RED_CLASS_C*">*REDCARD_C*</span>
+							<span class="icon_serve teamH *serve_H*"></span>
+							<span class="icon_serve teamC *serve_C*"></span>
+						</div>
+						<div class="box_team teamH"><span class="text_team *STRONG_H*">*TEAM_H*</span><!-- 強隊 Add class="strong_team" --></div>
+						<div class="box_team teamC"><span class="text_team *STRONG_C*">*TEAM_C*</span></div>
+					</div>
+				</label>
+			</div>
+
+
+			<!-- right_button -->
+			<div id="right_info" class="box_lebet_btn" style="display:none;">
+				<!-- 亮色 class="on" / 不可使用 class="off" / 隱藏 class="none" -->
+				<div class="rnou_btn rnou_btn_1H" style="display: ;">
+					<i id="icon_HT_*ECID*" class="icon_1H_*ART_lang* *DISPLAY_HT*"></i>
+				</div>
+				<div class="rnou_btn rnou_btn_fore" style="display: ;">
+					<i id="icon_forecast_*ECID*" class="icon_forecast"></i>
+				</div>
+				<div class="rnou_btn rnou_btn_tvmt" style="display:*DISPLAY_TV*">
+					<i id="icon_tv_*ECID*" class="*TV_STYLE*"></i>
+				</div>
+			</div>
+
+
+			<!-- 全場 -->
+			<div id="model_FT" name="div_model" style="display:none;">
+				<!-- RE 讓球-->
+				<div class="form_lebet_hdpou hdpou_ft">
+					<div class="head_lebet">
+						<i id="ratioR_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_re*</span>
+						<i id="ratioR_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioR_*ECID*" class="content_lebet dragscroll_ratioR_*ECID*">
+						<label id="ratioR_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID*_*ECID*_REH" class="btn_hdpou_odd *CLOSE_REH* *STRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*RATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*IOR_REH*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_REC" class="btn_hdpou_odd *CLOSE_REC* *STRONG_C*">
+									<span>
+										<tt class="text_ballhead">*RATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*IOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AGID*_*ECID*_REH" class="btn_hdpou_odd *ACLOSE_REH* *ASTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ARATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*AIOR_REH*</span>
+								</div>
+								<div id="bet_*AGID*_*ECID*_REC" class="btn_hdpou_odd *ACLOSE_REC* *ASTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ARATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*AIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BGID*_*ECID*_REH" class="btn_hdpou_odd *BCLOSE_REH* *BSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*BRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*BIOR_REH*</span>
+								</div>
+								<div id="bet_*BGID*_*ECID*_REC" class="btn_hdpou_odd *BCLOSE_REC* *BSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*BRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*BIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CGID*_*ECID*_REH" class="btn_hdpou_odd *CCLOSE_REH* *CSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*CRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*CIOR_REH*</span>
+								</div>
+								<div id="bet_*CGID*_*ECID*_REC" class="btn_hdpou_odd *CCLOSE_REC* *CSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*CRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*CIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DGID*_*ECID*_REH" class="btn_hdpou_odd *DCLOSE_REH* *DSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*DRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*DIOR_REH*</span>
+								</div>
+								<div id="bet_*DGID*_*ECID*_REC" class="btn_hdpou_odd *DCLOSE_REC* *DSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*DRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*DIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EGID*_*ECID*_REH" class="btn_hdpou_odd *ECLOSE_REH* *ESTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ERATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*EIOR_REH*</span>
+								</div>
+								<div id="bet_*EGID*_*ECID*_REC" class="btn_hdpou_odd *ECLOSE_REC* *ESTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ERATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*EIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FGID*_*ECID*_REH" class="btn_hdpou_odd *FCLOSE_REH* *FSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*FRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*FIOR_REH*</span>
+								</div>
+								<div id="bet_*FGID*_*ECID*_REC" class="btn_hdpou_odd *FCLOSE_REC* *FSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*FRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*FIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GGID*_*ECID*_REH" class="btn_hdpou_odd *GCLOSE_REH* *GSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*GRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*GIOR_REH*</span>
+								</div>
+								<div id="bet_*GGID*_*ECID*_REC" class="btn_hdpou_odd *GCLOSE_REC* *GSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*GRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*GIOR_REC*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthR_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+				<!-- ROU 大小-->
+				<div class="form_lebet_hdpou hdpou_ft">
+					<div class="head_lebet">
+						<i id="ratioOU_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_rou*</span>
+						<i id="ratioOU_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioOU_*ECID*" class="content_lebet dragscroll_ratioOU_*ECID*">
+						<label id="ratioOU_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID*_*ECID*_ROUC" class="btn_hdpou_odd *CLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*RATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*IOR_ROUC*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_ROUH" class="btn_hdpou_odd *CLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*RATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*IOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AGID*_*ECID*_ROUC" class="btn_hdpou_odd *ACLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ARATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*AIOR_ROUC*</span>
+								</div>
+								<div id="bet_*AGID*_*ECID*_ROUH" class="btn_hdpou_odd *ACLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ARATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*AIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BGID*_*ECID*_ROUC" class="btn_hdpou_odd *BCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*BRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*BIOR_ROUC*</span>
+								</div>
+								<div id="bet_*BGID*_*ECID*_ROUH" class="btn_hdpou_odd *BCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*BRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*BIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CGID*_*ECID*_ROUC" class="btn_hdpou_odd *CCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*CRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*CIOR_ROUC*</span>
+								</div>
+								<div id="bet_*CGID*_*ECID*_ROUH" class="btn_hdpou_odd *CCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*CRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*CIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DGID*_*ECID*_ROUC" class="btn_hdpou_odd *DCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*DRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*DIOR_ROUC*</span>
+								</div>
+								<div id="bet_*DGID*_*ECID*_ROUH" class="btn_hdpou_odd *DCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*DRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*DIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EGID*_*ECID*_ROUC" class="btn_hdpou_odd *ECLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ERATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*EIOR_ROUC*</span>
+								</div>
+								<div id="bet_*EGID*_*ECID*_ROUH" class="btn_hdpou_odd *ECLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ERATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*EIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FGID*_*ECID*_ROUC" class="btn_hdpou_odd *FCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*FRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*FIOR_ROUC*</span>
+								</div>
+								<div id="bet_*FGID*_*ECID*_ROUH" class="btn_hdpou_odd *FCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*FRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*FIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GGID*_*ECID*_ROUC" class="btn_hdpou_odd *GCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*GRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*GIOR_ROUC*</span>
+								</div>
+								<div id="bet_*GGID*_*ECID*_ROUH" class="btn_hdpou_odd *GCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*GRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*GIOR_ROUH*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthOU_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<!-- 半場 -->
+			<div id="model_HT" name="div_model" style="display:none;">
+				<!-- HRE 半場讓球-->
+				<div class="form_lebet_hdpou hdpou_1h">
+					<div class="head_lebet">
+						<i id="ratioR_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_re* *ART_game_1h*</span>
+						<i id="ratioR_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioR_*ECID*" class="content_lebet dragscroll_ratioR_*ECID*">
+						<label id="ratioR_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*HGID*_*ECID*_HREH" class="btn_hdpou_odd *CLOSE_HREH* *HSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*RATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*IOR_HREH*</span>
+								</div>
+								<div id="bet_*HGID*_*ECID*_HREC" class="btn_hdpou_odd *CLOSE_HREC* *HSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*RATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*IOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AHGID*_*ECID*_HREH" class="btn_hdpou_odd *ACLOSE_HREH* *AHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ARATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*AIOR_HREH*</span>
+								</div>
+								<div id="bet_*AHGID*_*ECID*_HREC" class="btn_hdpou_odd *ACLOSE_HREC* *AHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ARATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*AIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BHGID*_*ECID*_HREH" class="btn_hdpou_odd *BCLOSE_HREH* *BHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*BRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*BIOR_HREH*</span>
+								</div>
+								<div id="bet_*BHGID*_*ECID*_HREC" class="btn_hdpou_odd *BCLOSE_HREC* *BHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*BRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*BIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CHGID*_*ECID*_HREH" class="btn_hdpou_odd *CCLOSE_HREH* *CHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*CRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*CIOR_HREH*</span>
+								</div>
+								<div id="bet_*CHGID*_*ECID*_HREC" class="btn_hdpou_odd *CCLOSE_HREC* *CHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*CRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*CIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DHGID*_*ECID*_HREH" class="btn_hdpou_odd *DCLOSE_HREH* *DHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*DRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*DIOR_HREH*</span>
+								</div>
+								<div id="bet_*DHGID*_*ECID*_HREC" class="btn_hdpou_odd *DCLOSE_HREC* *DHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*DRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*DIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EHGID*_*ECID*_HREH" class="btn_hdpou_odd *ECLOSE_HREH* *EHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ERATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*EIOR_HREH*</span>
+								</div>
+								<div id="bet_*EHGID*_*ECID*_HREC" class="btn_hdpou_odd *ECLOSE_HREC* *EHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ERATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*EIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FHGID*_*ECID*_HREH" class="btn_hdpou_odd *FCLOSE_HREH* *FHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*FRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*FIOR_HREH*</span>
+								</div>
+								<div id="bet_*FHGID*_*ECID*_HREC" class="btn_hdpou_odd *FCLOSE_HREC* *FHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*FRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*FIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GHGID*_*ECID*_HREH" class="btn_hdpou_odd *GCLOSE_HREH* *GHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*GRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*GIOR_HREH*</span>
+								</div>
+								<div id="bet_*GHGID*_*ECID*_HREC" class="btn_hdpou_odd *GCLOSE_HREC* *GHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*GRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*GIOR_HREC*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthR_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+				<!-- HROU 半場大小-->
+				<div class="form_lebet_hdpou hdpou_1h">
+					<div class="head_lebet">
+						<i id="ratioOU_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_rou* *ART_game_1h*</span>
+						<i id="ratioOU_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioOU_*ECID*" class="content_lebet dragscroll_ratioOU_*ECID*">
+						<label id="ratioOU_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*HGID*_*ECID*_HROUC" class="btn_hdpou_odd *CLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*RATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*IOR_HROUC*</span>
+								</div>
+								<div id="bet_*HGID*_*ECID*_HROUH" class="btn_hdpou_odd *CLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*RATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*IOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AHGID*_*ECID*_HROUC" class="btn_hdpou_odd *ACLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ARATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*AIOR_HROUC*</span>
+								</div>
+								<div id="bet_*AHGID*_*ECID*_HROUH" class="btn_hdpou_odd *ACLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ARATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*AIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BHGID*_*ECID*_HROUC" class="btn_hdpou_odd *BCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*BRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*BIOR_HROUC*</span>
+								</div>
+								<div id="bet_*BHGID*_*ECID*_HROUH" class="btn_hdpou_odd *BCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*BRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*BIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CHGID*_*ECID*_HROUC" class="btn_hdpou_odd *CCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*CRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*CIOR_HROUC*</span>
+								</div>
+								<div id="bet_*CHGID*_*ECID*_HROUH" class="btn_hdpou_odd *CCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*CRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*CIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DHGID*_*ECID*_HROUC" class="btn_hdpou_odd *DCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*DRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*DIOR_HROUC*</span>
+								</div>
+								<div id="bet_*DHGID*_*ECID*_HROUH" class="btn_hdpou_odd *DCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*DRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*DIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EHGID*_*ECID*_HROUC" class="btn_hdpou_odd *ECLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ERATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*EIOR_HROUC*</span>
+								</div>
+								<div id="bet_*EHGID*_*ECID*_HROUH" class="btn_hdpou_odd *ECLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ERATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*EIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FHGID*_*ECID*_HROUC" class="btn_hdpou_odd *FCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*FRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*FIOR_HROUC*</span>
+								</div>
+								<div id="bet_*FHGID*_*ECID*_HROUH" class="btn_hdpou_odd *FCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*FRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*FIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GHGID*_*ECID*_HROUC" class="btn_hdpou_odd *GCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*GRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*GIOR_HROUC*</span>
+								</div>
+								<div id="bet_*GHGID*_*ECID*_HROUH" class="btn_hdpou_odd *GCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*GRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*GIOR_HROUH*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthOU_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<!-- 加時全場 -->
+			<div id="model_ETFT" name="div_model" style="display:none;">
+				<!-- RE 讓球-->
+				<div class="form_lebet_hdpou hdpou_ft">
+					<div class="head_lebet">
+						<i id="ratioR_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_re*</span>
+						<i id="ratioR_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioR_*ECID*" class="content_lebet dragscroll_ratioR_*ECID*">
+						<label id="ratioR_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID*_*ECID*_REH" class="btn_hdpou_odd *CLOSE_REH* *STRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*RATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*IOR_REH*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_REC" class="btn_hdpou_odd *CLOSE_REC* *STRONG_C*">
+									<span>
+										<tt class="text_ballhead">*RATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*IOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AGID*_*ECID*_REH" class="btn_hdpou_odd *ACLOSE_REH* *ASTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ARATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*AIOR_REH*</span>
+								</div>
+								<div id="bet_*AGID*_*ECID*_REC" class="btn_hdpou_odd *ACLOSE_REC* *ASTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ARATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*AIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BGID*_*ECID*_REH" class="btn_hdpou_odd *BCLOSE_REH* *BSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*BRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*BIOR_REH*</span>
+								</div>
+								<div id="bet_*BGID*_*ECID*_REC" class="btn_hdpou_odd *BCLOSE_REC* *BSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*BRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*BIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CGID*_*ECID*_REH" class="btn_hdpou_odd *CCLOSE_REH* *CSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*CRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*CIOR_REH*</span>
+								</div>
+								<div id="bet_*CGID*_*ECID*_REC" class="btn_hdpou_odd *CCLOSE_REC* *CSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*CRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*CIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DGID*_*ECID*_REH" class="btn_hdpou_odd *DCLOSE_REH* *DSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*DRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*DIOR_REH*</span>
+								</div>
+								<div id="bet_*DGID*_*ECID*_REC" class="btn_hdpou_odd *DCLOSE_REC* *DSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*DRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*DIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EGID*_*ECID*_REH" class="btn_hdpou_odd *ECLOSE_REH* *ESTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ERATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*EIOR_REH*</span>
+								</div>
+								<div id="bet_*EGID*_*ECID*_REC" class="btn_hdpou_odd *ECLOSE_REC* *ESTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ERATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*EIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FGID*_*ECID*_REH" class="btn_hdpou_odd *FCLOSE_REH* *FSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*FRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*FIOR_REH*</span>
+								</div>
+								<div id="bet_*FGID*_*ECID*_REC" class="btn_hdpou_odd *FCLOSE_REC* *FSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*FRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*FIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GGID*_*ECID*_REH" class="btn_hdpou_odd *GCLOSE_REH* *GSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*GRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*GIOR_REH*</span>
+								</div>
+								<div id="bet_*GGID*_*ECID*_REC" class="btn_hdpou_odd *GCLOSE_REC* *GSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*GRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*GIOR_REC*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthR_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+				<!-- ROU 大小-->
+				<div class="form_lebet_hdpou hdpou_ft">
+					<div class="head_lebet">
+						<i id="ratioOU_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_rou*</span>
+						<i id="ratioOU_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioOU_*ECID*" class="content_lebet dragscroll_ratioOU_*ECID*">
+						<label id="ratioOU_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID*_*ECID*_ROUC" class="btn_hdpou_odd *CLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*RATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*IOR_ROUC*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_ROUH" class="btn_hdpou_odd *CLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*RATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*IOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AGID*_*ECID*_ROUC" class="btn_hdpou_odd *ACLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ARATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*AIOR_ROUC*</span>
+								</div>
+								<div id="bet_*AGID*_*ECID*_ROUH" class="btn_hdpou_odd *ACLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ARATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*AIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BGID*_*ECID*_ROUC" class="btn_hdpou_odd *BCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*BRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*BIOR_ROUC*</span>
+								</div>
+								<div id="bet_*BGID*_*ECID*_ROUH" class="btn_hdpou_odd *BCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*BRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*BIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CGID*_*ECID*_ROUC" class="btn_hdpou_odd *CCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*CRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*CIOR_ROUC*</span>
+								</div>
+								<div id="bet_*CGID*_*ECID*_ROUH" class="btn_hdpou_odd *CCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*CRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*CIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DGID*_*ECID*_ROUC" class="btn_hdpou_odd *DCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*DRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*DIOR_ROUC*</span>
+								</div>
+								<div id="bet_*DGID*_*ECID*_ROUH" class="btn_hdpou_odd *DCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*DRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*DIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EGID*_*ECID*_ROUC" class="btn_hdpou_odd *ECLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ERATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*EIOR_ROUC*</span>
+								</div>
+								<div id="bet_*EGID*_*ECID*_ROUH" class="btn_hdpou_odd *ECLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ERATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*EIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FGID*_*ECID*_ROUC" class="btn_hdpou_odd *FCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*FRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*FIOR_ROUC*</span>
+								</div>
+								<div id="bet_*FGID*_*ECID*_ROUH" class="btn_hdpou_odd *FCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*FRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*FIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GGID*_*ECID*_ROUC" class="btn_hdpou_odd *GCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*GRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*GIOR_ROUC*</span>
+								</div>
+								<div id="bet_*GGID*_*ECID*_ROUH" class="btn_hdpou_odd *GCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*GRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*GIOR_ROUH*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthOU_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<!-- 加時半場 -->
+			<div id="model_ET" name="div_model" style="display:none;">
+				<!-- HRE 讓球-->
+				<div class="form_lebet_hdpou hdpou_1h">
+					<div class="head_lebet">
+						<i id="ratioR_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_re* *ART_game_1h*</span>
+						<i id="ratioR_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioR_*ECID*" class="content_lebet dragscroll_ratioR_*ECID*">
+						<label id="ratioR_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*HGID*_*ECID*_HREH" class="btn_hdpou_odd *CLOSE_HREH* *HSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*RATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*IOR_HREH*</span>
+								</div>
+								<div id="bet_*HGID*_*ECID*_HREC" class="btn_hdpou_odd *CLOSE_HREC* *HSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*RATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*IOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AHGID*_*ECID*_HREH" class="btn_hdpou_odd *ACLOSE_HREH* *AHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ARATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*AIOR_HREH*</span>
+								</div>
+								<div id="bet_*AHGID*_*ECID*_HREC" class="btn_hdpou_odd *ACLOSE_HREC* *AHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ARATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*AIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BHGID*_*ECID*_HREH" class="btn_hdpou_odd *BCLOSE_HREH* *BHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*BRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*BIOR_HREH*</span>
+								</div>
+								<div id="bet_*BHGID*_*ECID*_HREC" class="btn_hdpou_odd *BCLOSE_HREC* *BHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*BRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*BIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CHGID*_*ECID*_HREH" class="btn_hdpou_odd *CCLOSE_HREH* *CHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*CRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*CIOR_HREH*</span>
+								</div>
+								<div id="bet_*CHGID*_*ECID*_HREC" class="btn_hdpou_odd *CCLOSE_HREC* *CHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*CRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*CIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DHGID*_*ECID*_HREH" class="btn_hdpou_odd *DCLOSE_HREH* *DHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*DRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*DIOR_HREH*</span>
+								</div>
+								<div id="bet_*DHGID*_*ECID*_HREC" class="btn_hdpou_odd *DCLOSE_HREC* *DHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*DRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*DIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EHGID*_*ECID*_HREH" class="btn_hdpou_odd *ECLOSE_HREH* *EHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ERATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*EIOR_HREH*</span>
+								</div>
+								<div id="bet_*EHGID*_*ECID*_HREC" class="btn_hdpou_odd *ECLOSE_HREC* *EHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ERATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*EIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FHGID*_*ECID*_HREH" class="btn_hdpou_odd *FCLOSE_HREH* *FHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*FRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*FIOR_HREH*</span>
+								</div>
+								<div id="bet_*FHGID*_*ECID*_HREC" class="btn_hdpou_odd *FCLOSE_HREC* *FHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*FRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*FIOR_HREC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GHGID*_*ECID*_HREH" class="btn_hdpou_odd *GCLOSE_HREH* *GHSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*GRATIO_HREH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*GIOR_HREH*</span>
+								</div>
+								<div id="bet_*GHGID*_*ECID*_HREC" class="btn_hdpou_odd *GCLOSE_HREC* *GHSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*GRATIO_HREC*</tt>
+									</span>
+									<span class="text_odds">*GIOR_HREC*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthR_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+				<!-- HROU 大小-->
+				<div class="form_lebet_hdpou hdpou_1h">
+					<div class="head_lebet">
+						<i id="ratioOU_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_rou* *ART_game_1h*</span>
+						<i id="ratioOU_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioOU_*ECID*" class="content_lebet dragscroll_ratioOU_*ECID*">
+						<label id="ratioOU_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*HGID*_*ECID*_HROUC" class="btn_hdpou_odd *CLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*RATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*IOR_HROUC*</span>
+								</div>
+								<div id="bet_*HGID*_*ECID*_HROUH" class="btn_hdpou_odd *CLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*RATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*IOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AHGID*_*ECID*_HROUC" class="btn_hdpou_odd *ACLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ARATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*AIOR_HROUC*</span>
+								</div>
+								<div id="bet_*AHGID*_*ECID*_HROUH" class="btn_hdpou_odd *ACLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ARATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*AIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BHGID*_*ECID*_HROUC" class="btn_hdpou_odd *BCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*BRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*BIOR_HROUC*</span>
+								</div>
+								<div id="bet_*BHGID*_*ECID*_HROUH" class="btn_hdpou_odd *BCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*BRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*BIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CHGID*_*ECID*_HROUC" class="btn_hdpou_odd *CCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*CRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*CIOR_HROUC*</span>
+								</div>
+								<div id="bet_*CHGID*_*ECID*_HROUH" class="btn_hdpou_odd *CCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*CRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*CIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DHGID*_*ECID*_HROUC" class="btn_hdpou_odd *DCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*DRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*DIOR_HROUC*</span>
+								</div>
+								<div id="bet_*DHGID*_*ECID*_HROUH" class="btn_hdpou_odd *DCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*DRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*DIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EHGID*_*ECID*_HROUC" class="btn_hdpou_odd *ECLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ERATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*EIOR_HROUC*</span>
+								</div>
+								<div id="bet_*EHGID*_*ECID*_HROUH" class="btn_hdpou_odd *ECLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ERATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*EIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FHGID*_*ECID*_HROUC" class="btn_hdpou_odd *FCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*FRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*FIOR_HROUC*</span>
+								</div>
+								<div id="bet_*FHGID*_*ECID*_HROUH" class="btn_hdpou_odd *FCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*FRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*FIOR_HROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GHGID*_*ECID*_HROUC" class="btn_hdpou_odd *GCLOSE_HROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*GRATIO_HROUO*</tt>
+									</span>
+									<span class="text_odds">*GIOR_HROUC*</span>
+								</div>
+								<div id="bet_*GHGID*_*ECID*_HROUH" class="btn_hdpou_odd *GCLOSE_HROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*GRATIO_HROUU*</tt>
+									</span>
+									<span class="text_odds">*GIOR_HROUH*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthOU_*ECID*" class="totalWidth" style="--total_game: *SUM*;"></div>
+						</label>
+					</div>
+				</div>
+			</div>
+
+			<!-- Pens -->
+			<div id="model_PK" name="div_model" style="display:none;">
+				<!-- RE 讓球-->
+				<div class="form_lebet_hdpou hdpou_pens">
+					<div class="head_lebet">
+						<i id="ratioR_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_pk_re*</span>
+						<i id="ratioR_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioR_*ECID*" class="content_lebet dragscroll_ratioR_*ECID*">
+						<label id="ratioR_total_*ECID*" class="">
+							<div id="" class="col_hdpou">
+								<div id="bet_*GID*_*ECID*_REH" class="btn_hdpou_odd *CLOSE_REH* *STRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*RATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*IOR_REH*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_REC" class="btn_hdpou_odd *CLOSE_REC* *STRONG_C*">
+									<span>
+										<tt class="text_ballhead">*RATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*IOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB* *RE_ABLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AGID*_*ECID*_REH" class="btn_hdpou_odd *ACLOSE_REH* *ASTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ARATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*AIOR_REH*</span>
+								</div>
+								<div id="bet_*AGID*_*ECID*_REC" class="btn_hdpou_odd *ACLOSE_REC* *ASTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ARATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*AIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB* *RE_BBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BGID*_*ECID*_REH" class="btn_hdpou_odd *BCLOSE_REH* *BSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*BRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*BIOR_REH*</span>
+								</div>
+								<div id="bet_*BGID*_*ECID*_REC" class="btn_hdpou_odd *BCLOSE_REC* *BSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*BRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*BIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB* *RE_CBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CGID*_*ECID*_REH" class="btn_hdpou_odd *CCLOSE_REH* *CSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*CRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*CIOR_REH*</span>
+								</div>
+								<div id="bet_*CGID*_*ECID*_REC" class="btn_hdpou_odd *CCLOSE_REC* *CSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*CRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*CIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB* *RE_DBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DGID*_*ECID*_REH" class="btn_hdpou_odd *DCLOSE_REH* *DSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*DRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*DIOR_REH*</span>
+								</div>
+								<div id="bet_*DGID*_*ECID*_REC" class="btn_hdpou_odd *DCLOSE_REC* *DSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*DRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*DIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB* *RE_EBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EGID*_*ECID*_REH" class="btn_hdpou_odd *ECLOSE_REH* *ESTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*ERATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*EIOR_REH*</span>
+								</div>
+								<div id="bet_*EGID*_*ECID*_REC" class="btn_hdpou_odd *ECLOSE_REC* *ESTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*ERATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*EIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB* *RE_FBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FGID*_*ECID*_REH" class="btn_hdpou_odd *FCLOSE_REH* *FSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*FRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*FIOR_REH*</span>
+								</div>
+								<div id="bet_*FGID*_*ECID*_REC" class="btn_hdpou_odd *FCLOSE_REC* *FSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*FRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*FIOR_REC*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB* *RE_GBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GGID*_*ECID*_REH" class="btn_hdpou_odd *GCLOSE_REH* *GSTRONG_H*"><!-- 強隊 Add class="strong_team" -->
+									<span>
+										<tt class="text_ballhead">*GRATIO_REH*</tt><!-- 球頭強隊時要粗體 0的時候不用 class在上一層 -->
+									</span>
+									<span class="text_odds">*GIOR_REH*</span>
+								</div>
+								<div id="bet_*GGID*_*ECID*_REC" class="btn_hdpou_odd *GCLOSE_REC* *GSTRONG_C*">
+									<span>
+										<tt class="text_ballhead">*GRATIO_REC*</tt>
+									</span>
+									<span class="text_odds">*GIOR_REC*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthR_*ECID*" class="totalWidth" style="--total_game: *SUMRE*;"></div>
+						</label>
+					</div>
+				</div>
+
+				<!-- ROU 大小-->
+				<div class="form_lebet_hdpou hdpou_pens">
+					<div class="head_lebet">
+						<i id="ratioOU_left_*ECID*" class="icon_pre"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+						<span>*ART_game_pk_rou*</span>
+						<i id="ratioOU_right_*ECID*" class="icon_next"><svg><use xlink:href="#icon_doublearr"/></svg></i>
+					</div>
+
+					<div id="ratioOU_*ECID*" class="content_lebet dragscroll_ratioOU_*ECID*">
+						<label id="ratioOU_total_*ECID*" class="">
+							<div id="" class="col_hdpou"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID2*_*ECID*_ROUC" class="btn_hdpou_odd *CLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*RATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*IOR_ROUC*</span>
+								</div>
+								<div id="bet_*GID2*_*ECID*_ROUH" class="btn_hdpou_odd *CLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*RATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*IOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *ABLANK* *NOSUB* *ROU_ABLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*AGID2*_*ECID*_ROUC" class="btn_hdpou_odd *ACLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ARATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*AIOR_ROUC*</span>
+								</div>
+								<div id="bet_*AGID2*_*ECID*_ROUH" class="btn_hdpou_odd *ACLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ARATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*AIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *BBLANK* *NOSUB* *ROU_BBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*BGID2*_*ECID*_ROUC" class="btn_hdpou_odd *BCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*BRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*BIOR_ROUC*</span>
+								</div>
+								<div id="bet_*BGID2*_*ECID*_ROUH" class="btn_hdpou_odd *BCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*BRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*BIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *CBLANK* *NOSUB* *ROU_CBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*CGID2*_*ECID*_ROUC" class="btn_hdpou_odd *CCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*CRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*CIOR_ROUC*</span>
+								</div>
+								<div id="bet_*CGID2*_*ECID*_ROUH" class="btn_hdpou_odd *CCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*CRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*CIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *DBLANK* *NOSUB* *ROU_DBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*DGID2*_*ECID*_ROUC" class="btn_hdpou_odd *DCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*DRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*DIOR_ROUC*</span>
+								</div>
+								<div id="bet_*DGID2*_*ECID*_ROUH" class="btn_hdpou_odd *DCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*DRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*DIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *EBLANK* *NOSUB* *ROU_EBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*EGID2*_*ECID*_ROUC" class="btn_hdpou_odd *ECLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*ERATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*EIOR_ROUC*</span>
+								</div>
+								<div id="bet_*EGID2*_*ECID*_ROUH" class="btn_hdpou_odd *ECLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*ERATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*EIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *FBLANK* *NOSUB* *ROU_FBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*FGID2*_*ECID*_ROUC" class="btn_hdpou_odd *FCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*FRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*FIOR_ROUC*</span>
+								</div>
+								<div id="bet_*FGID2*_*ECID*_ROUH" class="btn_hdpou_odd *FCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*FRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*FIOR_ROUH*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *GBLANK* *NOSUB* *ROU_GBLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GGID2*_*ECID*_ROUC" class="btn_hdpou_odd *GCLOSE_ROUC*">
+									<span>
+										<tt class="text_ballou">*ART_game_over*</tt>
+										<tt class="text_ballhead">*GRATIO_ROUO*</tt>
+									</span>
+									<span class="text_odds">*GIOR_ROUC*</span>
+								</div>
+								<div id="bet_*GGID2*_*ECID*_ROUH" class="btn_hdpou_odd *GCLOSE_ROUH*">
+									<span>
+										<tt class="text_ballou">*ART_game_under*</tt>
+										<tt class="text_ballhead">*GRATIO_ROUU*</tt>
+									</span>
+									<span class="text_odds">*GIOR_ROUH*</span>
+								</div>
+							</div>
+
+							<div id="totalWidthOU_*ECID*" class="totalWidth" style="--total_game: *SUMROU*;"></div>
+						</label>
+					</div>
+				</div>
+
+				<!-- RSH 下一個點球-->
+				<div class="form_lebet_hdpou hdpou_pens">
+					<div class="head_lebet">
+						<span class="col_merge">*ART_game_pk_rsh*</span>
+					</div>
+
+					<div id="" class="content_lebet">
+						<label>
+							<!-- START DYNAMIC BLOCK: RSH -->
+							<div id="" class="col_hdpou *RSHY_BLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID*_*ECID*_RSHY" class="btn_hdpou_odd *CLOSE_RSHY*">
+									<span>
+										<tt class="text_ballou">*ART_game_rsh_goal*</tt>
+									</span>
+									<span class="text_odds">*IOR_RSHY*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_RSCY" class="btn_hdpou_odd *CLOSE_RSCY*">
+									<span>
+										<tt class="text_ballou">*ART_game_rsh_goal*</tt>
+									</span>
+									<span class="text_odds">*IOR_RSCY*</span>
+								</div>
+							</div>
+							<div id="" class="col_hdpou *RSHN_BLANK*"><!-- 空白 Add class="odd_empty" -->
+								<div id="bet_*GID*_*ECID*_RSHN" class="btn_hdpou_odd *CLOSE_RSHN*">
+									<span>
+										<tt class="text_ballou">*ART_game_rsh_nogoal*</tt>
+									</span>
+									<span class="text_odds">*IOR_RSHN*</span>
+								</div>
+								<div id="bet_*GID*_*ECID*_RSCN" class="btn_hdpou_odd *CLOSE_RSCN*">
+									<span>
+										<tt class="text_ballou">*ART_game_rsh_nogoal*</tt>
+									</span>
+									<span class="text_odds">*IOR_RSCN*</span>
+								</div>
+							</div>
+							<!-- END DYNAMIC BLOCK: RSH -->
+						</label>
+					</div>
+				</div>
+			</div>
+
+		</div>
+	</div>
+</body>
+</html>
