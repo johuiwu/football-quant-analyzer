@@ -175,11 +175,48 @@ export default function DashboardPage() {
   };
   const handleRecalculate = useCallback(() => {
     const { home: h, away: a } = selectedTeams;
+
+    // 当自定义stats开启时，将customStats合并到球队数据中
+    let effectiveHome = h;
+    let effectiveAway = a;
+    if (isStatsCustomized) {
+      effectiveHome = {
+        ...h,
+        homeStats: {
+          ...h.homeStats,
+          wins: customStats.homeWins,
+          draws: customStats.homeDraws,
+          losses: customStats.homeLosses,
+          goalsFor: customStats.homeGoalsFor,
+          goalsAgainst: customStats.homeGoalsAgainst,
+          xgFor: customStats.homeXgFor,
+          xgAgainst: customStats.homeXgAgainst,
+        },
+        form: customStats.form,
+        homeXg: customStats.homeXgFor,
+      };
+      effectiveAway = {
+        ...a,
+        awayStats: {
+          ...a.awayStats,
+          wins: customStats.awayWins,
+          draws: customStats.awayDraws,
+          losses: customStats.awayLosses,
+          goalsFor: customStats.awayGoalsFor,
+          goalsAgainst: customStats.awayGoalsAgainst,
+          xgFor: customStats.awayXgFor,
+          xgAgainst: customStats.awayXgAgainst,
+        },
+        homeXg: customStats.awayXgFor,
+        awayXg: customStats.awayXgFor,
+      };
+    }
+
     const finalWeights = useCustomWeights && !useSystemWeights ? customWeights : undefined;
     const selectedFixture = selectedFixtureId ? fixtures.find(f => f.id === selectedFixtureId) : null;
     const input: BetsModelInput = {
-      homeTeam: h,
-      awayTeam: a,
+      homeTeam: effectiveHome,
+      awayTeam: effectiveAway,
       odds1X2: odds,
       asianFeatures,
       goalsLine,
@@ -187,8 +224,8 @@ export default function DashboardPage() {
       advancedParams,
       fusionWeights: { oddsChannel: 0.7, asianChannel: 0.3 },
       competitionType: selectedFixture?.competitionType || 'League',
-      homeTeamId: h.teamId || 0,
-      awayTeamId: a.teamId || 0
+      homeTeamId: effectiveHome.teamId || 0,
+      awayTeamId: effectiveAway.teamId || 0
     };
     try {
       const computed = calculateBetsModel(input);
@@ -200,7 +237,7 @@ export default function DashboardPage() {
       setResults(null);
     }
     checkAbnormalParams(advancedParams, customWeights);
-  }, [odds, asianFeatures, goalsLine, useCustomWeights, useSystemWeights, customWeights, advancedParams, selectedTeams, selectedFixtureId, fixtures]);
+  }, [odds, asianFeatures, goalsLine, useCustomWeights, useSystemWeights, customWeights, advancedParams, selectedTeams, selectedFixtureId, fixtures, isStatsCustomized, customStats]);
 
   const enableStatsCustomizer = () => {
     const hTeam = teams.find(t => t.id === selectedHomeId) || teams[0];
