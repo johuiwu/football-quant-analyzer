@@ -17,6 +17,8 @@ const categoryGradients: Record<string, { bg: string; text: string; border: stri
   "1X2_half":  { bg: "from-purple-800/30 to-slate-800/50",  text: "text-purple-300/70",border: "border-purple-700/20", label: "半场" },
   "O/E":       { bg: "from-green-900/50 to-slate-800/50",   text: "text-green-300",   border: "border-green-800/30", label: "" },
   "O/E_half":  { bg: "from-green-800/30 to-slate-800/50",   text: "text-green-300/70", border: "border-green-700/20", label: "半场" },
+  "NEXT":      { bg: "from-cyan-900/50 to-slate-800/50",    text: "text-cyan-300",    border: "border-cyan-800/30",  label: "" },
+  "NEXT_half": { bg: "from-cyan-800/30 to-slate-800/50",    text: "text-cyan-300/70", border: "border-cyan-700/20",  label: "半场" },
 };
 
 export default function MarketCard({ handicap, homeTeam, awayTeam, compact = false }: MarketCardProps) {
@@ -92,6 +94,23 @@ export default function MarketCard({ handicap, homeTeam, awayTeam, compact = fal
           <div className={`text-center ${compact ? "mt-1.5 pt-1.5" : "mt-2 pt-2"} border-t border-slate-700`}>
             <div className={`${compact ? "text-[10px]" : "text-xs"} text-slate-400`}>双</div>
             <div className={`${compact ? "text-base" : "text-lg"} font-bold text-white`}>{(odds?.even || 0).toFixed(2)}</div>
+          </div>
+        </>
+      )}
+
+      {category === "NEXT" && (
+        <>
+          <div className="text-center">
+            <div className={`${compact ? "text-[10px]" : "text-xs"} text-slate-400`}>
+              {homeTeam || "主队"}
+            </div>
+            <div className={`${compact ? "text-base" : "text-lg"} font-bold text-white`}>{(odds?.home || 0).toFixed(2)}</div>
+          </div>
+          <div className={`text-center ${compact ? "mt-1.5 pt-1.5" : "mt-2 pt-2"} border-t border-slate-700`}>
+            <div className={`${compact ? "text-[10px]" : "text-xs"} text-slate-400`}>
+              {awayTeam || "客队"}
+            </div>
+            <div className={`${compact ? "text-base" : "text-lg"} font-bold text-white`}>{(odds?.away || 0).toFixed(2)}</div>
           </div>
         </>
       )}

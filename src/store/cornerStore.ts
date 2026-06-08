@@ -21,7 +21,7 @@ export interface CornerStrategy {
 /** 盘口条目 */
 export interface HandicapEntry {
   order: number;
-  category: "O/U" | "HDP" | "1X2" | "O/E";
+  category: "O/U" | "HDP" | "1X2" | "O/E" | "NEXT";
   categoryLabel: string;
   period: "full" | "half";
   line?: number | string;
@@ -34,9 +34,9 @@ export interface HandicapEntry {
     odd?: number;
     even?: number;
   };
-  source: "dom" | "xhr" | "fallback";
-  /** 盘口分组: main=让球&大小, corner=角球盘口, correct_score=波胆 */
-  marketGroup?: "main" | "corner" | "correct_score";
+  source: "dom" | "xhr" | "fallback" | "api";
+  /** 盘口分组: main=让球&大小, corner=角球盘口, hdp=让球, ou=大小球, correct_score=波胆 */
+  marketGroup?: "main" | "corner" | "hdp" | "ou" | "correct_score";
 }
 
 /** 实时比赛角球数据 */

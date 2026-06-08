@@ -234,6 +234,7 @@ export default function LiveMonitor() {
                         "HDP": h.period === "full" ? "bg-orange-600/20 text-orange-300 border-orange-500/30" : "bg-orange-400/10 text-orange-300/70 border-orange-400/20",
                         "1X2": h.period === "full" ? "bg-purple-600/20 text-purple-300 border-purple-500/30" : "bg-purple-400/10 text-purple-300/70 border-purple-400/20",
                         "O/E": h.period === "full" ? "bg-green-600/20 text-green-300 border-green-500/30" : "bg-green-400/10 text-green-300/70 border-green-400/20",
+                        "NEXT": h.period === "full" ? "bg-cyan-600/20 text-cyan-300 border-cyan-500/30" : "bg-cyan-400/10 text-cyan-300/70 border-cyan-400/20",
                       };
                       const colorClass = colors[h.category] || "bg-slate-700/30 text-slate-400 border-slate-600/30";
                       let shortLabel = h.categoryLabel;
@@ -248,6 +249,8 @@ export default function LiveMonitor() {
                         displayVal = (h.odds.home || 0).toFixed(2);
                       } else if (h.category === "O/E" && h.odds) {
                         displayVal = (h.odds.odd || 0).toFixed(2);
+                      } else if (h.category === "NEXT" && h.odds) {
+                        displayVal = (h.odds.home || 0).toFixed(2);
                       }
                       
                       return (

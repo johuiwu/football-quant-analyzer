@@ -1,84 +1,233 @@
-﻿import puppeteer from "puppeteer-extra";
-import fs from "fs";
+#!/usr/bin/env node
+// ================================================================
+// find-hga-api.js — 自动发现 hga050.com 上返回比赛数据的真实 API 接口
+//
+// 目标：自动访问 hga050.com，登录后进入 In-Play 页面，
+//       捕获所有网络请求，分析出哪个接口返回了实时比赛数据。
+//
+// 运行方式：node find-hga-api.js
+// ================================================================
+
+import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import fs from "fs";
+import path from "path";
 
 puppeteer.use(StealthPlugin());
 
+// ======================== 配置 ========================
 const HG_URL = "https://www.hga050.com";
 const USERNAME = "johui888";
 const PASSWORD = "aa123123";
+const HEADLESS = process.env.HEADLESS === "true"; // 默认有头模式（便于观察）
+const COLLECT_SECONDS = 20; // 网络请求收集窗口（秒）
+const OUTPUT_DIR = "output";
 
-const capturedRequests = [];
-const MATCH_SCORE_KEYWORDS = ["match", "matches", "data", "list", "games", "fixtures", "event", "events", "game", "games", "inplay", "live"];
-const MATCH_FIELD_KEYWORDS = ["homeTeam", "awayTeam", "home_team", "away_team", "team1", "team2", "home", "away", "score", "handicap", "odds", "corner"];
+// ======================== 数据收集 ========================
+const capturedRequests = []; // { url, method, postData, resourceType }
+const capturedResponses = []; // { url, method, status, contentType, headers, body, bodyLength, jsonData, isJson, resourceType, confidence, allKeys, matchSamples }
+let totalRequests = 0;
+let xhrFetchCount = 0;
 
-function isMatchRelatedResponseBody(text) {
-  if (!text || text.length < 20) return false;
-  const lower = text.toLowerCase();
-  const hasMatchKeyword = MATCH_SCORE_KEYWORDS.some(kw => lower.includes(kw));
-  const hasFieldKeyword = MATCH_FIELD_KEYWORDS.some(kw => lower.includes(kw));
-  return hasMatchKeyword && hasFieldKeyword;
+// ======================== 工具函数 ========================
+function truncate(str, maxLen = 300) {
+  if (!str) return "";
+  return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
 }
 
-function analyzeJSONStructure(obj, path = "", depth = 0) {
-  if (depth > 3 || obj === null || obj === undefined) return [];
-  const results = [];
-  if (typeof obj !== "object") return results;
+function safeJsonParse(text) {
+  try {
+    return { ok: true, data: JSON.parse(text) };
+  } catch (e) {
+    return { ok: false, data: null };
+  }
+}
 
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/** 从 JSON 对象中递归提取所有 key（最多 depth=4） */
+function extractAllKeys(obj, depth = 0, maxDepth = 4) {
+  if (depth > maxDepth || !obj || typeof obj !== "object") return [];
+  const keys = [];
   if (Array.isArray(obj)) {
-    results.push({ path: path || "(root)", type: "array", length: obj.length });
-    if (obj.length > 0 && typeof obj[0] === "object" && obj[0] !== null) {
-      const keys = Object.keys(obj[0]);
-      const hasTeamFields = keys.some(k => MATCH_FIELD_KEYWORDS.some(fk => k.toLowerCase().includes(fk)));
-      if (hasTeamFields) {
-        results.push({ path: path + "[0]", type: "object", keys });
+    if (obj.length > 0 && typeof obj[0] === "object") {
+      keys.push(...extractAllKeys(obj[0], depth + 1, maxDepth));
+    }
+  } else {
+    for (const k of Object.keys(obj)) {
+      keys.push(k);
+      if (typeof obj[k] === "object" && obj[k] !== null) {
+        keys.push(...extractAllKeys(obj[k], depth + 1, maxDepth));
       }
     }
-    return results;
   }
-
-  const keys = Object.keys(obj);
-  results.push({ path: path || "(root)", type: "object", keys: keys.slice(0, 30) });
-
-  for (const key of keys) {
-    const val = obj[key];
-    const childPath = path ? `${path}.${key}` : key;
-
-    if (Array.isArray(val) && val.length > 0 && typeof val[0] === "object" && val[0] !== null) {
-      results.push({ path: childPath, type: "array", length: val.length });
-      const itemKeys = Object.keys(val[0]);
-      const hasTeamFields = itemKeys.some(k => MATCH_FIELD_KEYWORDS.some(fk => k.toLowerCase().includes(fk)));
-      if (hasTeamFields) {
-        results.push({ path: childPath + "[0]", type: "object", keys: itemKeys.slice(0, 25), sample: val[0] });
-      }
-    } else if (typeof val === "object" && val !== null && !Array.isArray(val)) {
-      results.push(...analyzeJSONStructure(val, childPath, depth + 1));
-    }
-  }
-  return results;
+  return [...new Set(keys)];
 }
 
-function scoreMatchData(responseBody) {
+/** 检查 JSON 数据是否包含比赛相关字段 */
+function scoreMatchData(jsonData, url) {
+  if (!jsonData || typeof jsonData !== "object") return 0;
   let score = 0;
-  const lower = (responseBody || "").toLowerCase();
+  const allKeys = extractAllKeys(jsonData);
+  const allKeysLower = allKeys.map(k => k.toLowerCase());
+  const urlLower = (url || "").toLowerCase();
 
-  if (lower.includes("hom") && lower.includes("away")) score += 30;
-  if (lower.includes("score") || lower.includes("goal")) score += 20;
-  if (lower.includes("corner") || lower.includes("角球")) score += 20;
-  if (lower.includes("handicap") || lower.includes("让球")) score += 15;
-  if (lower.includes("odds") || lower.includes("赔率") || lower.includes("盘口")) score += 15;
-  if (lower.includes("match") || lower.includes("fixture") || lower.includes("game")) score += 10;
-  if (lower.includes("inplay") || lower.includes("live") || lower.includes("滚球")) score += 10;
-  if (lower.includes("team") || lower.includes("队")) score += 10;
-  if (lower.includes("league") || lower.includes("联赛")) score += 5;
-  if (lower.includes("transform.php")) score += 5;
-  if (lower.includes("xml") || lower.includes("<game") || lower.includes("<match")) score += 10;
+  // 球队名匹配
+  const teamFields = ["hometeam", "awayteam", "home", "away", "home_team", "away_team",
+    "team1", "team2", "team_home", "team_away", "h_name", "a_name", "homename", "awayname",
+    "name_home", "name_away", "team_h", "team_a", "team_h", "team_c"];
+  for (const f of teamFields) {
+    if (allKeysLower.includes(f)) { score += 10; break; }
+  }
 
-  return score;
+  // 比分匹配
+  const scoreFields = ["score", "homescore", "awayscore", "home_score", "away_score",
+    "hscore", "ascore", "h_s", "a_s", "score_h", "score_c"];
+  for (const f of scoreFields) {
+    if (allKeysLower.includes(f)) { score += 8; break; }
+  }
+
+  // 盘口/让球匹配
+  const handicapFields = ["handicap", "cornerhandicap", "corner_handicap", "hdp", "ratio",
+    "strong", "ratio_cornerhdp", "letball", "ratio_re", "ratio_rouo"];
+  for (const f of handicapFields) {
+    if (allKeysLower.includes(f)) { score += 10; break; }
+  }
+
+  // 赔率匹配
+  const oddsFields = ["odds", "cornerodds", "corner_odds", "ioratio", "hdp_home",
+    "hdp_away", "ou_over", "ou_under", "ior_reh", "ior_rec", "ior_rouh", "ior_rouc",
+    "ior_rnch", "ior_rncc"];
+  for (const f of oddsFields) {
+    if (allKeysLower.includes(f)) { score += 8; break; }
+  }
+
+  // 角球相关
+  const cornerFields = ["corner", "cn", "corners", "corner_hdp", "corner_ou",
+    "cornercount", "corner_count", "totalcorner", "total_corner", "crnouo", "croouo"];
+  for (const f of cornerFields) {
+    if (allKeysLower.includes(f) || urlLower.includes(f)) { score += 6; break; }
+  }
+
+  // URL 关键词
+  const urlKeywords = ["live", "inplay", "in-play", "match", "game", "event", "fixture", "transform", "api", "gismo", "betradar"];
+  for (const kw of urlKeywords) {
+    if (urlLower.includes(kw)) { score += 5; break; }
+  }
+
+  // 顶层 key 包含列表类字段
+  const listFields = ["matches", "data", "list", "games", "fixtures", "events",
+    "results", "items", "doc", "response"];
+  for (const f of listFields) {
+    if (allKeysLower.includes(f)) { score += 5; break; }
+  }
+
+  // 数组长度加分
+  function findLargestArray(obj, depth = 0) {
+    if (depth > 3 || !obj || typeof obj !== "object") return 0;
+    let maxLen = 0;
+    if (Array.isArray(obj)) {
+      maxLen = obj.length;
+    } else {
+      for (const k of Object.keys(obj)) {
+        if (Array.isArray(obj[k])) {
+          maxLen = Math.max(maxLen, obj[k].length);
+        } else if (typeof obj[k] === "object") {
+          maxLen = Math.max(maxLen, findLargestArray(obj[k], depth + 1));
+        }
+      }
+    }
+    return maxLen;
+  }
+  const largestArr = findLargestArray(jsonData);
+  if (largestArr > 0) score += Math.min(largestArr, 50) * 0.1;
+
+  // 特殊：GAME_ 前缀的 key（transform.php 返回格式）
+  const gameKeys = allKeys.filter(k => k.startsWith("GAME_") || k.startsWith("game_"));
+  if (gameKeys.length > 0) score += 15;
+
+  // 特殊：gismo/betradar 格式
+  if (allKeysLower.includes("doc") || allKeysLower.includes("match_info")) score += 5;
+
+  return Math.round(score);
 }
 
-// ======================== XML 解析工具函数（来自 xhrDataParser.js） ========================
+/** 从 JSON 数据中提取比赛样本 */
+function extractMatchSamples(jsonData, maxSamples = 3) {
+  if (!jsonData || typeof jsonData !== "object") return [];
+  const samples = [];
 
+  function tryExtractArray(arr) {
+    if (!Array.isArray(arr)) return;
+    for (const item of arr.slice(0, maxSamples)) {
+      if (item && typeof item === "object") {
+        samples.push(item);
+      }
+    }
+  }
+
+  // Pattern 1: 顶层是数组
+  if (Array.isArray(jsonData)) {
+    tryExtractArray(jsonData);
+    return samples;
+  }
+
+  // Pattern 2: response.GAME_X 格式
+  if (jsonData.response && typeof jsonData.response === "object") {
+    const gameKeys = Object.keys(jsonData.response).filter(k => k.startsWith("GAME_") || k.startsWith("game_"));
+    if (gameKeys.length > 0) {
+      for (const k of gameKeys.slice(0, maxSamples)) {
+        samples.push(jsonData.response[k]);
+      }
+      return samples;
+    }
+  }
+
+  // Pattern 3: 顶层 GAME_ 格式
+  const topGameKeys = Object.keys(jsonData).filter(k => k.startsWith("GAME_") || k.startsWith("game_"));
+  if (topGameKeys.length > 0) {
+    for (const k of topGameKeys.slice(0, maxSamples)) {
+      samples.push(jsonData[k]);
+    }
+    return samples;
+  }
+
+  // Pattern 4: doc 数组（gismo 格式）
+  if (jsonData.doc && Array.isArray(jsonData.doc)) {
+    tryExtractArray(jsonData.doc);
+    return samples;
+  }
+
+  // Pattern 5: 搜索常见的列表字段
+  const listKeys = ["matches", "data", "list", "games", "fixtures", "events", "results", "items"];
+  for (const k of listKeys) {
+    if (jsonData[k] && Array.isArray(jsonData[k])) {
+      tryExtractArray(jsonData[k]);
+      if (samples.length > 0) return samples;
+    }
+  }
+
+  // Pattern 6: 深度搜索（最多3层）
+  function deepSearch(obj, depth) {
+    if (depth > 3 || samples.length >= maxSamples) return;
+    if (!obj || typeof obj !== "object") return;
+    for (const k of Object.keys(obj)) {
+      if (Array.isArray(obj[k]) && obj[k].length > 0 && obj[k][0] && typeof obj[k][0] === "object") {
+        tryExtractArray(obj[k]);
+        if (samples.length >= maxSamples) return;
+      } else if (typeof obj[k] === "object" && !Array.isArray(obj[k])) {
+        deepSearch(obj[k], depth + 1);
+      }
+    }
+  }
+  deepSearch(jsonData, 0);
+
+  return samples;
+}
+
+// ======================== XML 解析工具函数 ========================
 function parseRETIMESET(retimeset) {
   if (!retimeset) return 0;
   if (retimeset.startsWith("MTIME")) return 0;
@@ -101,6 +250,7 @@ function parseMatchXML(xmlText) {
   if (!xmlText || typeof xmlText !== "string") return [];
   let matches = [];
 
+  // 路径1: <original> 标签中的 JSON
   const originalMatch = xmlText.match(/<original>([\s\S]*?)<\/original>/);
   if (originalMatch) {
     try {
@@ -109,108 +259,65 @@ function parseMatchXML(xmlText) {
       for (const key of gameKeys) {
         const g = json[key];
         if (!g.TEAM_H || !g.TEAM_C) continue;
-        matches.push(mapGameToMatch(g));
+        matches.push({
+          matchId: String(g.GID || ""),
+          homeTeam: g.TEAM_H || "",
+          awayTeam: g.TEAM_C || "",
+          league: g.LEAGUE || "",
+          homeScore: parseInt(g.SCORE_H || 0, 10) || 0,
+          awayScore: parseInt(g.SCORE_C || 0, 10) || 0,
+          elapsedMinutes: parseRETIMESET(g.RETIMESET || ""),
+          isRunning: g.RUNNING === "Y",
+          _hdpLine: g.RATIO_RE || "",
+          _hdpHomeOdds: g.IOR_REH || "",
+          _hdpAwayOdds: g.IOR_REC || "",
+          _ouLine: g.RATIO_ROUO || "",
+          _ouOverOdds: g.IOR_ROUH || "",
+          _ouUnderOdds: g.IOR_ROUC || "",
+          _cornerHdpLine: g.RATIO_RE || "",  // rcn context
+          _cornerHdpHomeOdds: g.IOR_RNCH || "",
+          _cornerHdpAwayOdds: g.IOR_RNCC || "",
+          _cornerOULine: g.RATIO_ROUO || "",
+          _cornerOUOdds: g.IOR_ROUH || "",
+          _cornerOUUnderOdds: g.IOR_ROUC || "",
+          _hasCornerMarket: (g.sw_CRG === "Y") || (parseInt(g.CN_COUNT || "0") > 0),
+          ptype: g.PTYPE || "",
+        });
       }
     } catch (e) {}
   }
 
   if (matches.length > 0) return matches;
 
+  // 路径2: <game> 标签 XML
   const gameRegex = /<game\s[^>]*>([\s\S]*?)<\/game>/gi;
   let gm;
   while ((gm = gameRegex.exec(xmlText)) !== null) {
     const fields = extractGameFields(gm[1]);
     if (!fields.TEAM_H || !fields.TEAM_C) continue;
-    matches.push(mapGameToMatch(fields));
+    matches.push({
+      matchId: fields.GID || "",
+      homeTeam: fields.TEAM_H || "",
+      awayTeam: fields.TEAM_C || "",
+      league: fields.LEAGUE || "",
+      homeScore: parseInt(fields.SCORE_H || 0, 10) || 0,
+      awayScore: parseInt(fields.SCORE_C || 0, 10) || 0,
+      elapsedMinutes: parseRETIMESET(fields.RETIMESET || ""),
+      isRunning: fields.RUNNING === "Y",
+      _hdpLine: fields.RATIO_RE || "",
+      _hdpHomeOdds: fields.IOR_REH || "",
+      _hdpAwayOdds: fields.IOR_REC || "",
+      _ouLine: fields.RATIO_ROUO || "",
+      _ouOverOdds: fields.IOR_ROUH || "",
+      _ouUnderOdds: fields.IOR_ROUC || "",
+      _hasCornerMarket: !!(fields.CN_COUNT && parseInt(fields.CN_COUNT) > 0),
+    });
   }
-
-  if (matches.length > 0) return matches;
-
-  try {
-    const json = JSON.parse(xmlText);
-    if (typeof json === "object" && json !== null) {
-      const results = extractMatchArrays(json);
-      return results;
-    }
-  } catch (_) {}
 
   return matches;
 }
 
-function mapGameToMatch(g) {
-  return {
-    matchId: String(g.GID || ""),
-    homeTeam: g.TEAM_H || "",
-    awayTeam: g.TEAM_C || "",
-    league: g.LEAGUE || "",
-    homeScore: parseInt(g.SCORE_H || 0, 10) || 0,
-    awayScore: parseInt(g.SCORE_C || 0, 10) || 0,
-    elapsedMinutes: parseRETIMESET(g.RETIMESET || g.retimeset || ""),
-    isRunning: g.RUNNING === "Y" || g.running === "Y",
-    handicapLine: g.RATIO_XROUO || g.RATIO_ROUHO || g.RATIO_ROUCO || "",
-    handicapOdds: g.IOR_XROUO || g.IOR_ROUHO || g.IOR_ROUCO || "",
-    _ecid: g.ECID || "",
-    _hasCornerMarket: (g.sw_CRG === "Y") || (parseInt(g.CN_COUNT || "0") > 0),
-    _cornerOULine: g.ratio_CROUO || g.RATIO_CROUO || "",
-    _cornerOUOdds: g.ior_CROUO || g.IOR_CROUO || "",
-    _hdpLine: g.RATIO_RE || "",
-    _hdpHomeOdds: g.IOR_REH || "",
-    _hdpAwayOdds: g.IOR_REC || "",
-    _ouLine: g.RATIO_ROUO || "",
-    _ouOverOdds: g.IOR_ROUH || "",
-    _ouUnderOdds: g.IOR_ROUC || "",
-  };
-}
-
-function extractMatchArrays(obj) {
-  const results = [];
-  if (!obj || typeof obj !== "object") return results;
-  const scan = (data, depth) => {
-    if (depth > 5) return;
-    if (Array.isArray(data)) {
-      for (const item of data) {
-        if (item && typeof item === "object") {
-          const homeField = item.homeTeam || item.home_team || item.TEAM_H || item.home || item.team1 || item.team_home;
-          const awayField = item.awayTeam || item.away_team || item.TEAM_C || item.away || item.team2 || item.team_away;
-          if (homeField && awayField) {
-            results.push({
-              matchId: String(item.GID || item.id || item.matchId || item.match_id || item.eventId || ""),
-              homeTeam: String(homeField),
-              awayTeam: String(awayField),
-              league: item.LEAGUE || item.league || item.tournament || item.competition || "",
-              homeScore: parseInt(item.SCORE_H || item.homeScore || item.score_home || item.score1 || 0, 10) || 0,
-              awayScore: parseInt(item.SCORE_C || item.awayScore || item.score_away || item.score2 || 0, 10) || 0,
-              elapsedMinutes: 0,
-              isRunning: true,
-              handicapLine: item.RATIO_XROUO || item.ratio_CROUO || item.corner_handicap || item.handicap || "",
-              handicapOdds: item.IOR_XROUO || item.ior_CROUO || item.corner_odds || item.odds || "",
-              _ecid: "",
-              _hasCornerMarket: false,
-              _cornerOULine: "",
-              _cornerOUOdds: "",
-              _hdpLine: item.RATIO_RE || item.hdp_line || item.RATIO_RE || item.hdp || "",
-              _hdpHomeOdds: item.IOR_REH || item.ior_reh || item.iorReh || item.homeOdds || item.hdpHomeOdds || item.hdp_home_odds || "",
-              _hdpAwayOdds: item.IOR_REC || item.ior_rec || item.iorRec || item.awayOdds || item.hdpAwayOdds || item.hdp_away_odds || "",
-              _ouLine: item.RATIO_ROUO || item.ratio_rouo || item.ratioRouo || item.ou_line || item.ouLine || "",
-              _ouOverOdds: item.IOR_ROUH || item.ior_rouh || item.iorRouh || item.overOdds || item.ouOverOdds || item.ou_over_odds || "",
-              _ouUnderOdds: item.IOR_ROUC || item.ior_rouc || item.iorRouc || item.underOdds || item.ouUnderOdds || item.ou_under_odds || "",
-            });
-            if (results.length >= 50) return;
-          } else {
-            scan(item, depth + 1);
-          }
-        }
-      }
-    } else if (typeof data === "object") {
-      for (const key of Object.keys(data)) {
-        scan(data[key], depth + 1);
-      }
-    }
-  };
-  scan(obj, 0);
-  return results;
-}
-
+// ======================== 主动 API 调用 ========================
 async function callTransformAPI(page, uid, ver, rtype, apiMode = "get_game_list") {
   const ts = Date.now();
   const params = new URLSearchParams();
@@ -242,7 +349,7 @@ async function callTransformAPI(page, uid, ver, rtype, apiMode = "get_game_list"
     params.set("ts", String(ts));
     params.set("chgSortTS", String(ts));
   }
-  const label = apiMode === "service_mainget" ? "(service_mainget)" : apiMode === "game_list_FT" ? `(${rtype},game_list_FT)` : `(${rtype})`;
+  const label = apiMode === "service_mainget" ? "(service_mainget)" : apiMode === "game_list_FT" ? `(${rtype},FT)` : `(${rtype})`;
   const url = `https://www.hga050.com/transform.php?${params.toString()}`;
   try {
     const text = await Promise.race([
@@ -250,7 +357,7 @@ async function callTransformAPI(page, uid, ver, rtype, apiMode = "get_game_list"
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
         try {
-          const resp = await fetch(fetchUrl, { method: "GET", credentials: "include", signal: controller.signal });
+          const resp = await fetch(fetchUrl, { method: "GET", credentials: "include", signal: controller.signal, headers: { "X-Requested-With": "XMLHttpRequest" } });
           clearTimeout(timeoutId);
           if (!resp.ok) return `[http_error:${resp.status}]`;
           return await resp.text();
@@ -259,7 +366,7 @@ async function callTransformAPI(page, uid, ver, rtype, apiMode = "get_game_list"
           return `[fetch_error:${e.message}]`;
         }
       }, url),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("page.evaluate timeout")), 20000)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 20000)),
     ]);
     if (text && (text.startsWith("[http_error") || text.startsWith("[fetch_error"))) {
       console.log(`  [API]${label} 错误: ${text}`);
@@ -279,6 +386,7 @@ async function fetchApiDataWithRetry(page, uid, ver) {
     { key: "rcn", rtype: "rcn", label: "角球盘口" },
     { key: "rrnou", rtype: "rrnou", label: "HDP/O/U 盘口" },
   ];
+
   for (const t of types) {
     console.log(`  [API] 请求 ${t.label} (rtype=${t.rtype})...`);
     const xml = await callTransformAPI(page, uid, ver, t.rtype);
@@ -295,120 +403,427 @@ async function fetchApiDataWithRetry(page, uid, ver) {
     }
   }
 
+  // 回退: game_list_FT
   if (!results.rb || results.rb.count === 0) {
-    console.log(`\n  [API] p=get_game_list 全部无响应，尝试 p=game_list_FT (页面实际使用的接口)...`);
+    console.log(`\n  [API] get_game_list 全部无响应，尝试 game_list_FT...`);
     for (const t of types) {
       const xml = await callTransformAPI(page, uid, ver, t.rtype, "game_list_FT");
       if (xml) {
         const parsed = parseMatchXML(xml);
         results[t.key] = { xml, matches: parsed, count: parsed.length };
-        console.log(`  [API] game_list_FT(${t.label}): 返回 ${xml.length} 字节, 解析到 ${parsed.length} 场比赛`);
-      } else {
-        console.log(`  [API] game_list_FT(${t.label}): 无响应`);
+        console.log(`  [API] FT(${t.label}): ${xml.length} 字节, ${parsed.length} 场`);
       }
     }
   }
 
-  if ((!results.rb || results.rb.count === 0) && (!results.service_mainget || results.service_mainget.count === 0)) {
-    console.log(`\n  [API] game_list_FT 也无数据，尝试 service_mainget...`);
+  // 回退: service_mainget
+  if ((!results.rb || results.rb.count === 0)) {
+    console.log(`\n  [API] 尝试 service_mainget...`);
     const xml = await callTransformAPI(page, uid, ver, "", "service_mainget");
     if (xml) {
       const parsed = parseMatchXML(xml);
       results.service_mainget = { xml, matches: parsed, count: parsed.length };
-      console.log(`  [API] service_mainget: 返回 ${xml.length} 字节, 解析到 ${parsed.length} 场比赛`);
-      if (parsed.length === 0) {
-        console.log(`  [API]   XML 前 500 字: ${xml.substring(0, 500)}`);
-        try {
-          const json = JSON.parse(xml);
-          console.log(`  [API]   JSON 顶层键: ${Object.keys(json).slice(0, 20).join(", ")}`);
-        } catch (_) {}
-      }
-    } else {
-      console.log(`  [API] service_mainget: 无响应`);
+      console.log(`  [API] service_mainget: ${xml.length} 字节, ${parsed.length} 场`);
     }
   }
 
   return results;
 }
 
-function mergeMatchData(rbMatches, rcnMatches, rrnouMatches) {
-  if (!rbMatches || rbMatches.length === 0) return [];
+// ======================== 主流程 ========================
+async function main() {
+  console.log("=".repeat(60));
+  console.log("  HGA API 接口发现工具 v2.0");
+  console.log("  目标: " + HG_URL);
+  console.log("  时间: " + new Date().toLocaleString());
+  console.log("=".repeat(60));
 
-  const rcnByGid = new Map();
-  for (const m of rcnMatches) rcnByGid.set(m.matchId, m);
-
-  const rrnouByGid = new Map();
-  for (const m of rrnouMatches) rrnouByGid.set(m.matchId, m);
-
-  return rbMatches.map((rb, idx) => {
-    const gid = rb.matchId;
-    const rcn = rcnByGid.get(gid);
-    const rrn = rrnouByGid.get(gid);
-
-    const ouLine = rcn && rcn._cornerOULine ? parseFloat(rcn._cornerOULine) : 0;
-    const ouOdds = rcn && rcn._cornerOUOdds ? rcn._cornerOUOdds : "";
-
-    return {
-      rank: idx + 1,
-      league: rb.league || "",
-      homeTeam: rb.homeTeam || "",
-      awayTeam: rb.awayTeam || "",
-      homeScore: rb.homeScore || 0,
-      awayScore: rb.awayScore || 0,
-      time: rb.elapsedMinutes ? `${rb.elapsedMinutes}'` : "",
-      cornerLine: ouLine > 0 ? ouLine.toFixed(1) : (rcn && rcn.handicapLine ? rcn.handicapLine : ""),
-      cornerOdds: ouOdds || (rcn && rcn.handicapOdds ? rcn.handicapOdds : ""),
-      hdpLine: rrn && rrn._hdpLine ? rrn._hdpLine : "",
-      hdpHomeOdds: rrn && rrn._hdpHomeOdds ? rrn._hdpHomeOdds : "",
-      hdpAwayOdds: rrn && rrn._hdpAwayOdds ? rrn._hdpAwayOdds : "",
-      ouMainLine: rrn && rrn._ouLine ? rrn._ouLine : "",
-      ouMainOver: rrn && rrn._ouOverOdds ? rrn._ouOverOdds : "",
-      ouMainUnder: rrn && rrn._ouUnderOdds ? rrn._ouUnderOdds : "",
-      hasCorner: !!(rcn && (rcn._hasCornerMarket || rcn.handicapLine || rcn._cornerOULine)),
-      hasHdpOu: !!(rrn && rrn._hdpLine),
-      dataQuality: rrn ? "full" : (rcn ? "partial" : "basic"),
-      matchId: gid,
-    };
-  });
-}
-
-function printMatchTable(matches) {
-  console.log("\n\n======================= 🏆 比赛数据结果 =======================");
-  console.log(`共获取 ${matches.length} 场比赛\n`);
-
-  if (matches.length === 0) return;
-
-  const header = "Rank 联赛                     主队                 客队                 比分    时间  角球盘口    HDP        O/U";
-  const sep = "---- ------------------------ -------------------- -------------------- ------- ----- ---------- ---------- ----------";
-  console.log(header);
-  console.log(sep);
-
-  for (const m of matches.slice(0, 30)) {
-    const league = (m.league || "").padEnd(24).substring(0, 24);
-    const home = (m.homeTeam || "").padEnd(20).substring(0, 20);
-    const away = (m.awayTeam || "").padEnd(20).substring(0, 20);
-    const score = `${m.homeScore}-${m.awayScore}`.padEnd(7);
-    const time = (m.time || "").padEnd(5);
-    const corner = m.cornerLine ? `${m.cornerLine}@${m.cornerOdds}`.padEnd(10).substring(0, 10) : "-         ".substring(0, 10);
-    const hdp = m.hdpLine ? `${m.hdpLine}@${m.hdpHomeOdds}`.padEnd(10).substring(0, 10) : "-         ".substring(0, 10);
-    const ou = m.ouMainLine ? `${m.ouMainLine}@${m.ouMainOver}`.padEnd(10).substring(0, 10) : "-         ".substring(0, 10);
-
-    console.log(`${String(m.rank).padEnd(4)} ${league} ${home} ${away} ${score} ${time} ${corner} ${hdp} ${ou}`);
+  // 创建输出目录
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  const qualityCounts = { full: 0, partial: 0, basic: 0, passive: 0 };
-  for (const m of matches) qualityCounts[m.dataQuality]++;
-  console.log(`\n数据质量分布:`);
-  console.log(`  full:    ${qualityCounts.full} 场 (含角球+HDP+O/U)`);
-  console.log(`  partial: ${qualityCounts.partial} 场 (仅角球)`);
-  console.log(`  basic:   ${qualityCounts.basic} 场 (仅基础信息)`);
-  if (qualityCounts.passive > 0) console.log(`  passive: ${qualityCounts.passive} 场 (被动捕获)`);
-  console.log("==============================================================\n");
-}
+  // ========== 1. 启动浏览器 ==========
+  console.log("\n[1/7] 启动浏览器 (headless=" + HEADLESS + ")...");
+  const browser = await puppeteer.launch({
+    headless: HEADLESS,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-blink-features=AutomationControlled",
+      "--window-size=1920,1400",
+    ],
+    timeout: 60000,
+  });
 
-async function extractUidVerFromPage(page) {
-  // 优先从已有捕获的请求中提取 ver
+  const page = await browser.newPage();
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+  );
+  await page.setViewport({ width: 1920, height: 1400 });
+
+  // 反指纹
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => false });
+    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+    Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh"] });
+  });
+
+  // ========== 2. 设置请求拦截 ==========
+  console.log("[2/7] 设置请求拦截...");
+  await page.setRequestInterception(true);
+
+  page.on("request", (request) => {
+    const url = request.url();
+    const method = request.method();
+    const resourceType = request.resourceType();
+    const postData = request.postData();
+
+    totalRequests++;
+
+    // 过滤静态资源
+    if (["image", "stylesheet", "font", "media"].includes(resourceType)) {
+      request.abort();
+      return;
+    }
+
+    if (resourceType === "xhr" || resourceType === "fetch") {
+      xhrFetchCount++;
+      capturedRequests.push({
+        url,
+        method,
+        postData: truncate(postData, 500),
+        resourceType,
+      });
+      console.log("  [REQ] " + method + " [" + resourceType + "] " + truncate(url, 150));
+      if (postData) {
+        console.log("        POST body: " + truncate(postData, 200));
+      }
+    }
+
+    request.continue();
+  });
+
+  page.on("response", async (response) => {
+    const url = response.url();
+    const status = response.status();
+    const headers = response.headers();
+    const contentType = headers["content-type"] || "";
+    const resourceType = response.request().resourceType();
+
+    // 只处理 XHR/Fetch 响应
+    if (resourceType !== "xhr" && resourceType !== "fetch") return;
+
+    let body = "";
+    let jsonData = null;
+    let isJson = false;
+
+    try {
+      body = await response.text();
+      const parseResult = safeJsonParse(body);
+      if (parseResult.ok) {
+        jsonData = parseResult.data;
+        isJson = true;
+      }
+    } catch (e) {
+      // 响应体读取失败（如被 abort），跳过
+      return;
+    }
+
+    const entry = {
+      url,
+      method: response.request().method(),
+      status,
+      contentType,
+      headers: {
+        "content-type": contentType,
+        "content-length": headers["content-length"],
+        "set-cookie": headers["set-cookie"] ? "(present)" : undefined,
+      },
+      bodyLength: body.length,
+      isJson,
+      jsonData: isJson ? jsonData : null,
+      bodyPreview: truncate(body, 1000),
+      resourceType,
+    };
+
+    // 计算置信度
+    if (isJson && jsonData) {
+      entry.confidence = scoreMatchData(jsonData, url);
+      entry.allKeys = extractAllKeys(jsonData).slice(0, 30);
+      entry.matchSamples = extractMatchSamples(jsonData, 2);
+    } else {
+      // 非 JSON 响应（如 XML），检查是否包含比赛相关文本
+      let textScore = 0;
+      const lowerBody = (body || "").toLowerCase();
+      if (lowerBody.includes("<game") || lowerBody.includes("<match")) textScore += 10;
+      if (lowerBody.includes("team_h") && lowerBody.includes("team_c")) textScore += 8;
+      if (lowerBody.includes("score")) textScore += 5;
+      if (lowerBody.includes("corner")) textScore += 6;
+      if (lowerBody.includes("handicap") || lowerBody.includes("hdp")) textScore += 8;
+      if (lowerBody.includes("odds") || lowerBody.includes("ioratio")) textScore += 5;
+      if (url.toLowerCase().includes("transform")) textScore += 3;
+      // XML <original> 检测
+      if (lowerBody.includes("<original>")) textScore += 5;
+      entry.confidence = textScore;
+      entry.allKeys = [];
+      entry.matchSamples = [];
+
+      // 对 XML 响应尝试解析比赛数据
+      if (textScore >= 3) {
+        const xmlMatches = parseMatchXML(body);
+        if (xmlMatches.length > 0) {
+          entry.xmlMatches = xmlMatches;
+          entry.confidence += 10 + xmlMatches.length * 2;
+        }
+      }
+    }
+
+    capturedResponses.push(entry);
+
+    // 实时打印高置信度响应
+    if (entry.confidence >= 15) {
+      console.log("  [RESP ★" + entry.confidence + "] " + status + " " + truncate(url, 120));
+      if (isJson && entry.allKeys.length > 0) {
+        console.log("             keys: " + entry.allKeys.slice(0, 15).join(", "));
+      }
+      if (entry.xmlMatches) {
+        console.log("             XML matches: " + entry.xmlMatches.length + " games");
+      }
+    }
+  });
+
+  // ========== 3. 导航到登录页并自动登录 ==========
+  console.log("\n[3/7] 导航到 " + HG_URL + " 并登录...");
+  await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await sleep(5000);
+
+  // 等待登录表单出现
+  try {
+    await page.waitForSelector("#usr", { timeout: 15000 });
+  } catch (e) {
+    console.log("  未找到 #usr 输入框，可能已登录或页面结构变化");
+  }
+
+  // 填写用户名密码并登录
+  const loginClicked = await page.evaluate((usr, pwd) => {
+    const usrInput = document.querySelector("#usr") || document.querySelector("input[type='text']");
+    const pwdInput = document.querySelector("#pwd") || document.querySelector("input[type='password']");
+    if (usrInput) {
+      usrInput.value = usr;
+      usrInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (pwdInput) {
+      pwdInput.value = pwd;
+      pwdInput.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    setTimeout(() => {
+      const loginBtn = document.querySelector("#btn_login") || document.querySelector("input[type='button']");
+      if (loginBtn) loginBtn.click();
+    }, 500);
+    return !!(usrInput && pwdInput);
+  }, USERNAME, PASSWORD);
+
+  if (loginClicked) {
+    console.log("  已填写凭据并点击登录按钮");
+  }
+
+  // 等待登录完成（最多80秒）
+  let loginSuccess = false;
+  for (let i = 0; i < 80; i++) {
+    await sleep(1000);
+    const status = await page.evaluate(() => {
+      const bodyText = document.body?.textContent || "";
+      const hasSuccess = bodyText.includes("In-Play") && bodyText.includes("Soccer");
+      const hasPasscodePage = (() => {
+        const btn = document.getElementById("back_login");
+        if (!btn) return false;
+        const style = getComputedStyle(btn);
+        return style.display !== "none" && style.visibility !== "hidden";
+      })();
+      const hasPostLogin = (() => {
+        const nav = document.getElementById("today_page") || document.getElementById("live_page");
+        if (nav && getComputedStyle(nav).display !== "none") return true;
+        const symbol = document.getElementById("symbol_ft");
+        if (symbol && getComputedStyle(symbol).display !== "none") return true;
+        return false;
+      })();
+      return { hasSuccess, hasPasscodePage, hasPostLogin };
+    });
+
+    // 处理简易密码页面
+    if (status.hasPasscodePage) {
+      console.log("  检测到简易密码页面，点击普通登入...");
+      await page.evaluate(() => {
+        const btn = document.querySelector("#back_login");
+        if (btn) btn.click();
+      });
+      await sleep(3000);
+      await page.evaluate((usr, pwd) => {
+        const u = document.getElementById("usr");
+        const p = document.getElementById("pwd");
+        if (u) { u.value = usr; u.dispatchEvent(new Event("input", { bubbles: true })); }
+        if (p) { p.value = pwd; p.dispatchEvent(new Event("input", { bubbles: true })); }
+      }, USERNAME, PASSWORD);
+      await sleep(500);
+      await page.evaluate(() => {
+        const btn = document.getElementById("btn_login");
+        if (btn) btn.click();
+      });
+      continue;
+    }
+
+    // 处理弹窗
+    try {
+      await page.evaluate(() => {
+        const cancelBtns = document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn");
+        for (const btn of cancelBtns) {
+          const style = getComputedStyle(btn);
+          if (style.display !== "none" && style.visibility !== "hidden") {
+            btn.click();
+          }
+        }
+        const okBtns = document.querySelectorAll("#kick_ok_btn, #C_ok_btn, #ok_btn");
+        for (const btn of okBtns) {
+          const style = getComputedStyle(btn);
+          if (style.display !== "none" && style.visibility !== "hidden") {
+            btn.click();
+          }
+        }
+      });
+    } catch (e) {}
+
+    if (status.hasSuccess || status.hasPostLogin) {
+      console.log("  登录成功！");
+      loginSuccess = true;
+      break;
+    }
+
+    if (i % 10 === 9) {
+      console.log("  等待登录... (" + (i + 1) + "s)");
+    }
+  }
+
+  if (!loginSuccess) {
+    console.log("  登录超时，继续尝试捕获请求...");
+  }
+
+  await sleep(3000);
+
+  // ========== 4. 导航到 In-Play → Soccer ==========
+  console.log("\n[4/7] 导航到 In-Play → Soccer...");
+
+  // 点击 In-Play / 滚球
+  const inplayClicked = await page.evaluate(() => {
+    const tab = document.getElementById("live_page");
+    if (tab) { tab.click(); return true; }
+    const all = document.querySelectorAll("a, button, span, div, li");
+    for (const el of all) {
+      const text = (el.textContent || "").trim().toUpperCase();
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 15 || rect.height < 10) continue;
+      if (text.includes("IN-PLAY") || text.includes("INPLAY") || text.includes("滚球")) {
+        el.scrollIntoView({ block: "center" });
+        el.click();
+        return true;
+      }
+    }
+    return false;
+  });
+  console.log("  In-Play 点击: " + (inplayClicked ? "成功" : "未找到"));
+  await sleep(3000);
+
+  // 点击 Soccer / 足球
+  const soccerClicked = await page.evaluate(() => {
+    const btn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
+    if (btn) { btn.scrollIntoView({ block: "center" }); btn.click(); return true; }
+    return false;
+  });
+  console.log("  Soccer 点击: " + (soccerClicked ? "成功" : "未找到"));
+  await sleep(5000);
+
+  // 等待比赛容器渲染
+  try {
+    await page.waitForFunction(
+      () => document.querySelectorAll("div.box_lebet, div.bet_box").length > 0,
+      { timeout: 15000 }
+    );
+    console.log("  比赛容器已渲染");
+  } catch (e) {
+    console.log("  比赛容器等待超时，继续...");
+  }
+
+  // ========== 5. 触发更多请求（标签切换 + 滚动） ==========
+  console.log("\n[5/7] 触发更多数据请求...");
+
+  // 点击 HDP & O/U 标签
+  try {
+    const hasRnou = await page.evaluate(() => {
+      const tab = document.getElementById("tab_rnou");
+      if (!tab) return false;
+      const style = getComputedStyle(tab);
+      return style.display !== "none" && style.visibility !== "hidden";
+    });
+    if (hasRnou) {
+      await page.evaluate(() => {
+        const tab = document.getElementById("tab_rnou");
+        if (tab) { tab.scrollIntoView({ block: "center" }); tab.click(); }
+      });
+      console.log("  点击 HDP & O/U 标签");
+      await sleep(3000);
+    }
+  } catch (e) {}
+
+  // 点击 CORNERS 标签
+  try {
+    const hasCorners = await page.evaluate(() => {
+      const tab = document.getElementById("tab_cn");
+      if (!tab) return false;
+      const style = getComputedStyle(tab);
+      return style.display !== "none" && style.visibility !== "hidden";
+    });
+    if (hasCorners) {
+      await page.evaluate(() => {
+        const tab = document.getElementById("tab_cn");
+        if (tab) { tab.scrollIntoView({ block: "center" }); tab.click(); }
+      });
+      console.log("  点击 CORNERS 标签");
+      await sleep(3000);
+    }
+  } catch (e) {}
+
+  // 滚动触发懒加载
+  try {
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+      setTimeout(() => window.scrollTo(0, 0), 1000);
+    });
+  } catch (e) {}
+
+  // 收集窗口等待
+  const collectStart = Date.now();
+  while (Date.now() - collectStart < COLLECT_SECONDS * 1000) {
+    await sleep(2000);
+    const elapsed = Math.round((Date.now() - collectStart) / 1000);
+    console.log("  收集中... " + elapsed + "/" + COLLECT_SECONDS + "s (已捕获 " + capturedResponses.length + " 个 XHR/Fetch 响应)");
+  }
+
+  // ========== 6. 主动 API 调用测试 ==========
+  console.log("\n[6/7] 主动调用 transform.php API 测试...");
+
+  let uid = "";
   let ver = "";
+
+  // 从 cookies 提取 uid
+  try {
+    const cookies = await page.cookies();
+    const uidCookie = cookies.find(c => c.name === "uid");
+    if (uidCookie) uid = uidCookie.value;
+  } catch (_) {}
+
+  // 从捕获的请求中提取 ver
   for (const req of capturedRequests) {
     const url = req.url || "";
     if ((url.includes("transform.php") || url.includes("transform_nl.php")) && url.includes("ver=")) {
@@ -416,686 +831,298 @@ async function extractUidVerFromPage(page) {
       if (match) { ver = match[1]; break; }
     }
   }
-  // 回退：从页面全局变量
-  if (!ver) {
-    try {
-      ver = await safeEvaluate(page, () => window.ver || top.ver || "") || "";
-    } catch (_) {}
-  }
 
-  // uid 优先从 page.cookies() 获取（HttpOnly cookie 无法从 document.cookie 读取）
-  let uid = "";
-  try {
-    const cookies = await page.cookies();
-    const uidCookie = cookies.find(c => c.name === "uid");
-    if (uidCookie) uid = uidCookie.value;
-  } catch (_) {}
-  // 回退：从捕获的请求 POST data 提取 uid
-  if (!uid) {
-    for (const req of capturedRequests) {
-      const postData = req.postData || "";
-      const m = postData.match(/uid=([^&]+)/);
-      if (m) { uid = m[1]; break; }
-    }
-  }
+  console.log("  uid: " + (uid ? uid.substring(0, 8) + "..." : "未找到"));
+  console.log("  ver: " + (ver ? ver.substring(0, 20) + "..." : "未找到"));
 
-  return { uid, ver };
-}
-
-async function waitForPageStable(page, ms = 2000) {
-  await new Promise(r => setTimeout(r, ms));
-}
-
-async function safeClick(page, selector, description) {
-  try {
-    const el = await page.$(selector);
-    if (el) {
-      await el.scrollIntoView({ block: "center" });
-      await el.click();
-      console.log(`  ✓ 点击: ${description}`);
-      return true;
-    }
-    return false;
-  } catch (e) {
-    console.log(`  ✗ 点击失败 ${description}: ${e.message}`);
-    return false;
-  }
-}
-
-async function safeEvaluate(page, fn, ...args) {
-  try {
-    return await page.evaluate(fn, ...args);
-  } catch (e) {
-    return null;
-  }
-}
-
-async function handlePopups(page) {
-  for (let i = 0; i < 3; i++) {
-    const handled = await safeEvaluate(page, () => {
-      let c = false;
-      const isVisible = (el) => {
-        const s = getComputedStyle(el);
-        return s.display !== "none" && s.visibility !== "hidden";
-      };
-      document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, #C_cancel_btn, [class*='cancel']").forEach(btn => {
-        if (!isVisible(btn)) return;
-        const t = (btn.textContent || "").trim().toUpperCase();
-        if (t === "NO" || t === "否" || t === "CANCEL" || t === "取消") { btn.click(); c = true; }
-      });
-      document.querySelectorAll("#C_ok_btn, #ok_btn, #kick_ok_btn, #C_alert_confirm, #alert_confirm, .btn_confirm, .btn_sure").forEach(btn => {
-        if (!isVisible(btn)) return;
-        const t = (btn.textContent || "").trim().toUpperCase();
-        if (t === "OK" || t === "确认" || t === "确定" || t === "是") { btn.click(); c = true; }
-      });
-      return c;
-    });
-    if (!handled) break;
-    await waitForPageStable(page, 500);
-  }
-  try { await page.keyboard.press("Escape"); } catch (_) {}
-}
-
-async function loginToHG(page) {
-  console.log("\n[登录] 开始登录...");
-  await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-  console.log("[登录] 页面加载完成");
-  await waitForPageStable(page, 4000);
-
-  for (let attempt = 0; attempt < 60; attempt++) {
-    await handlePopups(page);
-    await waitForPageStable(page, 800);
-
-    const status = await safeEvaluate(page, () => {
-      const bt = (document.body?.textContent || "");
-      return {
-        hasSuccess: bt.includes("My Events") || bt.includes("My Bets") ||
-                    (bt.includes("In-Play") && bt.includes("Soccer")),
-        hasLogin: (bt.includes("登入") || bt.includes("登录") || bt.includes("LOG IN")) &&
-                  document.getElementById("usr") && getComputedStyle(document.getElementById("usr")).display !== "none",
-        hasPasscodePage: (() => {
-          const btn = document.getElementById("back_login");
-          return btn && getComputedStyle(btn).display !== "none" && getComputedStyle(btn).visibility !== "hidden";
-        })(),
-      };
-    });
-
-    if (!status) continue;
-
-    if (status.hasSuccess) {
-      console.log("[登录] ✅ 成功（检测到已登录状态）");
-      return true;
-    }
-
-    if (status.hasPasscodePage) {
-      console.log("[登录] 检测到简易密码页面，点击普通登入...");
-      await safeEvaluate(page, () => {
-        const btn = document.querySelector("#back_login");
-        if (btn) btn.click();
-      });
-      await waitForPageStable(page, 3000);
-      continue;
-    }
-
-    if (status.hasLogin) {
-      console.log("[登录] 填写用户名密码...");
-      await page.evaluate((u, p) => {
-        const usr = document.querySelector("#usr");
-        const pwd = document.querySelector("#pwd");
-        if (usr) { usr.value = u; usr.dispatchEvent(new Event("input", { bubbles: true })); }
-        if (pwd) { pwd.value = p; pwd.dispatchEvent(new Event("input", { bubbles: true })); }
-      }, USERNAME, PASSWORD);
-      await waitForPageStable(page, 500);
-      await safeClick(page, "#btn_login", "登录按钮");
-      console.log("[登录] 已点击登录，等待验证...");
-      continue;
-    }
-
-    if (attempt % 10 === 9) {
-      const sample = await safeEvaluate(page, () => (document.body?.textContent || "").substring(0, 120));
-      console.log(`[登录] 等待中... (${attempt + 1}/60) text: ${sample}`);
-    }
-  }
-
-  console.log("[登录] ⚠ 超时");
-  return false;
-}
-
-async function navigateToInPlay(page) {
-  console.log("\n[导航] 导航到 In-Play 页面...");
-
-  let clicked = await safeEvaluate(page, () => {
-    const tab = document.getElementById("live_page");
-    if (tab) { tab.click(); return true; }
-    return false;
-  });
-
-  if (!clicked) {
-    clicked = await safeEvaluate(page, () => {
-      const all = document.querySelectorAll("a, button, span, div, li");
-      for (const el of all) {
-        const t = (el.textContent || "").trim().toUpperCase();
-        const r = el.getBoundingClientRect();
-        if (r.width < 10 || r.height < 8) continue;
-        if (t.includes("IN-PLAY") || t.includes("INPLAY") || t.includes("滚球") || t === "LIVE") {
-          el.scrollIntoView({ block: "center" });
-          el.click();
-          return true;
-        }
-      }
-      return false;
-    });
-  }
-
-  if (clicked) {
-    console.log("[导航] ✓ In-Play 已点击");
-    await waitForPageStable(page, 5000);
-  } else {
-    console.log("[导航] ⚠ 未找到 In-Play 按钮，尝试直接访问");
-    const currentUrl = await page.url();
-    console.log("[导航] 当前 URL:", currentUrl);
-  }
-
-  clicked = await safeEvaluate(page, () => {
-    const btn = document.getElementById("symbol_ft") || document.getElementById("old_ft_live_league");
-    if (btn) { btn.scrollIntoView({ block: "center" }); btn.click(); return true; }
-    return false;
-  });
-  if (clicked) {
-    console.log("[导航] 足球标签已点击，等待数据接口触发...");
-    await waitForPageStable(page, 6000);
-
-    // 主动滚动触发更多请求
-    try {
-      await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight / 2);
-        setTimeout(() => window.scrollTo(0, 0), 500);
-      });
-    } catch (_) {}
-    await waitForPageStable(page, 3000);
-
-    console.log("[导航] 已触发数据加载，检查捕获到的 transform.php 请求...");
-    const gameListCount = capturedRequests.filter(r =>
-      (r.url || "").includes("get_game_list")
-    ).length;
-    console.log("[导航] 捕获到 " + gameListCount + " 条 get_game_list 请求");
-  }
-}
-
-async function captureXHRResponses(page) {
-  capturedRequests.length = 0;
-
-  page.on("request", (request) => {
-    const type = request.resourceType();
-    if (type !== "xhr" && type !== "fetch" && type !== "websocket") return;
-    capturedRequests.push({
-      type: "request",
-      url: request.url(),
-      method: request.method(),
-      headers: request.headers(),
-      postData: request.postData(),
-      timestamp: Date.now(),
-      response: null,
-      responseHeaders: null,
-    });
-  });
-
-  page.on("response", async (response) => {
-    const url = response.url();
-    const req = response.request();
-    const type = req.resourceType();
-    if (type !== "xhr" && type !== "fetch" && type !== "websocket") return;
-
-    const existing = capturedRequests.find(r => r.type === "request" && r.url === url && !r.response);
-    if (!existing) {
-      capturedRequests.push({
-        type: "response_only",
-        url,
-        method: req.method(),
-        status: response.status(),
-        headers: response.headers(),
-        response: null,
-        responseHeaders: response.headers(),
-        timestamp: Date.now(),
-      });
-    }
-
-    let bodyText = "";
-    try {
-      bodyText = await response.text();
-    } catch (e) {
-      bodyText = `[error reading body: ${e.message}]`;
-    }
-
-    const contentType = response.headers()["content-type"] || "";
-    const isTransformUrl = url.includes("transform.php") || url.includes("transform_nl.php");
-    let parsed = null;
-    let parseError = null;
-    if (contentType.includes("json") || bodyText.startsWith("{") || bodyText.startsWith("[")) {
-      try { parsed = JSON.parse(bodyText); }
-      catch (e) { parseError = e.message; }
-    }
-
-    const responseBody = parsed ? JSON.stringify(parsed).substring(0, 8000) : bodyText.substring(0, 8000);
-
-    if (existing) {
-      existing.response = responseBody;
-      existing.responseHeaders = response.headers();
-      existing.status = response.status();
-      existing.parsed = parsed;
-      existing.parseError = parseError;
-      existing.bodyLength = bodyText.length;
-      existing.fullBody = bodyText;
-    } else {
-      const entry = capturedRequests.find(r => r.type === "response_only" && r.url === url);
-      if (entry) {
-        entry.response = responseBody;
-        entry.parsed = parsed;
-        entry.parseError = parseError;
-        entry.bodyLength = bodyText.length;
-        entry.fullBody = bodyText;
-        entry.status = response.status();
-      }
-    }
-  });
-}
-
-async function analyzeCapturedData() {
-  console.log("\n\n========== 📊 网络请求分析报告 ==========");
-  console.log(`共捕获 ${capturedRequests.length} 个 XHR/Fetch 请求`);
-  console.log("");
-
-  const matchCandidates = [];
-
-  for (const req of capturedRequests) {
-    const url = req.url || "";
-    const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
-    const method = req.method || "GET";
-    const status = req.status || "?";
-
-    let responseText = "";
-    if (req.parsed && typeof req.parsed === "object") {
-      responseText = JSON.stringify(req.parsed);
-    } else if (typeof req.response === "string") {
-      responseText = req.response;
-    } else if (req.fullBody) {
-      responseText = req.fullBody;
-    }
-
-    const score = scoreMatchData(responseText || url);
-    if (score > 0) {
-      matchCandidates.push({ score, req, shortUrl, responseText });
-    }
-
-    console.log(`\n${method} ${status} | ${shortUrl}`);
-    if (req.postData) {
-      console.log(`  POST Body: ${(req.postData || "").substring(0, 300)}.substring(0, 300)}`);
-    }
-    if (req.responseHeaders) {
-      const ct = req.responseHeaders["content-type"] || req.responseHeaders["Content-Type"] || "";
-      console.log(`  Content-Type: ${ct}`);
-      console.log(`  Body size: ${req.bodyLength || 0} chars`);
-    }
-
-    if (req.parsed && typeof req.parsed === "object") {
-      const structure = analyzeJSONStructure(req.parsed);
-      for (const s of structure) {
-        console.log(`  └ ${s.path} → ${s.type}${s.keys ? ": " + s.keys.join(", ") : ""}${s.length !== undefined ? " [" + s.length + " items]" : ""}`);
-        if (s.sample) {
-          const jsonStr = JSON.stringify(s.sample, null, 2);
-          console.log(`      sample: ${jsonStr.substring(0, 500)}`);
-        }
-      }
-    } else if (req.fullBody && req.fullBody.length > 0) {
-      const body = req.fullBody;
-      if (body.trim().startsWith("<") || body.trim().startsWith("{") || body.trim().startsWith("[")) {
-        console.log(`  Response body (${body.length} chars):\n${body.substring(0, 600)}`);
-        if (body.length > 600) console.log(`  ... (truncated, ${body.length} total chars)`);
-      } else {
-        console.log(`  Response (text): ${body.substring(0, 300)}`);
-      }
-    } else if (req.parseError) {
-      console.log(`  Parse error: ${req.parseError}`);
-    }
-  }
-
-  console.log("\n\n========== 🏆 比赛数据接口候选排名 ==========");
-  matchCandidates.sort((a, b) => b.score - a.score);
-
-  if (matchCandidates.length === 0) {
-    console.log("未检测到包含比赛数据的接口。");
-    console.log("尝试从 DOM 提取比赛数据...");
-    return [];
-  }
-
-  console.log("按置信度排序（分数越高越可能是比赛数据接口）：");
-  console.log("");
-  const seen = new Set();
-  let rank = 0;
-  for (const candidate of matchCandidates) {
-    if (seen.has(candidate.shortUrl)) continue;
-    seen.add(candidate.shortUrl);
-    rank++;
-    const stars = candidate.score >= 80 ? "★★★★★" :
-                  candidate.score >= 60 ? "★★★★" :
-                  candidate.score >= 40 ? "★★★" :
-                  candidate.score >= 20 ? "★★" : "★";
-    console.log(`${rank}. [${candidate.score}分 ${stars}] ${candidate.req.method || "GET"} ${candidate.shortUrl}`);
-    if (candidate.req.postData) {
-      console.log(`   POST Body: ${candidate.req.postData.substring(0, 200)}`);
-    }
-
-    if (candidate.req.parsed && typeof candidate.req.parsed === "object") {
-      const structure = analyzeJSONStructure(candidate.req.parsed);
-      const matchArrays = structure.filter(s => s.type === "array" && s.keys);
-      for (const arr of matchArrays) {
-        const hasNameFields = arr.keys.some(k => /home|away|team|match|score|corner/i.test(k));
-        if (hasNameFields) {
-          console.log(`   📦 数据数组: ${arr.path} (${arr.length} items)`);
-          console.log(`   📋 字段列表: ${arr.keys.slice(0, 20).join(", ")}`);
-        }
-      }
-    }
-
-    if (candidate.req.bodyLength) {
-      console.log(`   📏 响应大小: ${candidate.req.bodyLength} bytes`);
-    }
-    console.log("");
-  }
-
-  console.log("\n========== ✅ 结论 ==========");
-  if (matchCandidates.length > 0) {
-    const top = matchCandidates[0];
-    console.log(`最可能的比赛数据接口:`);
-    console.log(`  URL: ${top.req.url}`);
-    console.log(`  方法: ${top.req.method || "GET"}`);
-    console.log(`  置信度: ${top.score}/100 分`);
-    if (top.req.postData) {
-      console.log(`  请求体: ${top.req.postData.substring(0, 500)}`);
-    }
-    console.log("");
-    console.log("提示: 如果 transform.php 是主要接口，尝试在浏览器中直接调用：");
-    console.log(`  fetch("${top.req.url}", { credentials: "include" }).then(r => r.text()).then(console.log)`);
-  }
-
-  console.log("\n\n========== 🔄 被动捕获的 XML 解析尝试 ==========");
-  const printedUrls = new Set();
-  for (const req of capturedRequests) {
-    const url = req.url || "";
-    if (!url.includes("transform")) continue;
-    if (!req.fullBody || !req.fullBody.trim().startsWith("<")) continue;
-
-    const bodyHash = req.fullBody.substring(0, 200);
-    if (printedUrls.has(bodyHash)) continue;
-    printedUrls.add(bodyHash);
-
-    const parsed = parseMatchXML(req.fullBody);
-    if (parsed.length > 0) {
-      console.log(`从 ${url.substring(0, 80)}... 解析到 ${parsed.length} 场比赛`);
-      const simpleMatches = parsed.map((m, i) => ({
-        rank: i + 1,
-        league: m.league || "",
-        homeTeam: m.homeTeam || "",
-        awayTeam: m.awayTeam || "",
-        homeScore: m.homeScore || 0,
-        awayScore: m.awayScore || 0,
-        time: m.elapsedMinutes ? `${m.elapsedMinutes}'` : "",
-        cornerLine: m.handicapLine || "",
-        cornerOdds: m.handicapOdds || "",
-        hdpLine: m._hdpLine || "",
-        hdpHomeOdds: m._hdpHomeOdds || "",
-        hdpAwayOdds: m._hdpAwayOdds || "",
-        ouMainLine: m._ouLine || "",
-        ouMainOver: m._ouOverOdds || "",
-        ouMainUnder: m._ouUnderOdds || "",
-        hasCorner: !!m._hasCornerMarket || !!m.handicapLine,
-        hasHdpOu: !!m._hdpLine,
-        dataQuality: "passive",
-        matchId: m.matchId,
-      }));
-      printMatchTable(simpleMatches);
-    } else {
-      console.log(`从 ${url.substring(0, 80)}... 未解析到比赛数据 (XML ${req.fullBody.length} 字节)`);
-    }
-  }
-
-  return matchCandidates;
-}
-
-async function extractDOMData(page) {
-  console.log("\n[DOM] 尝试从页面提取比赛数据...");
-  await waitForPageStable(page, 3000);
-
-  const domInfo = await safeEvaluate(page, () => {
-    const info = {
-      url: window.location.href,
-      title: document.title,
-      bodyText: (document.body?.textContent || "").replace(/\s+/g, " ").trim().substring(0, 500),
-      matchElements: 0,
-      sampleHTML: "",
-      leagueNames: [],
-      teamNames: [],
-      scoreData: [],
-    };
-
-    const allEls = document.querySelectorAll("div.box_lebet, div.bet_box, div[class*='game'], div[class*='match']");
-    info.matchElements = allEls.length;
-    if (allEls.length > 0) {
-      info.sampleHTML = allEls[0].outerHTML.substring(0, 1000);
-    }
-
-    document.querySelectorAll("tt#lea_name, .lea_name, [class*='lea']").forEach(el => {
-      const t = (el.textContent || "").trim();
-      if (t && t.length < 50) info.leagueNames.push(t);
-    });
-
-    document.querySelectorAll("span.text_team, [class*='team'] span, div[class*='team']").forEach(el => {
-      const t = (el.textContent || "").trim();
-      if (t && t.length > 1 && t.length < 40) info.teamNames.push(t);
-    });
-
-    document.querySelectorAll("div.box_score span.text_point, span[class*='point']").forEach(el => {
-      info.scoreData.push((el.textContent || "").trim());
-    });
-
-    return info;
-  });
-
-  if (domInfo) {
-    console.log(`  URL: ${domInfo.url}`);
-    console.log(`  标题: ${domInfo.title}`);
-    console.log(`  比赛容器数: ${domInfo.matchElements}`);
-    console.log(`  找到联赛: [${domInfo.leagueNames.slice(0, 10).join(", ")}${domInfo.leagueNames.length > 10 ? "..." : ""}]`);
-    console.log(`  找到球队: [${domInfo.teamNames.slice(0, 10).join(", ")}${domInfo.teamNames.length > 10 ? "..." : ""}]`);
-    console.log(`  比分数据: [${domInfo.scoreData.slice(0, 10).join(", ")}]`);
-    if (domInfo.sampleHTML) {
-      console.log(`  比赛容器 HTML 样例:\n${domInfo.sampleHTML}`);
-    }
-    console.log(`  页面文本摘要: ${domInfo.bodyText.substring(0, 300)}`);
-  }
-
-  return domInfo;
-}
-
-async function main() {
-  console.log("═══════════════════════════════════════════");
-  console.log("  hga050.com API 发现工具");
-  console.log("═══════════════════════════════════════════");
-  console.log(`  用户: ${USERNAME}`);
-  console.log(`  目标: ${HG_URL}`);
-  console.log("═══════════════════════════════════════════\n");
-
-  const browser = await puppeteer.launch({
-    headless: false,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--window-size=1920,1400",
-      "--disable-blink-features=AutomationControlled",
-      "--lang=zh-CN,zh",
-    ],
-    timeout: 120000,
-  });
-
-  const page = await browser.newPage();
-  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
-  await page.setViewport({ width: 1920, height: 1400 });
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
-    Object.defineProperty(navigator, "languages", { get: () => ["zh-CN", "zh"] });
-    Object.defineProperty(navigator, "platform", { get: () => "Win32" });
-  });
-
-  await captureXHRResponses(page);
-
-  const loginOk = await loginToHG(page);
-  if (!loginOk) {
-    console.log("[主流程] 登录失败，尝试继续...");
-  }
-
-  await navigateToInPlay(page);
-
-  // ========== ★ 新增：提取 uid/ver 并主动调用 API ==========
-  console.log("\n[API] 提取 uid/ver 参数...");
-  let uid = "";
-  let ver = "";
-
-  const cookies = await page.cookies();
-  const uidCookie = cookies.find(c => c.name === "uid");
-  if (uidCookie) uid = uidCookie.value;
-  console.log(`  uid: ${uid ? uid.substring(0, 8) + "..." : "未找到"}`);
-
-    const uidVer = await extractUidVerFromPage(page);
-  uid = uidVer.uid || uid;
-  ver = uidVer.ver || ver;
-  if (!ver) {
-    try {
-      await page.evaluate(() => {
-        const els = document.querySelectorAll("script");
-        for (const el of els) {
-          if (el.textContent && el.textContent.includes("ver=")) {
-            const m = el.textContent.match(/ver\s*[:=]\s*['"]([^'"]+)['"]/);
-            if (m) { window.__found_ver = m[1]; break; }
-          }
-        }
-      });
-      ver = await safeEvaluate(page, () => window.__found_ver || "");
-    } catch (_) {}
-  }
-  console.log(`  ver: ${ver ? ver.substring(0, 20) + "..." : "未找到"}`);
-
-  let apiMatches = [];
+  let apiResults = null;
   if (uid && ver) {
-    console.log("\n[API] 主动调用 transform.php 获取比赛数据...");
-    const apiResults = await fetchApiDataWithRetry(page, uid, ver);
+    apiResults = await fetchApiDataWithRetry(page, uid, ver);
+    const rbCount = apiResults.rb?.count || 0;
+    const rcnCount = apiResults.rcn?.count || 0;
+    const rrnouCount = apiResults.rrnou?.count || 0;
+    const smCount = apiResults.service_mainget?.count || 0;
+    console.log("\n  [API] 主动调用结果:");
+    console.log("    rb (基本盘):     " + rbCount + " 场比赛");
+    console.log("    rcn (角球盘):   " + rcnCount + " 场比赛");
+    console.log("    rrnou (HDP/O/U): " + rrnouCount + " 场比赛");
+    console.log("    mainget:        " + smCount + " 场比赛");
 
-    const rbData = apiResults.rb || { matches: [] };
-    const rcnData = apiResults.rcn || { matches: [] };
-    const rrnouData = apiResults.rrnou || { matches: [] };
-
-    if (rbData.matches.length > 0) {
-      apiMatches = mergeMatchData(rbData.matches, rcnData.matches, rrnouData.matches);
-      printMatchTable(apiMatches);
-    } else if (apiResults.service_mainget && apiResults.service_mainget.matches.length > 0) {
-      console.log("\n[API] service_mainget 返回了比赛数据！");
-      apiMatches = apiResults.service_mainget.matches.map((m, i) => ({
-        rank: i + 1,
-        league: m.league || "",
-        homeTeam: m.homeTeam || "",
-        awayTeam: m.awayTeam || "",
-        homeScore: m.homeScore || 0,
-        awayScore: m.awayScore || 0,
-        time: m.elapsedMinutes ? `${m.elapsedMinutes}'` : "",
-        cornerLine: m.handicapLine || "",
-        cornerOdds: m.handicapOdds || "",
-        hdpLine: m._hdpLine || "",
-        hdpHomeOdds: m._hdpHomeOdds || "",
-        hdpAwayOdds: m._hdpAwayOdds || "",
-        ouMainLine: m._ouLine || "",
-        ouMainOver: m._ouOverOdds || "",
-        ouMainUnder: m._ouUnderOdds || "",
-        hasCorner: !!m._hasCornerMarket,
-        hasHdpOu: !!m._hdpLine,
-        dataQuality: "basic",
-        matchId: m.matchId,
-      }));
-      printMatchTable(apiMatches);
-    } else {
-      console.log("\n[API] 主动调用未解析到比赛数据，将使用被动捕获的数据");
+    // 打印前几场比赛的详细信息
+    const rbMatches = apiResults.rb?.matches || [];
+    if (rbMatches.length > 0) {
+      console.log("\n  [API] rb 比赛样本:");
+      for (const m of rbMatches.slice(0, 5)) {
+        console.log(`    ${m.homeTeam} vs ${m.awayTeam} | ${m.homeScore}-${m.awayScore} | ${m.elapsedMinutes}' | HDP:${m._hdpLine} O/U:${m._ouLine}`);
+      }
+    }
+    const rcnMatches = apiResults.rcn?.matches || [];
+    if (rcnMatches.length > 0) {
+      console.log("\n  [API] rcn 角球盘样本:");
+      for (const m of rcnMatches.slice(0, 5)) {
+        console.log(`    ${m.homeTeam} vs ${m.awayTeam} | cornerHDP:${m._cornerHdpLine} cornerOU:${m._cornerOULine} | hasCorner:${m._hasCornerMarket}`);
+      }
     }
   } else {
-    console.log("\n[API] uid 或 ver 缺失，跳过主动 API 调用，将使用被动捕获的数据");
+    console.log("  uid 或 ver 缺失，跳过主动 API 调用");
   }
 
-  // ========== 后续：原有被动分析流程 ==========
-  console.log("\n[等待] 等待数据加载（10秒）...");
-  for (let i = 0; i < 10; i++) {
-    await waitForPageStable(page, 1000);
-    await handlePopups(page);
-    if (i === 3 || i === 7) {
-      try {
-        await page.evaluate(() => {
-          window.scrollTo(0, document.body.scrollHeight);
-          setTimeout(() => window.scrollTo(0, 0), 500);
-        });
-      } catch (_) {}
+  // ========== 7. 分析并输出结果 ==========
+  console.log("\n[7/7] 分析结果...");
+
+  // 保存原始数据到文件
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const rawOutputPath = path.join(OUTPUT_DIR, "raw-captures-" + timestamp + ".json");
+
+  // 构建完整的 resultData
+  const apiCallMatches = [];
+  if (apiResults) {
+    // 合并 rb + rcn 数据
+    const rbMatches = apiResults.rb?.matches || [];
+    const rcnMatches = apiResults.rcn?.matches || [];
+    const rrnouMatches = apiResults.rrnou?.matches || [];
+
+    const rcnByGid = new Map();
+    for (const m of rcnMatches) rcnByGid.set(m.matchId, m);
+    const rrnouByGid = new Map();
+    for (const m of rrnouMatches) rrnouByGid.set(m.matchId, m);
+
+    for (const rb of rbMatches) {
+      const gid = rb.matchId;
+      const rcn = rcnByGid.get(gid);
+      const rrn = rrnouByGid.get(gid);
+      apiCallMatches.push({
+        rank: apiCallMatches.length + 1,
+        league: rb.league || "",
+        homeTeam: rb.homeTeam || "",
+        awayTeam: rb.awayTeam || "",
+        homeScore: rb.homeScore || 0,
+        awayScore: rb.awayScore || 0,
+        time: rb.elapsedMinutes ? `${rb.elapsedMinutes}'` : "",
+        cornerLine: rcn?._cornerHdpLine || "",
+        cornerOdds: rcn?._cornerHdpHomeOdds || "",
+        hdpLine: rrn?._hdpLine || "",
+        hdpHomeOdds: rrn?._hdpHomeOdds || "",
+        ouMainLine: rrn?._ouLine || "",
+        ouMainOver: rrn?._ouOverOdds || "",
+        hasCorner: !!rcn,
+        hasHdpOu: !!rrn,
+        dataQuality: rrn ? "full" : (rcn ? "partial" : "basic"),
+        matchId: gid,
+      });
     }
   }
 
-  console.log(`\n已捕获 ${capturedRequests.length} 个网络请求，开始分析...`);
-
-  const candidates = await analyzeCapturedData();
-
-  if (candidates.length === 0) {
-    console.log("\n[DOM Fallback] 网络请求中未发现比赛数据，尝试从 DOM 提取...");
-    await extractDOMData(page);
-  }
-
-  try {
-    await page.screenshot({ path: "debug-hga-final.png", fullPage: true });
-    console.log("\n[截图] 已保存: debug-hga-final.png");
-  } catch (_) {}
-
-  // Save results to JSON
   const resultData = {
     meta: {
       target: HG_URL,
       timestamp: new Date().toISOString(),
-      totalCaptured: capturedRequests.length,
-      wsCount: 0,
-      matchApiCount: capturedRequests.filter(r => (r.url || "").includes("get_game_list")).length,
-      staticAborted: 0,
+      totalRequests,
+      xhrFetchCount,
+      capturedResponseCount: capturedResponses.length,
+      loginSuccess,
+      uid: uid ? uid.substring(0, 8) + "..." : "",
+      ver: ver ? ver.substring(0, 20) + "..." : "",
     },
-    apiCalls: apiMatches.length > 0 ? apiMatches.slice(0, 30) : [],
-    allCaptured: capturedRequests.slice(0, 20).map(r => ({
-      url: r.url?.substring(0, 200),
+    apiCalls: apiCallMatches,
+    allCaptured: capturedResponses.map(r => ({
+      url: r.url,
       method: r.method,
       status: r.status,
-      contentType: r.responseHeaders?.["content-type"] || "",
-      bodyPreview: (r.fullBody || "").substring(0, 500),
-      bodySize: r.bodyLength || 0,
+      contentType: r.contentType,
+      bodyLength: r.bodyLength,
+      isJson: r.isJson,
+      confidence: r.confidence,
+      allKeys: r.allKeys,
+      bodyPreview: r.bodyPreview,
+      matchSampleCount: r.matchSamples?.length || 0,
+      xmlMatchCount: r.xmlMatches?.length || 0,
     })),
   };
-  try {
-    fs.writeFileSync("output/find-hga-result.json", JSON.stringify(resultData, null, 2), "utf8");
-    console.log("\n[输出] 已保存到 output/find-hga-result.json");
-  } catch (e) {
-    console.log("\n[输出] 保存失败:", e.message);
+
+  fs.writeFileSync(rawOutputPath, JSON.stringify(resultData, null, 2), "utf8");
+  console.log("  原始数据已保存: " + rawOutputPath);
+
+  // 按置信度排序
+  const sorted = [...capturedResponses]
+    .filter(r => r.confidence > 0)
+    .sort((a, b) => b.confidence - a.confidence);
+
+  // 去重（同一 URL 路径只保留最高置信度的）
+  const seenUrls = new Set();
+  const unique = [];
+  for (const item of sorted) {
+    const urlKey = item.url.split("?")[0];
+    if (!seenUrls.has(urlKey)) {
+      seenUrls.add(urlKey);
+      unique.push(item);
+    }
   }
 
-  console.log("\n═══════════════════════════════════════════");
-  console.log("  分析完成");
-  console.log("═══════════════════════════════════════════\n");
+  // 输出报告
+  console.log("\n" + "=".repeat(60));
+  console.log("  HGA API 发现报告");
+  console.log("  时间: " + new Date().toLocaleString());
+  console.log("  总请求数: " + totalRequests);
+  console.log("  XHR/Fetch 请求数: " + xhrFetchCount);
+  console.log("  捕获响应数: " + capturedResponses.length);
+  console.log("  有置信度的响应: " + unique.length);
+  console.log("=".repeat(60));
 
+  // 高置信度（>= 15）
+  const highConf = unique.filter(r => r.confidence >= 15);
+  const medConf = unique.filter(r => r.confidence >= 5 && r.confidence < 15);
+  const lowConf = unique.filter(r => r.confidence > 0 && r.confidence < 5);
+
+  if (highConf.length > 0) {
+    console.log("\n--- 高置信度接口（★★★ 可能含有比赛数据）---");
+    for (let i = 0; i < highConf.length; i++) {
+      const r = highConf[i];
+      console.log("\n[" + (i + 1) + "] 置信度: " + r.confidence + "  URL: " + truncate(r.url, 200));
+      console.log("    方法: " + r.method + "  状态码: " + r.status);
+      console.log("    Content-Type: " + r.contentType);
+      console.log("    响应体大小: " + r.bodyLength + " bytes");
+      if (r.isJson && r.allKeys.length > 0) {
+        console.log("    返回字段: " + r.allKeys.slice(0, 25).join(", "));
+      }
+      if (r.matchSamples && r.matchSamples.length > 0) {
+        console.log("    比赛样本:");
+        for (const sample of r.matchSamples) {
+          const sampleStr = JSON.stringify(sample, null, 2);
+          console.log("      " + truncate(sampleStr, 400).replace(/\n/g, "\n      "));
+        }
+      }
+      if (r.xmlMatches && r.xmlMatches.length > 0) {
+        console.log("    XML 解析到的比赛: " + r.xmlMatches.length + " 场");
+        for (const m of r.xmlMatches.slice(0, 3)) {
+          console.log(`      ${m.homeTeam} vs ${m.awayTeam} | ${m.homeScore}-${m.awayScore} | HDP:${m._hdpLine} O/U:${m._ouLine}`);
+        }
+      }
+
+      // 保存高置信度响应的完整数据
+      const safeName = r.url.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 80);
+      const respPath = path.join(OUTPUT_DIR, "high-conf-" + (i + 1) + "-" + safeName + ".json");
+      try {
+        if (r.isJson) {
+          fs.writeFileSync(respPath, JSON.stringify(r.jsonData, null, 2));
+        } else {
+          fs.writeFileSync(respPath, r.bodyPreview);
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (medConf.length > 0) {
+    console.log("\n--- 中等置信度（★★ 可能相关）---");
+    for (let i = 0; i < medConf.length; i++) {
+      const r = medConf[i];
+      console.log("[" + (i + 1) + "] 置信度: " + r.confidence + "  " + r.method + " " + truncate(r.url, 150));
+      console.log("    状态: " + r.status + "  大小: " + r.bodyLength + " bytes  CT: " + r.contentType);
+      if (r.allKeys && r.allKeys.length > 0) {
+        console.log("    字段: " + r.allKeys.slice(0, 12).join(", "));
+      }
+    }
+  }
+
+  if (lowConf.length > 0) {
+    console.log("\n--- 低置信度（可能是配置/辅助接口）---");
+    for (const r of lowConf) {
+      console.log("  置信度: " + r.confidence + "  " + r.method + " " + truncate(r.url, 120));
+    }
+  }
+
+  // DOM 回退分析
+  if (highConf.length === 0) {
+    console.log("\n--- DOM 回退数据（所有 API 都不像含有比赛数据）---");
+    try {
+      const domData = await page.evaluate(() => {
+        const results = [];
+        const containers = document.querySelectorAll("div.box_lebet, div.bet_box");
+        for (const el of containers) {
+          try {
+            const homeEl = el.querySelector("div.box_team.teamH span.text_team, [class*='team_h'] span");
+            const awayEl = el.querySelector("div.box_team.teamC span.text_team, [class*='team_c'] span");
+            const homeTeam = homeEl ? homeEl.textContent.trim() : "";
+            const awayTeam = awayEl ? awayEl.textContent.trim() : "";
+            if (!homeTeam || !awayTeam) continue;
+
+            const scoreEls = el.querySelectorAll("div.box_score span.text_point");
+            let homeScore = 0, awayScore = 0;
+            if (scoreEls.length >= 2) {
+              homeScore = parseInt(scoreEls[0].textContent.trim()) || 0;
+              awayScore = parseInt(scoreEls[1].textContent.trim()) || 0;
+            }
+
+            const timeEl = el.querySelector("tt.text_time, [class*='timer']");
+            const timeStr = timeEl ? timeEl.textContent.trim() : "";
+
+            results.push({ homeTeam, awayTeam, homeScore, awayScore, time: timeStr });
+          } catch (e) {}
+        }
+        return results;
+      });
+
+      if (domData.length > 0) {
+        console.log("  从 DOM 中提取到 " + domData.length + " 场比赛:");
+        for (const m of domData.slice(0, 10)) {
+          console.log("    " + m.homeTeam + " vs " + m.awayTeam + " | " + m.homeScore + "-" + m.awayScore + " | " + m.time);
+        }
+        console.log("\n  提示: DOM 中有比赛数据但 API 未捕获到，说明数据可能是：");
+        console.log("  1. 通过 WebSocket 推送（非 XHR/Fetch）");
+        console.log("  2. 内嵌在初始 HTML 中（SSR）");
+        console.log("  3. 通过其他非标准请求方式加载");
+      } else {
+        console.log("  DOM 中也未找到比赛数据，可能当前无进行中的比赛");
+      }
+    } catch (e) {
+      console.log("  DOM 分析失败: " + e.message);
+    }
+  }
+
+  // 所有 XHR/Fetch URL 汇总
+  console.log("\n--- 所有 XHR/Fetch 请求 URL 汇总 ---");
+  const allXhrUrls = [...new Set(capturedRequests.map(r => r.url.split("?")[0]))];
+  for (const url of allXhrUrls) {
+    console.log("  " + url);
+  }
+
+  // 结论
+  console.log("\n=== 结论 ===");
+  if (highConf.length > 0) {
+    const top = highConf[0];
+    console.log("最可能的比赛数据接口:");
+    console.log("  URL: " + top.url);
+    console.log("  方法: " + top.method);
+    console.log("  置信度: " + top.confidence + "/100 分");
+    console.log("  响应大小: " + top.bodyLength + " bytes");
+    if (top.isJson && top.allKeys.length > 0) {
+      console.log("  关键字段: " + top.allKeys.slice(0, 15).join(", "));
+    }
+    if (top.xmlMatches) {
+      console.log("  XML 解析: " + top.xmlMatches.length + " 场比赛");
+    }
+    console.log("\n提示: 可直接在浏览器控制台测试此接口:");
+    console.log('  fetch("' + top.url + '", { credentials: "include" }).then(r => r.text()).then(console.log)');
+  } else if (apiCallMatches.length > 0) {
+    console.log("被动捕获未发现高置信度接口，但主动 API 调用获取了 " + apiCallMatches.length + " 场比赛数据");
+    console.log("说明 transform.php 是主要数据接口，但需要在正确的参数组合下调用");
+  } else {
+    console.log("未检测到包含比赛数据的接口。建议检查网络连接和登录状态。");
+  }
+
+  // 最终结果文件
+  const finalOutputPath = path.join(OUTPUT_DIR, "find-hga-result.json");
+  fs.writeFileSync(finalOutputPath, JSON.stringify(resultData, null, 2), "utf8");
+  console.log("\n最终报告已保存到: " + finalOutputPath);
+
+  // 关闭浏览器
+  console.log("\n关闭浏览器...");
   await browser.close();
-  process.exit(0);
+  console.log("完成！");
 }
 
-main().catch(err => {
-  console.error("\n[错误]", err.message);
+main().catch((err) => {
+  console.error("脚本执行出错:", err.message);
   console.error(err.stack);
   process.exit(1);
 });

@@ -6,7 +6,7 @@ import {
   getSharedBrowser, getSharedPage, setSharedPage,
   getLoginCookies, setLoginCookies,
   getBalance, setBalance, isLoggedIn, isBrowserActive, getUid,
-  closeSharedBrowser, HG_URL,
+  closeSharedBrowser, HG_URL, checkDomainReachable, diagnoseNavigationError,
   saveCookiesToDisk, loadCookiesFromDisk,
   isPageLoggedIn
 } from "./browserPool.js";
@@ -27,6 +27,17 @@ import {
   resetAll as gismoResetAll,
 } from "./gismoApiClient.js";
 import { fetchCornerMatches } from "./cornerApiClient.js";
+import {
+  subscribeMatches as gismoSubscribe,
+  unsubscribeAll as gismoUnsubscribeAll,
+  getSubscriberStatus as getGismoSubscriberStatus,
+} from "./GismoSubscriber.js";
+import {
+  injectGismoDelta,
+  evaluateWithGismoData,
+  setStrategyTriggerCallback,
+  clearLiveMatchStates,
+} from "./cornerStrategyEngine.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -45,6 +56,17 @@ let lastLoginErrorDetail = null;
 let browserExplicitlyClosed = false;
 let pollingActive = false;
 let pollingStopFn = null;
+
+// ---- gismo 混合数据流 ----
+let latestOddsCache = new Map(); // matchId → { handicap, odds, ... } from transform.php
+let gismoSubscriberActive = false;
+
+/**
+ * 为策略引擎提供最新 transform.php 赔率数据
+ */
+function getLatestOddsForMatch(matchId) {
+  return latestOddsCache.get(String(matchId)) || null;
+}
 
 // XHR 拦截缓存
 let capturedResponses = [];
@@ -1433,6 +1455,30 @@ export async function crawlCornerMatches() {
         console.warn("[cornerCrawler] XHR interception setup failed:", e.message);
       }
 
+      // ★ 主动拦截 transform.php 请求，提取 ver 签名
+      if (!global.HG_VER) {
+        try {
+          console.log('[cornerCrawler] 等待 transform.php 请求以提取 ver...');
+          const verResponse = await page.waitForResponse(
+            (res) => res.url().includes('transform.php') && res.url().includes('ver='),
+            { timeout: 15000 }
+          ).catch(() => null);
+
+          if (verResponse) {
+            const verUrl = verResponse.url();
+            const verMatch = verUrl.match(/ver=([^&\s]+)/);
+            if (verMatch && verMatch[1]) {
+              global.HG_VER = verMatch[1];
+              console.log('[cornerCrawler] 从请求中提取到 ver:', global.HG_VER.substring(0, 16) + '...');
+            }
+          } else {
+            console.warn('[cornerCrawler] 等待 transform.php 请求超时 (15s)，ver 将由 fallback 链获取');
+          }
+        } catch (e) {
+          console.warn('[cornerCrawler] ver 拦截失败:', e.message);
+        }
+      }
+
       // ★ 纯 API 获取比赛数据（fetchCornerMatches 并行获取 rb + rcn）
       const apiResult = await fetchCornerMatches(page);
       console.log("[cornerCrawler] API 获取完成: " + (apiResult.matches?.length || 0) + " 场比赛 (角球=" + (apiResult.cornerMatches?.length || 0) + " 让球=" + (apiResult.hdpMatches?.length || 0) + " rb=" + apiResult.rbCount + " rcn=" + apiResult.rcnCount + ")");
@@ -1517,8 +1563,18 @@ export async function crawlCornerMatches() {
         const url = existingPage2.url();
         if (url === "about:blank" || !url) {
           console.log("[cornerCrawler] Shared page 是 about:blank，强制导航到 HG_URL");
-          await existingPage2.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-          await new Promise(r => setTimeout(r, 5000));
+          // 域名可达性预检
+          const dnsCheck = await checkDomainReachable(HG_URL);
+          if (!dnsCheck.reachable) {
+            console.error("[cornerCrawler] 域名不可达: " + dnsCheck.error);
+          } else {
+            try {
+              await existingPage2.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+              await new Promise(r => setTimeout(r, 5000));
+            } catch (navErr) {
+              await diagnoseNavigationError(existingPage2, HG_URL, navErr);
+            }
+          }
         }
       } catch(e) {}
     }
@@ -1720,7 +1776,32 @@ export async function crawlCornerMatches() {
     // ★ 混合模式：API 增强盘口数据
     const apiUid = getUid();
     const apiVer = getCurrentVer();
-    if (apiUid && apiVer && matches.length > 0) {
+
+    // ★ 主动拦截 transform.php 请求，提取 ver 签名（非 API 模式）
+    if (!global.HG_VER && apiUid) {
+      try {
+        console.log('[cornerCrawler] 等待 transform.php 请求以提取 ver...');
+        const verResponse = await page.waitForResponse(
+          (res) => res.url().includes('transform.php') && res.url().includes('ver='),
+          { timeout: 15000 }
+        ).catch(() => null);
+
+        if (verResponse) {
+          const verUrl = verResponse.url();
+          const verMatch = verUrl.match(/ver=([^&\s]+)/);
+          if (verMatch && verMatch[1]) {
+            global.HG_VER = verMatch[1];
+            console.log('[cornerCrawler] 从请求中提取到 ver:', global.HG_VER.substring(0, 16) + '...');
+          }
+        } else {
+          console.warn('[cornerCrawler] 等待 transform.php 请求超时 (15s)，ver 将由 fallback 链获取');
+        }
+      } catch (e) {
+        console.warn('[cornerCrawler] ver 拦截失败:', e.message);
+      }
+    }
+
+    if (apiUid && (apiVer || global.HG_VER) && matches.length > 0) {
       console.log("[cornerCrawler] 并行请求 API 增强盘口数据...");
       try {
         const cachedParams = { uid: apiUid, ver: apiVer, langx: "en-us" };
@@ -2023,6 +2104,12 @@ export function startCornerPolling(onUpdate) {
   console.log("[cornerCrawler] 启动全局轮询...");
   pollingActive = true;
   pollingStopFn = null;
+  gismoSubscriberActive = false;
+
+  // 注册策略触发回调
+  setStrategyTriggerCallback((triggerInfo) => {
+    console.log("[cornerCrawler] 策略触发通知: matchId=" + triggerInfo.matchId + " strategy=" + triggerInfo.strategyName);
+  });
 
   const poll = async () => {
     if (!pollingActive) return;
@@ -2030,6 +2117,40 @@ export function startCornerPolling(onUpdate) {
       const page = getSharedPage(); if (page) await randomMouseMove(page);
       const result = await crawlCornerMatches();
       const matches = result.success ? (result.data?.matches || []) : [];
+
+      // 更新赔率缓存（来自 transform.php 的盘口数据）
+      for (const match of matches) {
+        const key = match._gismoMatchId || match.matchId || "";
+        if (key) {
+          latestOddsCache.set(key, {
+            handicap: match.cornerHandicap ?? match.handicap ?? 0,
+            odds: match.cornerOdds ?? match.odds ?? 0,
+            homeTeam: match.homeTeam,
+            awayTeam: match.awayTeam,
+            cornerHdpLine: match._cornerHdpLine || "",
+            cornerOULine: match._cornerOULine || "",
+            hdpLine: match._hdpLine || "",
+            ouLine: match._ouLine || "",
+          });
+        }
+      }
+
+      // 首次获取到比赛数据后，启动 GismoSubscriber
+      if (!gismoSubscriberActive && matches.length > 0) {
+        const gismoStatus = getGismoStatus();
+        if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0) {
+          const subPage = getSharedPage();
+          if (subPage) {
+            console.log("[cornerCrawler] 启动 GismoSubscriber，订阅 " + gismoStatus.matchIdCount + " 场比赛...");
+            gismoSubscribe(gismoStatus.matchIds, (deltaData) => {
+              // 注入 gismo 实时数据到策略引擎
+              injectGismoDelta(deltaData);
+            }, subPage);
+            gismoSubscriberActive = true;
+          }
+        }
+      }
+
       if (pollingActive && onUpdate) onUpdate(matches);
     } catch (e) {
       console.error("[cornerCrawler] 轮询错误:", e.message);
@@ -2047,16 +2168,27 @@ export function stopCornerPolling() {
   console.log("[cornerCrawler] 停止全局轮询...");
   pollingActive = false;
   if (pollingStopFn) { clearTimeout(pollingStopFn); pollingStopFn = null; }
+
+  // 停止 GismoSubscriber
+  if (gismoSubscriberActive) {
+    gismoUnsubscribeAll();
+    gismoSubscriberActive = false;
+  }
+  clearLiveMatchStates();
+  latestOddsCache.clear();
+
   return { success: true };
 }
 
 export function getPollingStatus() {
+  const gismoSubStatus = gismoSubscriberActive ? getGismoSubscriberStatus() : null;
   return {
     isPolling: pollingActive,
     isLoggedIn: isLoggedIn(),
     balance: getBalance(),
     lastUpdate: pollingActive ? Date.now() : null,
-    loginInProgress: false
+    loginInProgress: false,
+    gismoSubscriber: gismoSubStatus,
   };
 }
 

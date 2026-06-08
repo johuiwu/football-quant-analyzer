@@ -1,4 +1,4 @@
-﻿// ======================== 直连备用通道 ========================
+// ======================== 直连备用通道 ========================
 // 当 XHR 劫持和 DOM 解析均失败时，用缓存的 ver 签名 + 浏览器 cookies 直连 transform.php
 
 import { HG_URL, getLoginCookies, getRandomUA } from "./browserPool.js";

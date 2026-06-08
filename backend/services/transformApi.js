@@ -309,6 +309,21 @@ async function ensureUid(page) {
  * 提取 transform.php 请求参数（三层 fallback 链 + ensureUid）
  */
 export async function extractParams(page) {
+  // ★ 优先从 global.HG_VER 读取 ver（由 cornerCrawler 拦截设置）
+  if (global.HG_VER) {
+    const uid = getCachedUid();
+    if (uid) {
+      console.log("[transformApi] params from global.HG_VER (intercepted ver)");
+      return { uid, ver: global.HG_VER, langx: "en-us" };
+    }
+    // ver 可用但 uid 缺失，继续获取 uid
+    const ensuredUid = await ensureUid(page);
+    if (ensuredUid) {
+      console.log("[transformApi] params from global.HG_VER + ensureUid");
+      return { uid: ensuredUid, ver: global.HG_VER, langx: "en-us" };
+    }
+  }
+
   // 1. 缓存
   const cached = extractFromCache();
   if (cached.uid && cached.ver) return cached;
@@ -354,6 +369,15 @@ export async function extractParams(page) {
  * 带重试的参数获取：缓存优先 + 等待首页请求 + 三层提取
  */
 export async function extractParamsWithRetry(page) {
+  // ★ 优先从 global.HG_VER 读取 ver
+  if (global.HG_VER) {
+    const uid = getCachedUid();
+    if (uid) {
+      console.log("[transformApi] paramsWithRetry: using global.HG_VER");
+      return { uid, ver: global.HG_VER, langx: "en-us" };
+    }
+  }
+
   // 先试缓存
   const cached = extractFromCache();
   if (cached.uid && cached.ver) return cached;
@@ -460,12 +484,16 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
  */
 export async function fetchGameList_FT(page, rtype) {
   const cachedUidDebug = getCachedUid();
-  console.log("[transformApi] fetchGameList: 当前缓存的 uid=" + (cachedUidDebug ? cachedUidDebug.substring(0, 16) + "..." : "MISSING"));
+  console.log("[transformApi] fetchGameList_FT: 当前缓存的 uid=" + (cachedUidDebug ? cachedUidDebug.substring(0, 16) + "..." : "MISSING"));
   const params = await extractParamsWithRetry(page);
   if (!params.uid || !params.ver) {
     console.warn("[transformApi] fetchGameList_FT: Missing uid/ver, cannot request");
     return null;
   }
+
+  // ★ 根据 rtype 动态设置 showtype
+  const isLiveRtype = ["rb", "rcn", "rrnou"].includes(rtype);
+  const showtype = isLiveRtype ? "live" : "today";
 
   const ts = Date.now();
   const body = new URLSearchParams({
@@ -475,12 +503,12 @@ export async function fetchGameList_FT(page, rtype) {
     uid: params.uid,
     ts: String(ts),
     gtype: "ft",
-    showtype: "live",
+    showtype: showtype,
     rtype: rtype,
   });
 
   const url = API_BASE + "?ver=" + encodeURIComponent(params.ver);
-  console.log("[transformApi] fetching " + rtype + " (game_list_FT, POST) ...");
+  console.log("[transformApi] fetching " + rtype + " (game_list_FT, POST, showtype=" + showtype + ") ...");
 
   const text = await fetchInBrowser(page, url, body.toString());
   if (text) {
@@ -519,8 +547,8 @@ export async function fetchViaInterception(page, rtypes, triggerFn, timeout = 15
       };
 
       timer = setTimeout(() => {
+        console.log("[transformApi] 拦截超时: 已捕获=" + Object.keys(results).join(",") + " 未捕获=" + [...remaining].join(","));
         cleanup();
-        // 超时不算失败，返回已捕获的数据
         resolve(results);
       }, timeout);
 
@@ -540,23 +568,30 @@ export async function fetchViaInterception(page, rtypes, triggerFn, timeout = 15
           const pMatch = postData.match(/p=([^&]+)/);
           const rtypeMatch = postData.match(/rtype=([^&]+)/);
 
+          // ★ 输出所有 transform.php 请求（无论是否匹配）
+          if (pMatch) {
+            console.log("[transformApi] 拦截到请求: p=" + pMatch[1] + " rtype=" + (rtypeMatch ? rtypeMatch[1] : "N/A") + " 目标=" + [...remaining].join(","));
+          }
+
           if (!pMatch || !rtypeMatch) return;
 
           const pValue = pMatch[1];
           const rtype = rtypeMatch[1];
 
-          // 只捕获 get_game_list 请求，且 rtype 在目标列表中
-          if (pValue !== "get_game_list" && pValue !== "game_list_FT") return;
+          // 捕获 get_game_list / game_list_FT / gameModel 请求，且 rtype 在目标列表中
+          if (pValue !== "get_game_list" && pValue !== "game_list_FT" && pValue !== "gameModel") return;
           if (!remaining.has(rtype)) return;
 
           // 读取响应体
           const body = await response.text();
           console.log("[transformApi] 拦截捕获: p=" + pValue + " rtype=" + rtype + " size=" + body.length);
 
-          // 校验响应格式
-          if (body && !body.includes("<!DOCTYPE html>") && !body.trimStart().startsWith("<!")) {
+          // 校验响应格式（跳过 HTML 和 code_type error 响应）
+          if (body && !body.includes("<!DOCTYPE html>") && !body.trimStart().startsWith("<!") && !body.includes("code_type error")) {
             results[rtype] = body;
             remaining.delete(rtype);
+          } else if (body && body.includes("code_type error")) {
+            console.log("[transformApi] 跳过 code_type error 响应: p=" + pValue + " rtype=" + rtype);
           }
 
           // 所有目标都已捕获

@@ -97,8 +97,8 @@ async function pollOnce() {
       const key = (m.homeTeam || "") + "|" + (m.awayTeam || "");
       const hdp = m.handicaps?.find(h => h.category === "HDP" && h.period === "full" && h.marketGroup !== "corner");
       const ou = m.handicaps?.find(h => h.category === "O/U" && h.period === "full" && h.marketGroup !== "corner");
-      const hdpHalf = m.handicaps?.find(h => h.category === "HDP" && h.period === "half");
-      const ouHalf = m.handicaps?.find(h => h.category === "O/U" && h.period === "half");
+      const hdpHalf = m.handicaps?.find(h => h.category === "HDP" && h.period === "half" && h.marketGroup !== "corner");
+      const ouHalf = m.handicaps?.find(h => h.category === "O/U" && h.period === "half" && h.marketGroup !== "corner");
       hdpMarketData[key] = {
         league: m.league || "",
         time: m.time || "",
