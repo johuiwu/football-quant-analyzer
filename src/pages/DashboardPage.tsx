@@ -375,6 +375,7 @@ export default function DashboardPage() {
                         const firstId = list.length > 0 ? list[0].id : selectedHomeId;
                         setHomeLeague(e.target.value, firstId);
                         setSelectedFixtureId('');
+                        setIsStatsCustomized(false);
                       }}
                       className="w-full bg-slate-900 border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
                     >
@@ -392,6 +393,7 @@ export default function DashboardPage() {
                         const firstId = list.length > 0 ? list[0].id : selectedAwayId;
                         setAwayLeague(e.target.value, firstId);
                         setSelectedFixtureId('');
+                        setIsStatsCustomized(false);
                       }}
                       className="w-full bg-slate-900 border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:border-blue-500 focus:outline-none"
                     >
