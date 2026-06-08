@@ -372,10 +372,15 @@ async function fetchInBrowser(page, url, body = null) {
         const opts = { credentials: "include" };
         if (fetchBody) {
           opts.method = "POST";
-          opts.headers = { "Content-Type": "application/x-www-form-urlencoded" };
+          // ★ 必须包含 X-Requested-With: XMLHttpRequest，否则服务器返回 HTML 页面而非 XML 数据
+          opts.headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+          };
           opts.body = fetchBody;
         } else {
           opts.method = "GET";
+          opts.headers = { "X-Requested-With": "XMLHttpRequest" };
         }
         const resp = await fetch(fetchUrl, opts);
         if (!resp.ok) return { error: "http_" + resp.status, status: resp.status };
@@ -385,6 +390,12 @@ async function fetchInBrowser(page, url, body = null) {
     }, { fetchUrl: url, fetchBody: body });
 
     if (result.error) { console.warn("[transformApi] fetch error:", result.error); return null; }
+
+    // ★ 检测 HTML 响应（预期 XML，若服务器未识别为 XHR 则返回 HTML）
+    if (result.text && (result.text.trimStart().startsWith("<!") || result.text.includes("<!DOCTYPE html>"))) {
+      console.warn("[transformApi] 收到 HTML 响应（预期 XML），X-Requested-With 可能未生效, length=" + result.text.length);
+    }
+
     return result.text;
   } catch (e) { console.warn("[transformApi] page.evaluate failed:", e.message); return null; }
 }
@@ -414,7 +425,23 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
   console.log("[transformApi] fetching " + rtype + " (get_game_list, POST) ...");
 
   const text = await fetchInBrowser(page, url, body.toString());
-  if (text) console.log("[transformApi] " + rtype + " response: " + text.length + " bytes");
+
+  // ★ 校验响应格式：如果不是 XML，回退到 game_list_FT
+  if (!text) {
+    console.warn("[transformApi] " + rtype + " get_game_list 返回空，回退到 game_list_FT...");
+    return await fetchGameList_FT(page, rtype);
+  }
+  // ★ 检测 HTML 响应（服务器未识别为 XHR 请求时返回 HTML 页面）
+  if (text.includes("<!DOCTYPE html>") || text.trimStart().startsWith("<!")) {
+    console.warn("[transformApi] " + rtype + " get_game_list 返回 HTML 页面（非 XML），回退到 game_list_FT...");
+    return await fetchGameList_FT(page, rtype);
+  }
+  if (!text.includes("<?xml") && !text.includes("<serverresponse")) {
+    console.warn("[transformApi] " + rtype + " 响应不是 XML (length=" + text.length + "), 回退到 game_list_FT...");
+    return await fetchGameList_FT(page, rtype);
+  }
+
+  console.log("[transformApi] " + rtype + " response: " + text.length + " bytes");
   return text;
 }
 
@@ -447,8 +474,107 @@ export async function fetchGameList_FT(page, rtype) {
   console.log("[transformApi] fetching " + rtype + " (game_list_FT, POST) ...");
 
   const text = await fetchInBrowser(page, url, body.toString());
-  if (text) console.log("[transformApi] " + rtype + " (FT) response: " + text.length + " bytes");
+  if (text) {
+    // ★ 检测 HTML 响应（服务器未识别为 XHR 请求时返回 HTML 页面）
+    if (text.includes("<!DOCTYPE html>") || text.trimStart().startsWith("<!")) {
+      console.warn("[transformApi] " + rtype + " (FT) 返回 HTML 页面（非 XML），X-Requested-With 可能未生效, length=" + text.length);
+      return null;
+    }
+    console.log("[transformApi] " + rtype + " (FT) response: " + text.length + " bytes");
+  }
   return text;
+}
+
+/**
+ * 通过响应拦截方式获取 transform.php 数据
+ * 原理：设置 page.on('response') 拦截器，然后触发页面操作使浏览器自然发出 XHR 请求，
+ * 拦截器捕获匹配的响应并返回数据。
+ *
+ * @param {Page} page - 已登录的 Puppeteer page
+ * @param {string[]} rtypes - 需要获取的 rtype 列表，如 ["rb", "rcn"]
+ * @param {Function} triggerFn - 触发页面操作的异步函数，如点击标签
+ * @param {number} timeout - 等待超时（毫秒），默认 15000
+ * @returns {Object} { rb: "xml_text", rcn: "xml_text", ... }
+ */
+export async function fetchViaInterception(page, rtypes, triggerFn, timeout = 15000) {
+  const results = {};
+  const remaining = new Set(rtypes);
+  let handler = null;
+  let timer = null;
+
+  try {
+    const captured = await new Promise((resolve, reject) => {
+      const cleanup = () => {
+        if (handler) page.off("response", handler);
+        if (timer) clearTimeout(timer);
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        // 超时不算失败，返回已捕获的数据
+        resolve(results);
+      }, timeout);
+
+      handler = async (response) => {
+        const url = response.url();
+        if (!url.includes("transform.php") && !url.includes("transform_nl.php")) return;
+
+        try {
+          // 从请求的 POST body 提取 p= 和 rtype= 参数
+          const request = response.request();
+          const postData = request.postData() || "";
+          const pMatch = postData.match(/p=([^&]+)/);
+          const rtypeMatch = postData.match(/rtype=([^&]+)/);
+
+          if (!pMatch || !rtypeMatch) return;
+
+          const pValue = pMatch[1];
+          const rtype = rtypeMatch[1];
+
+          // 只捕获 get_game_list 请求，且 rtype 在目标列表中
+          if (pValue !== "get_game_list" && pValue !== "game_list_FT") return;
+          if (!remaining.has(rtype)) return;
+
+          // 读取响应体
+          const body = await response.text();
+          console.log("[transformApi] 拦截捕获: p=" + pValue + " rtype=" + rtype + " size=" + body.length);
+
+          // 同时提取 ver 和 uid
+          extractVerFromRequest(url);
+          const uidMatch = postData.match(/uid=([^&\s]+)/);
+          if (uidMatch && uidMatch[1]) setCachedUid(uidMatch[1]);
+
+          // 校验响应格式
+          if (body && !body.includes("<!DOCTYPE html>") && !body.trimStart().startsWith("<!")) {
+            results[rtype] = body;
+            remaining.delete(rtype);
+          }
+
+          // 所有目标都已捕获
+          if (remaining.size === 0) {
+            cleanup();
+            resolve(results);
+          }
+        } catch (e) {
+          // 响应体读取失败，忽略
+        }
+      };
+
+      page.on("response", handler);
+
+      // 执行触发函数（如点击标签），使浏览器发出 XHR 请求
+      if (triggerFn) {
+        triggerFn().catch(e => {
+          console.warn("[transformApi] triggerFn error:", e.message);
+        });
+      }
+    });
+
+    return captured;
+  } finally {
+    if (handler) page.off("response", handler);
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function fetchGameDetail(page, ecid) {

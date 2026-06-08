@@ -1,4 +1,4 @@
-﻿
+
 /**
  * 检查页面是否处于已登录状态（通过 DOM 元素判断）
  */
@@ -54,6 +54,31 @@ let isLaunching = false; // 防止重复启动
 let lastActivityTime = 0; // 最后活动时间
 let heartbeatPage = null; // 心跳保活页面
 let heartbeatTimer = null;
+
+// ★ 登录锁：防止并发登录导致强制登出
+let loginLock = false;
+let loginLockWaiters = 0;
+
+/**
+ * 获取登录锁，防止并发登录
+ * 同一时间只允许一个登录操作，其他调用者等待锁释放后检查共享页面是否已登录
+ */
+export async function acquireLoginLock() {
+  loginLockWaiters++;
+  while (loginLock) {
+    console.log("[browserPool] 等待登录锁... (当前等待: " + loginLockWaiters + ")");
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  loginLock = true;
+  loginLockWaiters--;
+}
+
+/**
+ * 释放登录锁
+ */
+export function releaseLoginLock() {
+  loginLock = false;
+}
 
 const HG_URL = process.env.HG_URL || "https://www.hga050.com";
 

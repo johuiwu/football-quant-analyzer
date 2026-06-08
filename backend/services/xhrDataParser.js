@@ -1,4 +1,4 @@
-﻿// ======================== XHR 数据解析器 ========================
+// ======================== XHR 数据解析器 ========================
 // 从 capturedResponses 中提取比赛和盘口数据
 // 不依赖 DOM，纯 JSON 解析
 
@@ -132,6 +132,168 @@ function parseMatchTime(retimeset, more) {
 // ---- 解析 game_list XML（rcn / rb / rrnou 接口返回） ----
 export function parseGameListXML(xmlText, contextHint = "") {
   if (!xmlText || typeof xmlText !== "string") {
+    return { success: false, matches: [], source: "xml", count: 0 };
+  }
+
+  // ★ 诊断 XML 结构
+  const hasGameTag = /<game[^>]*>/.test(xmlText);
+  const hasServerResponse = xmlText.includes("<serverresponse");
+  const gameNCount = (xmlText.match(/<GAME_\d+>/g) || []).length;
+  const plainGameCount = (xmlText.match(/<game[\s>]/g) || []).length;
+  const dataCountMatch = xmlText.match(/<dataCount>(\d+)<\/dataCount>/);
+  const dataCount = dataCountMatch ? dataCountMatch[1] : "?";
+  console.log("[xhrParser] XML 诊断 (" + contextHint + "): " + xmlText.length + " bytes, " +
+    "serverresponse=" + hasServerResponse + ", dataCount=" + dataCount +
+    ", GAME_N=" + gameNCount + ", <game>=" + plainGameCount);
+
+  // ★ 检测 HTML 响应（服务器返回 HTML 页面而非 XML 数据）
+  if (xmlText.includes("<!DOCTYPE html>") || xmlText.trimStart().startsWith("<!")) {
+    console.error("[xhrParser] 收到 HTML 响应而非 XML！服务器未返回数据格式 (" + contextHint + ")");
+    return { success: false, matches: [], source: "xml", count: 0, error: "html_response" };
+  }
+
+  // ★ 增强诊断：输出前 2000 字符中的标签结构
+  const tagSample = xmlText.substring(0, 2000).match(/<(\w+)[\s>]/g);
+  const uniqueTags = [...new Set((tagSample || []).map(t => t.trim()))].slice(0, 20);
+  console.log("[xhrParser] XML 前 2000 字符中的标签: " + uniqueTags.join(", "));
+
+  // ★ 新路径：从 <original> 标签提取 JSON 数据（get_game_list API 返回格式）
+  const originalMatch = xmlText.match(/<original>([\s\S]*?)<\/original>/);
+  if (originalMatch) {
+    console.log("[xhrParser] 发现 <original> 标签，尝试 JSON 解析 (" + contextHint + ")...");
+    try {
+      const jsonStr = originalMatch[1].trim();
+      const gameData = JSON.parse(jsonStr);
+      const gameKeys = Object.keys(gameData).filter(k => k.startsWith("GAME_"));
+      console.log("[xhrParser] <original> JSON 解析成功: " + gameKeys.length + " 场比赛 (" + contextHint + ")");
+
+      const matches = [];
+      for (const key of gameKeys) {
+        const g = gameData[key];
+        const homeTeam = g.TEAM_H || "";
+        const awayTeam = g.TEAM_C || "";
+        if (!homeTeam || !awayTeam) continue;
+
+        const gid = g.GID || "";
+        const league = g.LEAGUE || "";
+        const scoreH = parseInt(g.SCORE_H) || 0;
+        const scoreC = parseInt(g.SCORE_C) || 0;
+        const retimeset = g.RETIMESET || "";
+        const more = g.MORE || "";
+        const elapsedMinutes = parseMatchTime(retimeset, more);
+        const datetime = g.DATETIME || g.GAME_DATE_TIME || "";
+        const running = g.RUNNING === "Y";
+
+        // HDP 让球盘
+        const ratioRe = g.RATIO_RE || "";
+        const iorReh = g.IOR_REH || "";
+        const iorRec = g.IOR_REC || "";
+        // OU 大小球
+        const ratioRouo = g.RATIO_ROUO || "";
+        const iorRouh = g.IOR_ROUH || "";
+        const iorRouc = g.IOR_ROUC || "";
+        // 角球盘口 (rcn 才有)
+        // ★ 关键修正：rcn 响应中，RATIO_RE 是角球让球盘口线，RATIO_ROUO 是角球大小盘线
+        // ★ IOR_RNCH/IOR_RNCC 是角球让球赔率，IOR_ROUH/IOR_ROUC 是角球大小盘赔率
+        // ★ PTYPE 包含 "Corners" 标识角球市场（非 CN_COUNT）
+        const ptype = g.PTYPE || "";
+        const isCornerMarket = ptype.includes("Corners") || !!(g.IOR_RNCH || g.IOR_RNCC);
+        // 角球让球盘（rcn 中 RATIO_RE 即角球让球线，IOR_RNCH/IOR_RNCC 即角球让球赔率）
+        const ratioCornerHdp = g.RATIO_RE || g.RATIO_RNCH || g.RATIO_CORNERHDP || "";
+        const iorCornerH = g.IOR_RNCH || g.IOR_CORNERH || "";
+        const iorCorner = g.IOR_RNCC || g.IOR_CORNER || "";
+        // 角球大小盘（rcn 中 RATIO_ROUO/IOR_ROUH/IOR_ROUC 即角球大小盘）
+        const ratioCrOuo = g.RATIO_ROUO || g.RATIO_RNOU || g.RATIO_CROUO || g.ratio_CROUO || "";
+        const iorCrOuo = g.IOR_ROUH || g.IOR_RNOUH || g.IOR_CROUO || g.ior_CROUO || "";
+        const iorCrOuu = g.IOR_ROUC || g.IOR_RNOUC || g.IOR_CROUU || g.ior_CROUU || "";
+        // 半场
+        const ratioHre = g.RATIO_HRE || "";
+        const iorHreh = g.IOR_HREH || "";
+        const iorHrec = g.IOR_HREC || "";
+        const ratioHrouo = g.RATIO_HROUO || "";
+        const iorHrouh = g.IOR_HROUH || "";
+        const iorHrouc = g.IOR_HROUC || "";
+        // 角球胜负
+        const iorRgh = g.IOR_RGH || "";
+        const iorRgc = g.IOR_RGC || "";
+        const iorRgn = g.IOR_RGN || "";
+        // IDs
+        const ecid = g.ECID || "";
+        const hgid = g.HGID || "";
+        const gidm = g.GIDM || "";
+
+        matches.push({
+          matchId: gid || ("json_" + matches.length),
+          homeTeam, awayTeam, league,
+          time: datetime,
+          elapsedMinutes,
+          homeScore: scoreH,
+          awayScore: scoreC,
+          totalCorners: 0,
+          cornerHomeCount: 0,
+          cornerAwayCount: 0,
+          _hdpLine: ratioRe,
+          _hdpHomeOdds: iorReh,
+          _hdpAwayOdds: iorRec,
+          _ouLine: ratioRouo,
+          _ouOverOdds: iorRouh,
+          _ouUnderOdds: iorRouc,
+          cornerHandicap: ratioCornerHdp ? parseAsianHandicap(ratioCornerHdp) : 0,
+          cornerOdds: parseFloat(iorCornerH) || 0,
+          hasCornerOdds: !!(ratioCornerHdp || ratioCrOuo),
+          _cornerHdpLine: ratioCornerHdp,
+          _cornerHdpHomeOdds: iorCornerH,
+          _cornerHdpAwayOdds: iorCorner,
+          _cornerOULine: ratioCrOuo,
+          _cornerOUOdds: iorCrOuo,
+          _cornerOUUnderOdds: iorCrOuu,
+          _hasCornerMarket: isCornerMarket,
+          _cornerHomeOdds: iorRgh,
+          _cornerAwayOdds: iorRgc,
+          _cornerDrawOdds: iorRgn,
+          _htHdpLine: ratioHre,
+          _htHdpHomeOdds: iorHreh,
+          _htHdpAwayOdds: iorHrec,
+          _htOuLine: ratioHrouo,
+          _htOuOverOdds: iorHrouh,
+          _htOuUnderOdds: iorHrouc,
+          ecid, hgid, gidm,
+          running,
+          _dataSource: "xml",
+          _cornerSource: "xml",
+          dataQuality: "full",
+          timestamp: Date.now(),
+          triggeredStrategies: [],
+          handicaps: [],
+          leagueId: "",
+          leagueName: league,
+        });
+      }
+
+      console.log("[xhrParser] parseGameListXML (JSON): " + matches.length + " 场比赛 (" + (contextHint || "?") + ", " + xmlText.length + " bytes)");
+      // ★ 诊断：输出前3场比赛的角球字段值
+      for (let i = 0; i < Math.min(3, matches.length); i++) {
+        const m = matches[i];
+        console.log("[xhrParser] 比赛" + i + ": " + m.homeTeam + " vs " + m.awayTeam +
+          " | cornerHdp=" + m._cornerHdpLine + " cornerHdpOdds=" + m._cornerHdpHomeOdds + "/" + m._cornerHdpAwayOdds +
+          " | cornerOU=" + m._cornerOULine + " " + m._cornerOUOdds + "/" + m._cornerOUUnderOdds +
+          " | hasCorner=" + m._hasCornerMarket + " ptype=" + (matches[i]._ptype || ""));
+      }
+
+      return {
+        success: matches.length > 0,
+        matches,
+        source: "xml",
+        count: matches.length,
+      };
+    } catch (jsonErr) {
+      console.warn("[xhrParser] <original> JSON 解析失败: " + jsonErr.message + "，回退到 <game> 标签解析");
+    }
+  }
+
+  if (!hasGameTag) {
+    console.warn("[xhrParser] XML 中未找到 <game> 标签且无 <original> JSON (" + contextHint + ")");
+    console.log("[xhrParser] XML 前 500 字符: " + xmlText.substring(0, 500));
     return { success: false, matches: [], source: "xml", count: 0 };
   }
 

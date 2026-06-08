@@ -7,7 +7,8 @@ import {
   getLoginCookies, setLoginCookies,
   getBalance, setBalance, isLoggedIn, isBrowserActive, getUid,
   closeSharedBrowser, HG_URL,
-  saveCookiesToDisk, loadCookiesFromDisk
+  saveCookiesToDisk, loadCookiesFromDisk,
+  isPageLoggedIn
 } from "./browserPool.js";
 import { loginToHG as hgLoginToHG } from "./hgCrawlerService.js";
 import { performStableLogin } from "./stableLogin.js";
@@ -25,6 +26,7 @@ import {
   getGismoStatus,
   resetAll as gismoResetAll,
 } from "./gismoApiClient.js";
+import { fetchCornerMatches } from "./cornerApiClient.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -1341,16 +1343,34 @@ function buildHandicapsArray(m) {
 async function activateSoccerTab(page) {
     console.log('[cornerCrawler] 导航到 Soccer 标签页...');
     try {
-        // 1. 确保父容器可见
-        await page.waitForSelector('#sport_total', { timeout: 10000 });
-        // 2. 等待 Soccer 标签可见，排除 display: none 的情况
-        await page.waitForSelector('#old_ft_live_league:not([style*="display: none"])', { timeout: 10000 });
-        // 3. 点击
-        await page.click('#old_ft_live_league');
+        // 1. 尝试等待 Soccer 标签可见
+        try {
+            await page.waitForSelector('#old_ft_live_league:not([style*="display: none"])', { timeout: 5000 });
+        } catch (e) {
+            // 2. 如果不可见，检查元素是否存在（不要求可见）
+            const exists = await page.evaluate(() => !!document.getElementById('old_ft_live_league'));
+            if (!exists) {
+                console.warn('[cornerCrawler] #old_ft_live_league 元素不存在');
+                return false;
+            }
+            console.log('[cornerCrawler] #old_ft_live_league 存在但不可见，尝试直接点击');
+        }
+
+        // 3. 点击（两种方式确保点击成功）
+        try { await page.click('#old_ft_live_league'); } catch (_) {}
+        await page.evaluate(() => {
+            const btn = document.getElementById("old_ft_live_league");
+            if (btn) btn.click();
+        });
         console.log('[cornerCrawler] 已点击 Soccer 标签');
-        // 4. 等待 transform.php 请求被发出
-        await page.waitForResponse((res) => res.url().includes('transform.php'), { timeout: 15000 });
-        console.log('[cornerCrawler] transform.php 请求已发出');
+
+        // 4. 等待 transform.php 请求被发出（容错：超时不阻断）
+        try {
+            await page.waitForResponse((res) => res.url().includes('transform.php'), { timeout: 10000 });
+            console.log('[cornerCrawler] transform.php 请求已发出');
+        } catch (e) {
+            console.log('[cornerCrawler] 等待 transform.php 请求超时，继续...');
+        }
         return true;
     } catch (e) {
         console.warn('[cornerCrawler] 导航到 Soccer 标签页失败:', e.message);
@@ -1385,18 +1405,16 @@ export async function crawlCornerMatches() {
     return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "browser_closed" };
   }
 
-  // ★ API 优先模式：绕过 DOM 导航，直接用浏览器 fetch 获取数据
+  // ★ API 优先模式：纯 API 获取数据（快速，无需页面导航）
   if (process.env.CORNER_API_MODE === "true") {
     console.log("[cornerCrawler] CORNER_API_MODE=true，使用纯 API 模式");
-    console.log("[cornerCrawler] ===== 纯 API 模式 =====");
     try {
       let page = getSharedPage();
+
+      // ★ 用 isPageLoggedIn() 检查登录状态
       let loginOk = false;
       try {
-        loginOk = await page.evaluate(() => {
-          const soccerTab = document.querySelector('#old_ft_live_league:not([style*="display: none"])');
-          return !!soccerTab;
-        }).catch(() => false);
+        loginOk = await isPageLoggedIn(page);
       } catch (e) {}
 
       if (!loginOk) {
@@ -1405,30 +1423,50 @@ export async function crawlCornerMatches() {
         if (!result.success || !result.page) throw new Error(result?.error || 'StableLogin 登录失败');
         page = result.page;
       } else {
-        console.log('[cornerCrawler] 页面已处于登录状态，跳过登录步骤');
+        console.log('[cornerCrawler] 页面已登录，跳过登录步骤');
       }
 
-      // 激活 Soccer 标签页，触发页面发出 transform.php 请求（Layer 2 从中拦截真实 uid）
-      const soccerOk = await activateSoccerTab(page);
-      if (!soccerOk) {
-        console.warn('[cornerCrawler] 无法激活 Soccer 标签，API 模式终止');
+      // ★ 设置 XHR 拦截（用于捕获 gismo 数据）
+      try {
+        await setupXHRInterception(page);
+      } catch (e) {
+        console.warn("[cornerCrawler] XHR interception setup failed:", e.message);
+      }
+
+      // ★ 纯 API 获取比赛数据（fetchCornerMatches 并行获取 rb + rcn）
+      const apiResult = await fetchCornerMatches(page);
+      console.log("[cornerCrawler] API 获取完成: " + (apiResult.matches?.length || 0) + " 场比赛 (rb=" + apiResult.rbCount + " rcn=" + apiResult.rcnCount + ")");
+
+      if (!apiResult.success || !apiResult.matches?.length) {
+        console.log("[cornerCrawler] API 模式未获取到比赛数据");
         crawlingLock = false;
         clearTimeout(lockTimeout);
-        return { success: false, matches: [] };
+        return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "api_no_matches" };
       }
-      const { fetchCornerMatches } = await import("./cornerApiClient.js");
-      const result = await fetchCornerMatches(page);
-        console.log("[cornerCrawler] API 模式完成: " + (result.matches?.length || 0) + " 场比赛");
 
-        // ★ API 模式下也补充 gismo 角球数
-        const gismoStatus = getGismoStatus();
-        const apiMatches = result.matches || [];
-        if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0 && apiMatches.length > 0) {
-          console.log("[cornerCrawler] API 模式 gismo 补充: token=" + gismoStatus.tokenAge + ", matchIds=" + gismoStatus.matchIdCount);
-          try {
-            let gismoEnriched = 0;
-            // 先匹配已缓存数据
-            for (const match of apiMatches) {
+      const matches = apiResult.matches;
+
+      // ★ gismo 补充角球数
+      const gismoStatus = getGismoStatus();
+      if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0 && matches.length > 0) {
+        console.log("[cornerCrawler] gismo 补充: token=" + gismoStatus.tokenAge + ", matchIds=" + gismoStatus.matchIdCount);
+        try {
+          let gismoEnriched = 0;
+          for (const match of matches) {
+            const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
+            if (gismoCorner) {
+              match.homeCorners = gismoCorner.homeCorners;
+              match.awayCorners = gismoCorner.awayCorners;
+              match.totalCorners = gismoCorner.totalCorners;
+              match._cornerSource = "gismo";
+              match._gismoMatchId = gismoCorner.matchId;
+              gismoEnriched++;
+            }
+          }
+          const unmatched = matches.filter(m => m._cornerSource !== "gismo");
+          if (unmatched.length > 0) {
+            await fetchAllCornerData(page);
+            for (const match of unmatched) {
               const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
               if (gismoCorner) {
                 match.homeCorners = gismoCorner.homeCorners;
@@ -1439,40 +1477,27 @@ export async function crawlCornerMatches() {
                 gismoEnriched++;
               }
             }
-            // 主动请求未匹配的
-            const unmatched = apiMatches.filter(m => m._cornerSource !== "gismo");
-            if (unmatched.length > 0) {
-              await fetchAllCornerData(page);
-              for (const match of unmatched) {
-                const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
-                if (gismoCorner) {
-                  match.homeCorners = gismoCorner.homeCorners;
-                  match.awayCorners = gismoCorner.awayCorners;
-                  match.totalCorners = gismoCorner.totalCorners;
-                  match._cornerSource = "gismo";
-                  match._gismoMatchId = gismoCorner.matchId;
-                  gismoEnriched++;
-                }
-              }
-            }
-            console.log("[cornerCrawler] API 模式 gismo 补充: " + gismoEnriched + "/" + apiMatches.length);
-          } catch (gismoErr) {
-            console.warn("[cornerCrawler] API 模式 gismo 补充失败:", gismoErr.message);
           }
+          console.log("[cornerCrawler] gismo 补充完成: " + gismoEnriched + "/" + matches.length);
+        } catch (gismoErr) {
+          console.warn("[cornerCrawler] gismo 补充失败:", gismoErr.message);
         }
+      }
 
-        crawlingLock = false;
-        clearTimeout(lockTimeout);
-        return {
-          success: result.success,
-          data: { matches: apiMatches, allText: [], allElements: [] },
-          count: apiMatches.length,
-          timestamp: ts,
-          source: "api",
-        };
+      crawlingLock = false;
+      clearTimeout(lockTimeout);
+      return {
+        success: true,
+        data: { matches, allText: [], allElements: [] },
+        count: matches.length,
+        timestamp: ts,
+        source: "api",
+      };
     } catch (apiErr) {
-      console.warn("[cornerCrawler] API 模式失败，降级到 DOM 路径:", apiErr.message);
-      // 继续走 DOM 路径
+      console.warn("[cornerCrawler] API 模式失败:", apiErr.message);
+      crawlingLock = false;
+      clearTimeout(lockTimeout);
+      return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: apiErr.message };
     }
   }
 
@@ -1524,6 +1549,7 @@ export async function crawlCornerMatches() {
     await randomDelay(500, 1000);
 
     // 主动登出检测：检查 kick_ok_btn 弹窗
+    // ★ 修复：被踢出时先关闭弹窗+刷新页面恢复会话，避免"登录→被踢→重新登录→再被踢"死循环
     try {
       const kickedOut = await page.evaluate(() => {
           const kickBtn = document.querySelector("#kick_ok_btn");
@@ -1532,15 +1558,31 @@ export async function crawlCornerMatches() {
           return style.display !== 'none' && style.visibility !== 'hidden';
         });
       if (kickedOut) {
-        console.log("[cornerCrawler] 检测到登出弹窗(kick_ok_btn)，尝试重新登录...");
+        console.log("[cornerCrawler] 检测到登出弹窗(kick_ok_btn)，关闭弹窗并刷新页面...");
         try { await page.click("#kick_ok_btn"); } catch (_) {}
         await randomDelay(1000, 2000);
-        const { success: reLoginOk, rePage } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-        if (reLoginOk && rePage) {
-          console.log("[cornerCrawler] 重新登录成功，重新导航...");
-          await setupXHRInterception(rePage);
-          await navigateToCorners(rePage);
-          await randomDelay(500, 1000);
+        // 先尝试刷新页面恢复会话（而非立即重新登录）
+        try {
+          await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
+          await new Promise(r => setTimeout(r, 3000));
+          const restored = await isPageLoggedIn(page);
+          if (restored) {
+            console.log("[cornerCrawler] 刷新后已恢复登录状态，重新导航...");
+            await setupXHRInterception(page);
+            await navigateToCorners(page);
+            await randomDelay(500, 1000);
+          } else {
+            console.log("[cornerCrawler] 刷新后仍未登录，执行登录...");
+            const { success: reLoginOk, page: rePage } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
+            if (reLoginOk && rePage) {
+              console.log("[cornerCrawler] 重新登录成功，重新导航...");
+              await setupXHRInterception(rePage);
+              await navigateToCorners(rePage);
+              await randomDelay(500, 1000);
+            }
+          }
+        } catch (reloadErr) {
+          console.warn("[cornerCrawler] 页面刷新失败:", reloadErr.message);
         }
       }
     } catch (e) {
@@ -1578,6 +1620,27 @@ export async function crawlCornerMatches() {
     await randomDelay(1500, 3000);
 
     // 解析 DOM 获取角球盘口（使用专用 parseCornerMarkets 替代通用 parseAllMarkets）
+    // ★ DOM 诊断：截图 + 选择器检查
+    try {
+      await page.screenshot({ path: "debug/corner-dom-before-parse.png", fullPage: true });
+      const domDiag = await page.evaluate(() => {
+        return {
+          boxLebet: document.querySelectorAll("div.box_lebet").length,
+          betBox: document.querySelectorAll("div.bet_box").length,
+          teamH: document.querySelectorAll("div.teamH").length,
+          teamC: document.querySelectorAll("div.teamC").length,
+          textTeam: document.querySelectorAll("span.text_team").length,
+          textOdds: document.querySelectorAll("span.text_odds").length,
+          tabCn: !!document.getElementById("tab_cn"),
+          bodyLength: document.body?.innerHTML?.length || 0,
+          url: location.href,
+        };
+      });
+      console.log("[cornerCrawler] DOM 诊断: " + JSON.stringify(domDiag));
+    } catch (diagErr) {
+      console.log("[cornerCrawler] DOM 诊断失败: " + diagErr.message);
+    }
+
     const domData = await parseCornerMarkets(page, matchScores);
     console.log("[cornerCrawler] DOM corner markets: " + domData.length);
 

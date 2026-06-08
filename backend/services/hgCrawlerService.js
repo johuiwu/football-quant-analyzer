@@ -3,7 +3,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, acquireLoginLock, releaseLoginLock, isPageLoggedIn } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import fs from "fs";
@@ -159,6 +159,16 @@ async function clickNoButton(page) {
 }
 // ======================== 登录 ========================
 export async function loginToHG(credentials, forceNew = false, isolated = false) {
+  // ★ 登录锁：防止并发登录导致强制登出
+  await acquireLoginLock();
+  try {
+    return await _loginToHGImpl(credentials, forceNew, isolated);
+  } finally {
+    releaseLoginLock();
+  }
+}
+
+async function _loginToHGImpl(credentials, forceNew, isolated) {
   console.log("[HgCrawler] 开始登录...");
   crawlerStatus.error = null;
 
@@ -1306,23 +1316,34 @@ export async function fetchAllLiveMatches() {
 }
 
 // ======================== 获取赛程（Today → CORNERS） ========================
-// ======================== 获取赛程（Today → CORNERS） ========================
+// ★ 修复：复用共享浏览器，不再使用隔离浏览器，避免强制登出
 export async function fetchSchedule(_retryCount = 0) {
   console.log("[HgCrawler] === 获取赛程 (Today → CORNERS) ===");
 
-  // 使用隔离浏览器，不影响监控的共享浏览器
-  let privateBrowser = null;
-  let page = null;
+  // ★ 使用共享浏览器（不再隔离）
+  let page = getSharedPage();
+
+  if (!page || page.isClosed() || !isBrowserActive()) {
+    console.log("[HgCrawler] 共享页面不可用，执行登录...");
+    const loginRes = await loginToHG(null, false, false);
+    if (!loginRes.success) {
+      return { success: false, error: loginRes.error || "登录失败" };
+    }
+    page = getSharedPage();
+  }
+
+  // 检查页面是否已登录
+  const loggedIn = await isPageLoggedIn(page);
+  if (!loggedIn) {
+    console.log("[HgCrawler] 页面未登录，执行登录...");
+    const loginRes = await loginToHG(null, false, false);
+    if (!loginRes.success) {
+      return { success: false, error: loginRes.error || "登录失败" };
+    }
+    page = getSharedPage();
+  }
 
   try {
-    const loginRes = await loginToHG(null, false, true); // isolated mode
-    if (!loginRes.success || !loginRes.page) {
-      return { success: false, error: loginRes.error || "隔离登录失败" };
-    }
-    page = loginRes.page;
-    privateBrowser = loginRes.browser;
-    console.log("[HgCrawler] 隔离浏览器就绪");
-
     // 等待页面动态内容渲染（SPA 需要 JS 渲染 DOM）
     console.log("[HgCrawler] 等待页面动态内容渲染...");
     await new Promise(r => setTimeout(r, 5000));
@@ -1417,6 +1438,7 @@ export async function fetchSchedule(_retryCount = 0) {
     console.log("[HgCrawler] CORNERS 盘口: " + cornerOdds.length + " 条");
 
     // 数据为空时检测是否强制登出（仅可见弹窗触发，防误判隐藏DOM模板）
+    // ★ 修复：被踢出时先刷新页面，避免重新登录导致死循环
     if (cornerOdds.length === 0 && _retryCount < 2) {
       try {
         const kicked = await page.evaluate(() => {
@@ -1427,13 +1449,23 @@ export async function fetchSchedule(_retryCount = 0) {
           btn.click(); return true;
         });
         if (kicked) {
-          console.log("[HgCrawler] 检测到强制登出，点击 OK 并重新登录...");
+          console.log("[HgCrawler] 检测到强制登出，点击 OK 并刷新页面...");
           await new Promise(r => setTimeout(r, 3000));
-          const loginRes2 = await loginToHG(null, true, true);
-          if (loginRes2.success && loginRes2.page) {
-            try { await privateBrowser.close(); } catch(e) {}
-            page = loginRes2.page;
-            privateBrowser = loginRes2.browser;
+          try {
+            await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
+            await new Promise(r => setTimeout(r, 3000));
+            const restored = await isPageLoggedIn(page);
+            if (restored) {
+              console.log("[HgCrawler] 刷新后已恢复登录，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
+              return await fetchSchedule(_retryCount + 1);
+            }
+          } catch (reloadErr) {
+            console.log("[HgCrawler] 刷新失败:", reloadErr.message);
+          }
+          // 刷新无效时才重新登录
+          const loginRes2 = await loginToHG(null, false, false);
+          if (loginRes2.success) {
+            page = getSharedPage();
             console.log("[HgCrawler] 重新登录成功，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
             return await fetchSchedule(_retryCount + 1);
           }
@@ -1498,17 +1530,8 @@ export async function fetchSchedule(_retryCount = 0) {
     console.error("[HgCrawler] 获取赛程失败:", err.message);
     crawlerStatus.error = err.message;
     return { success: false, error: err.message };
-  } finally {
-    // 关闭隔离浏览器
-    if (privateBrowser) {
-      try {
-        await privateBrowser.close();
-        console.log("[HgCrawler] 已关闭隔离浏览器");
-      } catch (e) {
-        console.warn("[HgCrawler] 关闭隔离浏览器失败:", e.message);
-      }
-    }
   }
+  // ★ 不再需要 finally 关闭隔离浏览器
 }
 export function startMatchPolling(onUpdate) {
   if (pollingActive) {

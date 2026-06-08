@@ -2,7 +2,7 @@
 // 使用浏览器上下文的 fetch() 调用 transform.php，绕过 DOM 导航
 // Puppeteer 仅用于 ensureLogin 登录和浏览器内 fetch
 
-import { fetchGameList, RTYPE } from "./transformApi.js";
+import { fetchGameList, fetchGameList_FT, fetchViaInterception, RTYPE } from "./transformApi.js";
 import { parseGameListXML } from "./xhrDataParser.js";
 import { parseAsianHandicap } from "./crawlerShared.js";
 
@@ -14,19 +14,67 @@ import { parseAsianHandicap } from "./crawlerShared.js";
  * @returns {{ success: boolean, matches: Array, rbCount: number, rcnCount: number }}
  */
 export async function fetchCornerMatches(page) {
-  console.log("[cornerApiClient] 并行 GET rb + rcn...");
+  console.log("[cornerApiClient] 获取角球比赛数据...");
   
-  const [rbXml, rcnXml] = await Promise.all([
-    fetchGameList(page, RTYPE.RB),
-    fetchGameList(page, RTYPE.RCN),
-  ]);
+  // ★ 优先使用响应拦截方式（让浏览器自然发出 XHR 请求）
+  const interceptionResult = await fetchViaInterception(
+    page,
+    [RTYPE.RB, RTYPE.RCN],
+    async () => {
+      // 触发页面操作：依次点击 Soccer 和 Corners 标签
+      try {
+        // 先确保在 Soccer 标签
+        await page.evaluate(() => {
+          const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
+          if (soccerBtn) soccerBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // 点击 Corners 标签触发 rcn 请求
+        await page.evaluate(() => {
+          const cnTab = document.getElementById("tab_cn");
+          if (cnTab) cnTab.click();
+        });
+        await new Promise(r => setTimeout(r, 1000));
+        
+        // 再点击回 Full Time 标签触发 rb 请求
+        await page.evaluate(() => {
+          const ftTab = document.getElementById("tab_pd") || document.getElementById("tab_re");
+          if (ftTab) ftTab.click();
+        });
+      } catch (e) {
+        console.warn("[cornerApiClient] 触发页面操作失败:", e.message);
+      }
+    },
+    15000
+  );
+  
+  let rbXml = interceptionResult[RTYPE.RB] || null;
+  let rcnXml = interceptionResult[RTYPE.RCN] || null;
+  
+  // 如果拦截方式未获取到数据，回退到 fetchInBrowser 方式
+  if (!rbXml && !rcnXml) {
+    console.log("[cornerApiClient] 拦截方式未获取到数据，回退到 fetchInBrowser...");
+    [rbXml, rcnXml] = await Promise.all([
+      fetchGameList(page, RTYPE.RB),
+      fetchGameList(page, RTYPE.RCN),
+    ]);
+  }
+  
+  // 如果 get_game_list 全部失败，尝试 game_list_FT
+  if (!rbXml && !rcnXml) {
+    console.log("[cornerApiClient] get_game_list 全部失败，尝试 game_list_FT...");
+    [rbXml, rcnXml] = await Promise.all([
+      fetchGameList_FT(page, RTYPE.RB),
+      fetchGameList_FT(page, RTYPE.RCN),
+    ]);
+  }
 
   const rbResult = rbXml ? parseGameListXML(rbXml, "rb") : { matches: [], count: 0 };
   const rcnResult = rcnXml ? parseGameListXML(rcnXml, "rcn") : { matches: [], count: 0 };
 
   console.log("[cornerApiClient] 解析: rb=" + (rbResult.matches?.length || 0) + " 场, rcn=" + (rcnResult.matches?.length || 0) + " 场");
 
-  // 合并: rb 为主（HDP/OU/比分），rcn 补充角球盘口
   const merged = mergeByName(rbResult.matches || [], rcnResult.matches || []);
 
   console.log("[cornerApiClient] 合并完成: " + merged.length + " 场比赛 (rb=" + (rbResult.matches?.length || 0) + " rcn=" + (rcnResult.matches?.length || 0) + ")");
