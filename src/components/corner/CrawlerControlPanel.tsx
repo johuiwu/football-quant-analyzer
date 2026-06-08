@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
@@ -110,6 +110,12 @@ export default function CrawlerControlPanel() {
         }, 8000);
       } else {
         showMessage("error", data.error || "启动失败");
+        // ★ 检测登录会话过期：如果错误信息包含登录相关关键词，自动重置登录状态
+        const errMsg = (data.error || "").toLowerCase();
+        if (errMsg.includes("login") || errMsg.includes("登录") || errMsg.includes("kick") || errMsg.includes("session") || errMsg.includes("uid")) {
+          setStatus(prev => ({ ...prev, isLoggedIn: false }));
+          setLoginStatus(false, "");
+        }
       }
     } catch (err) {
       showMessage("error", "启动监控失败");
@@ -649,9 +655,9 @@ export default function CrawlerControlPanel() {
           className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:opacity-50 text-white text-xs rounded-lg transition-colors"
         >
           {executingBets ? (
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            <RefreshCw key="icon-executing" className="w-3.5 h-3.5 animate-spin" />
           ) : (
-            <TrendingUp className="w-3.5 h-3.5" />
+            <TrendingUp key="icon-trending" className="w-3.5 h-3.5" />
           )}
           {executingBets ? "执行中..." : "执行待投注"}
         </button>
