@@ -11,7 +11,7 @@ import CornerSystemPage from "./pages/CornerSystemPage";
 import DashboardPage from "./pages/DashboardPage";
 import { useAppStore } from "./store/useAppStore";
 
-// 璺緞涓?activeTab 鏄犲皠
+// 路径到 activeTab 的映射
 const PATH_TO_TAB: Record<string, string> = {
   "/dashboard": "dashboard",
   "/standings": "standings",
@@ -39,9 +39,9 @@ function AppNewContent() {
   const isFirstRender = useRef(true);
   const location = useLocation();
 
-  // ===== 鍙屽悜鍚屾锛歛ctiveTab 涓?URL =====
+  // ===== 双向同步，activeTab 和 URL =====
 
-  // activeTab 鍒?URL锛坰tore 椹卞姩瀵艰埅锛屽 setHomeAndGo 瑙﹀彂锛?
+  // activeTab 到 URL，Store 驱动导航，如 setHomeAndGo 触发
   useEffect(() => {
     const targetPath = "/" + activeTab;
     if (location.pathname !== targetPath) {
@@ -49,7 +49,7 @@ function AppNewContent() {
     }
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // URL 鍒?activeTab锛堟祻瑙堝櫒瀵艰埅椹卞姩 store 鏇存柊锛?
+  // URL 到 activeTab，浏览器导航驱动 store 更新
   useEffect(() => {
     const tab = PATH_TO_TAB[location.pathname];
     if (tab && tab !== activeTab) {
@@ -57,7 +57,7 @@ function AppNewContent() {
     }
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 搴旂敤鍚姩鏃惰嚜鍔ㄥ垵濮嬪寲 API Key
+  // 应用启动时自动初始化 API Key
   useEffect(() => {
     const savedKey = localStorage.getItem("football_api_key");
     if (savedKey) {
@@ -69,7 +69,7 @@ function AppNewContent() {
     }
   }, []);
 
-  // 浣跨敤閲嶆瀯鍚庣殑 Hooks
+  // 使用重构后的 Hooks
   const fixtureSync = useFixtureSync();
   const teamDataSync = useTeamDataSync();
 
@@ -90,7 +90,7 @@ function AppNewContent() {
   } = teamDataSync;
 
 
-  // 灏?Hook 鏁版嵁鍚屾鍒?Store
+  // 将 Hook 数据同步到 Store
   useEffect(() => { setTeams(teams); }, [teams, setTeams]);
   useEffect(() => { setTeamsLoading(isTeamsLoading); }, [isTeamsLoading, setTeamsLoading]);
   useEffect(() => { setTeamsSyncMsg(teamsSyncMsg); }, [teamsSyncMsg, setTeamsSyncMsg]);
