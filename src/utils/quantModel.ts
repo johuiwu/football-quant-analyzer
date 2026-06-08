@@ -1354,7 +1354,26 @@ const strengthDiff = homeStrength - awayStrength;
 
   compAwayWin = compAwayWin / totalComp;
 
+  // 投注量修正因子：当某方向投注量占比过高时，轻微降低该方向概率（反向指标）
+  const totalBetVolume = (adv.homeBetVolume || 45) + (adv.awayBetVolume || 35) + (adv.drawBetVolume || 20);
+  const homeBetRatio = (adv.homeBetVolume || 45) / totalBetVolume;
+  const awayBetRatio = (adv.awayBetVolume || 35) / totalBetVolume;
+  const drawBetRatio = (adv.drawBetVolume || 20) / totalBetVolume;
 
+  // 当投注量占比超过50%时，视为过热，降低0.5%~2%的概率
+  const homeOverheat = homeBetRatio > 0.5 ? (homeBetRatio - 0.5) * 0.04 : 0;
+  const awayOverheat = awayBetRatio > 0.5 ? (awayBetRatio - 0.5) * 0.04 : 0;
+  const drawOverheat = drawBetRatio > 0.5 ? (drawBetRatio - 0.5) * 0.04 : 0;
+
+  compHomeWin = Math.max(0.05, compHomeWin - homeOverheat);
+  compDraw = Math.max(0.05, compDraw - drawOverheat);
+  compAwayWin = Math.max(0.05, compAwayWin - awayOverheat);
+
+  // 重新归一化
+  const compTotal2 = compHomeWin + compDraw + compAwayWin;
+  compHomeWin /= compTotal2;
+  compDraw /= compTotal2;
+  compAwayWin /= compTotal2;
 
   // 聚合决策中枢算法
 

@@ -134,6 +134,7 @@ export default function AdvancedParamsPanel({
 
           <div>
             <span className="block text-[11px] text-slate-300 mb-2 font-semibold">📊 交易所即时资金热度比 (主 / 平 / 客)</span>
+            <span className="block text-[9px] text-amber-400/70 mb-1.5">⚠️ 某方向占比 &gt;50% 时将触发反向修正（降低该方向概率）</span>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <span className="text-[10px] text-slate-400 block text-center mb-1">主队: {advancedParams.homeBetVolume}%</span>
