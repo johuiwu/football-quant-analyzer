@@ -16,7 +16,10 @@ interface Props {
   marketOdds: MarketOdds;
   results?: any;
   homeTeamName?: string;
+  awayTeamName?: string;
   handicap?: number;
+  homeTeam?: any; // TeamStats from parent
+  awayTeam?: any; // TeamStats from parent
 }
 
 export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap }: Props) {
