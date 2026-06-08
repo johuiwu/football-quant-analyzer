@@ -22,12 +22,8 @@ interface Props {
   awayTeam?: any; // TeamStats from parent
 }
 
-export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap }: Props) {
+export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap, homeTeam, awayTeam }: Props) {
   const liveMatch = useAppStore((s) => s.liveMatch);
-  const selectedHomeId = useAppStore((s) => s.selectedHomeId);
-  const selectedAwayId = useAppStore((s) => s.selectedAwayId);
-  const selectedHomeLeague = useAppStore((s) => s.selectedHomeLeague);
-  const selectedAwayLeague = useAppStore((s) => s.selectedAwayLeague);
 
   const {
     elapsedMinutes: currentMinute,
@@ -39,19 +35,17 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
     matchStatus
   } = liveMatch;
 
-  const { homeTeam, awayTeam } = useMemo(() => {
-    const home = REAL_TEAMS.find(t => t.id === selectedHomeId) || REAL_TEAMS[0];
-    const away = REAL_TEAMS.find(t => t.id === selectedAwayId) || REAL_TEAMS[1];
-    return { homeTeam: home, awayTeam: away };
-  }, [selectedHomeId, selectedAwayId]);
+  // 使用 props 传入的球队数据，不再内部查找 REAL_TEAMS
+  const safeHomeTeam = homeTeam || { homeXg: 1.5, awayXg: 1.5, nameCn: homeTeamName || '主队', league: 'DEFAULT', rank: 10 };
+  const safeAwayTeam = awayTeam || { homeXg: 1.5, awayXg: 1.5, nameCn: awayTeamName || '客队', league: 'DEFAULT', rank: 10 };
 
   const modelOdds = useMemo(() => {
-    const homeElo = getTeamElo(homeTeam);
-    const awayElo = getTeamElo(awayTeam);
-    const homeXg = homeTeam.homeXg;
-    const awayXg = awayTeam.awayXg;
+    const homeElo = getTeamElo(safeHomeTeam);
+    const awayElo = getTeamElo(safeAwayTeam);
+    const homeXg = safeHomeTeam.homeXg;
+    const awayXg = safeAwayTeam.awayXg;
     return calculateBaseOdds(homeElo, awayElo, Math.max(0.5, homeXg), Math.max(0.5, awayXg), 1.0, 1.0);
-  }, [homeTeam, awayTeam]);
+  }, [safeHomeTeam, safeAwayTeam]);
 
   const oddsMismatch = useMemo(() => {
     const homeDiff = Math.abs((marketOdds.homeOdds - modelOdds.homeOdds) / marketOdds.homeOdds);
@@ -65,22 +59,20 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
 
   // 使用 results 中的真实数据，或者回退到基于球队的计算
   const preMatchPredictions = useMemo(() => {
-    // 优先使用 results 中的综合预测
     if (results?.compHomeWin !== undefined) {
       return {
         homeWin: results.compHomeWin,
         draw: results.compDraw,
         awayWin: results.compAwayWin,
-        homeXg: homeTeam.homeXg,
-        awayXg: awayTeam.awayXg
+        homeXg: safeHomeTeam.homeXg,
+        awayXg: safeAwayTeam.awayXg
       };
     }
-    // 如果没有 results，使用 Elo + xG 的简单计算
-    const homeElo = getTeamElo(homeTeam);
-    const awayElo = getTeamElo(awayTeam);
+    const homeElo = getTeamElo(safeHomeTeam);
+    const awayElo = getTeamElo(safeAwayTeam);
     const eloDiff = homeElo - awayElo;
     const homeWinProb = 1 / (1 + Math.pow(10, -eloDiff / 700));
-    const xgDiff = homeTeam.homeXg - awayTeam.awayXg;
+    const xgDiff = safeHomeTeam.homeXg - safeAwayTeam.awayXg;
     const adjustedHomeWin = Math.max(0.05, Math.min(0.95, homeWinProb + xgDiff * 0.03));
     const adjustedAwayWin = Math.max(0.05, Math.min(0.95, 1 - homeWinProb - xgDiff * 0.03));
     const drawProb = Math.max(0.05, 1 - adjustedHomeWin - adjustedAwayWin);
@@ -90,15 +82,15 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
       homeWin: adjustedHomeWin / total,
       draw: drawProb / total,
       awayWin: adjustedAwayWin / total,
-      homeXg: homeTeam.homeXg,
-      awayXg: awayTeam.awayXg
+      homeXg: safeHomeTeam.homeXg,
+      awayXg: safeAwayTeam.awayXg
     };
-  }, [results, homeTeam, awayTeam]);
+  }, [results, safeHomeTeam, safeAwayTeam]);
 
   // ???????? isActive ??????? currentMinute ????
   const timeFactor = useMemo(() => {
-    return calculateLeagueTimeDecay(currentMinute, selectedHomeLeague || selectedAwayLeague, 90);
-  }, [currentMinute, selectedHomeLeague, selectedAwayLeague]);
+    return calculateLeagueTimeDecay(currentMinute, safeHomeTeam?.league || safeAwayTeam?.league, 90);
+  }, [currentMinute, safeHomeTeam, safeAwayTeam]);
 
   const dynamicPredictions = useMemo(() => {
     if (!isActive || matchStatus === 'pre-match') {
@@ -238,8 +230,8 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
     }
   }, [results, adjustedHomeWin, adjustedDraw, adjustedAwayWin]);
 
-  const homeTeamDisplay = homeTeamName || homeTeam.nameCn;
-  const awayTeamDisplay = awayTeamName || awayTeam.nameCn;
+  const homeTeamDisplay = homeTeamName || safeHomeTeam.nameCn;
+  const awayTeamDisplay = awayTeamName || safeAwayTeam.nameCn;
 
   const displayDirection = useMemo(() => {
     const dir = recommendation.aggregatedDirection;

@@ -846,6 +846,8 @@ export default function DashboardPage() {
                     homeTeamName={home.nameCn}
                     awayTeamName={away.nameCn}
                     handicap={asianHandicap.handicap}
+                    homeTeam={home}
+                    awayTeam={away}
                   />
 
                   {/* E. 推荐方向精简决策板 */}
