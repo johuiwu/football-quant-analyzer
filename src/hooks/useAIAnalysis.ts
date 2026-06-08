@@ -1,6 +1,8 @@
-﻿import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { ValidationService } from '../services/ValidationService';
 import { PredictionResults } from '../utils/quantModel';
+
+const aiCache = new Map<string, { analysis: string; warning: string | null }>();
 
 export function useAIAnalysis() {
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -9,11 +11,26 @@ export function useAIAnalysis() {
   /** API Key 未配置时设为 true，用于触发弹窗 */
   const [needsApiKey, setNeedsApiKey] = useState<boolean>(false);
 
-  const fetchAiAnalysis = useCallback(async (homeId: string, awayId: string, odds: any, predictions: PredictionResults) => {
+  const fetchAiAnalysis = useCallback(async (
+    homeId: string,
+    awayId: string,
+    odds: any,
+    predictions: PredictionResults,
+    extraContext?: { advancedParams?: any; isStatsCustomized?: boolean; customStats?: any }
+  ) => {
     setIsLoading(true);
     setAnalysis(null);
     setValidationWarning(null);
     setNeedsApiKey(false);
+
+    const cacheKey = `${homeId}_vs_${awayId}`;
+    const cached = aiCache.get(cacheKey);
+    if (cached) {
+      setAnalysis(cached.analysis);
+      setValidationWarning(cached.warning);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch('/api/ai-analyze-match', {
@@ -23,7 +40,10 @@ export function useAIAnalysis() {
           homeId,
           awayId,
           odds,
-          predictions
+          predictions,
+          advancedParams: extraContext?.advancedParams,
+          isStatsCustomized: extraContext?.isStatsCustomized,
+          customStats: extraContext?.isStatsCustomized ? extraContext?.customStats : undefined,
         }),
       });
       
@@ -37,6 +57,7 @@ export function useAIAnalysis() {
         
         const warning = ValidationService.validateAIAnalysis(data.commentary, predictions);
         setValidationWarning(warning);
+        aiCache.set(cacheKey, { analysis: data.commentary, warning });
       } else if (data.commentary) {
         // 服务器返回了未配置 API Key 的提示
         if (data.commentary.includes('API Key 未配置') || data.commentary.includes('API key not configured')) {

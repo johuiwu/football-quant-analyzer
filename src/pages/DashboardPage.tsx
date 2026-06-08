@@ -1484,7 +1484,7 @@ export default function DashboardPage() {
                       </div>
 
                       <button
-                        onClick={() => { const savedKey = localStorage.getItem('deepseek_api_key'); if (!savedKey) { setShowKeyModal(true); return; } rawFetchAiAnalysis(home.id, away.id, odds, results!); }}
+                        onClick={() => { const savedKey = localStorage.getItem('deepseek_api_key'); if (!savedKey) { setShowKeyModal(true); return; } rawFetchAiAnalysis(home.id, away.id, odds, results!, { advancedParams, isStatsCustomized, customStats }); }}
                         disabled={isAiLoading}
                         className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
                       >
@@ -1552,7 +1552,7 @@ export default function DashboardPage() {
             onSaved={() => {
               setShowKeyModal(false);
               // Key 保存成功后自动触发 AI 分析
-              rawFetchAiAnalysis(home?.id || '', away?.id || '', odds, results!);
+              rawFetchAiAnalysis(home?.id || '', away?.id || '', odds, results!, { advancedParams, isStatsCustomized, customStats });
             }}
           />
           </div>
