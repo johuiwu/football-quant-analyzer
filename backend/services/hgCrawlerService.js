@@ -6,6 +6,7 @@ puppeteer.use(StealthPlugin());
 import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, acquireLoginLock, releaseLoginLock, isPageLoggedIn } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
+import { fetchCornerMatches } from "./cornerApiClient.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -1344,6 +1345,157 @@ export async function fetchSchedule(_retryCount = 0) {
   }
 
   try {
+    // ★ API 模式：优先使用 API 获取赛程数据（2-3s vs DOM 40-60s）
+    const USE_API_MODE = true;
+    if (USE_API_MODE) {
+      console.log("[HgCrawler] fetchSchedule: 尝试 API 模式...");
+      try {
+        const apiResult = await fetchCornerMatches(page);
+        if (apiResult.success && apiResult.matches && apiResult.matches.length > 0) {
+          console.log("[HgCrawler] API 模式成功: " + apiResult.matches.length + " 场比赛");
+
+          // 将 API matches 映射为 scheduleData 格式（兼容 DOM 模式返回格式）
+          const scheduleData = apiResult.matches.map((match, idx) => {
+            // 构建 handicaps 数组（兼容 parseAllMarkets 格式）
+            const handicaps = [];
+            let order = 1;
+
+            // 角球让球盘
+            if (match._cornerHdpLine || match._cornerHdpHomeOdds) {
+              handicaps.push({
+                order: order++,
+                category: "HDP",
+                categoryLabel: "角球让球",
+                period: "full",
+                source: "api",
+                marketGroup: "corner",
+                line: match._cornerHdpLine || "",
+                odds: { home: parseFloat(match._cornerHdpHomeOdds) || 0, away: parseFloat(match._cornerHdpAwayOdds) || 0 },
+              });
+            }
+            // 角球大小盘
+            if (match._cornerOULine || match._cornerOUOdds) {
+              handicaps.push({
+                order: order++,
+                category: "O/U",
+                categoryLabel: "角球大/小",
+                period: "full",
+                source: "api",
+                marketGroup: "corner",
+                line: parseFloat(match._cornerOULine) || 0,
+                odds: { over: parseFloat(match._cornerOUOdds) || 0, under: parseFloat(match._cornerOUUnderOdds) || 0 },
+              });
+            }
+            // 角球独赢
+            if (match._cornerHomeOdds || match._cornerDrawOdds) {
+              handicaps.push({
+                order: order++,
+                category: "1X2",
+                categoryLabel: "角球独赢",
+                period: "full",
+                source: "api",
+                marketGroup: "corner",
+                odds: {
+                  home: parseFloat(match._cornerHomeOdds) || 0,
+                  draw: parseFloat(match._cornerDrawOdds) || 0,
+                  away: parseFloat(match._cornerAwayOdds) || 0,
+                },
+              });
+            }
+            // 主盘让球
+            if (match._hdpLine || match._hdpHomeOdds) {
+              handicaps.push({
+                order: order++,
+                category: "HDP",
+                categoryLabel: "让球",
+                period: "full",
+                source: "api",
+                marketGroup: "main",
+                line: match._hdpLine || "",
+                odds: { home: parseFloat(match._hdpHomeOdds) || 0, away: parseFloat(match._hdpAwayOdds) || 0 },
+              });
+            }
+            // 主盘大小
+            if (match._ouLine || match._ouOverOdds) {
+              handicaps.push({
+                order: order++,
+                category: "O/U",
+                categoryLabel: "大/小",
+                period: "full",
+                source: "api",
+                marketGroup: "main",
+                line: parseFloat(match._ouLine) || 0,
+                odds: { over: parseFloat(match._ouOverOdds) || 0, under: parseFloat(match._ouUnderOdds) || 0 },
+              });
+            }
+            // 半场让球
+            if (match._htHdpLine || match._htHdpHomeOdds) {
+              handicaps.push({
+                order: order++,
+                category: "HDP",
+                categoryLabel: "上半场 让球",
+                period: "half",
+                source: "api",
+                marketGroup: "main",
+                line: match._htHdpLine || "",
+                odds: { home: parseFloat(match._htHdpHomeOdds) || 0, away: parseFloat(match._htHdpAwayOdds) || 0 },
+              });
+            }
+            // 半场大小
+            if (match._htOuLine || match._htOuOverOdds) {
+              handicaps.push({
+                order: order++,
+                category: "O/U",
+                categoryLabel: "上半场 大/小",
+                period: "half",
+                source: "api",
+                marketGroup: "main",
+                line: parseFloat(match._htOuLine) || 0,
+                odds: { over: parseFloat(match._htOuOverOdds) || 0, under: parseFloat(match._htOuUnderOdds) || 0 },
+              });
+            }
+
+            const hdpEntry = handicaps.find(h => h.category === "HDP" && h.period === "full" && h.marketGroup === "corner");
+            const ouEntry = handicaps.find(h => h.category === "O/U" && h.period === "full" && h.marketGroup === "corner");
+
+            return {
+              id: match.matchId || "sched_" + idx,
+              league: match.league || "",
+              homeTeam: match.homeTeam,
+              awayTeam: match.awayTeam,
+              time: match.time || "--:--",
+              date: new Date().toLocaleDateString(),
+              homeScore: match.homeScore || 0,
+              awayScore: match.awayScore || 0,
+              handicaps,
+              cornerHandicap: hdpEntry ? parseAsianHandicap(String(hdpEntry.line)) : (match.cornerHandicap || 0),
+              cornerOdds: hdpEntry?.odds?.home || ouEntry?.odds?.over || match.cornerOdds || 0,
+              hasCornerOdds: match.hasCornerOdds || handicaps.some(h => h.marketGroup === "corner"),
+            };
+          });
+
+          crawlerStatus.lastUpdate = Date.now();
+          crawlerStatus.matchesCount = scheduleData.length;
+
+          console.log("[HgCrawler] === 赛程完成 (API): " + scheduleData.length + " 场 ===");
+          if (scheduleData.length > 0) {
+            scheduleData.slice(0, 5).forEach((m, i) =>
+              console.log("  [" + i + "] " + m.league + " | " + m.homeTeam + " vs " + m.awayTeam + " | HDP=" + m.cornerHandicap + " odds=" + m.cornerOdds + " hdpCount=" + m.handicaps.length)
+            );
+          }
+
+          return {
+            success: true,
+            data: { matches: scheduleData },
+            count: scheduleData.length,
+          };
+        }
+        console.log("[HgCrawler] API 模式未获取到数据，回退到 DOM 模式...");
+      } catch (apiErr) {
+        console.warn("[HgCrawler] API 模式失败: " + apiErr.message + "，回退到 DOM 模式...");
+      }
+    }
+
     // 等待页面动态内容渲染（SPA 需要 JS 渲染 DOM）
     console.log("[HgCrawler] 等待页面动态内容渲染...");
     await new Promise(r => setTimeout(r, 5000));
