@@ -346,6 +346,68 @@ export function findCornerDataByTeamName(homeTeam, awayTeam) {
 }
 
 /**
+ * 从页面 DOM 中提取 gismo CDN token
+ * 优先级：1) window.gismoToken 全局变量  2) script/iframe src 中的 T= 参数
+ * @param {Page} page - Puppeteer 页面
+ * @returns {string|null} 提取到的 token 或 null
+ */
+export async function extractTokenFromPage(page) {
+  let token = null;
+
+  // 策略1：检查页面全局变量
+  try {
+    token = await page.evaluate(() => window.gismoToken);
+  } catch (_) {
+    // 忽略 evaluate 异常
+  }
+
+  // 策略2：从 script/iframe src 中提取
+  if (!token) {
+    try {
+      token = await page.evaluate(() => {
+        const scripts = document.querySelectorAll('script[src*="akamaized.net"]');
+        for (const s of scripts) {
+          const m = s.src.match(/[?&]T=([^&\s]+)/);
+          if (m) return m[1];
+        }
+        const iframes = document.querySelectorAll('iframe[src*="akamaized.net"]');
+        for (const f of iframes) {
+          const m = f.src.match(/[?&]T=([^&\s]+)/);
+          if (m) return m[1];
+        }
+        return null;
+      });
+    } catch (_) {
+      // 忽略 evaluate 异常
+    }
+  }
+
+  if (token) {
+    cachedToken = token;
+    cachedTokenAt = Date.now();
+    console.log(`[gismo] 从页面提取到 token: ${token.substring(0, 8)}...`);
+  } else {
+    console.log("[gismo] 无法从页面提取 token，将回退到 XHR 拦截");
+  }
+
+  return token;
+}
+
+/**
+ * 批量将 matchId（ECID）添加到缓存
+ * @param {string[]} ids - matchId 数组
+ */
+export function addMatchIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return;
+  for (const id of ids) {
+    if (!cachedMatchIds.includes(id)) {
+      cachedMatchIds.push(id);
+    }
+  }
+  console.log(`[gismo] 添加 ${ids.length} 个 matchId 到缓存`);
+}
+
+/**
  * 获取 gismo 状态信息（调试用）
  */
 export function getGismoStatus() {

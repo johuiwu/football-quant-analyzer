@@ -1,9 +1,8 @@
 import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
-import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches } from "../services/cornerCrawler.js";
+import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
-import { getSharedPage, isPageLoggedIn, isBrowserActive } from "../services/browserPool.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
@@ -19,18 +18,12 @@ router.get("/corner/live", async (req, res) => {
     const matchId = req.query.matchId || null;
     const result = await getLiveCornerData(matchId);
     const matchList = (result && Array.isArray(result.data)) ? result.data : [];
-    const cornerMatchList = (result && Array.isArray(result.cornerMatches)) ? result.cornerMatches : [];
-    const hdpMatchData = result.hdpMatches || {};
     res.json({
       success: true,
       data: matchList,
-      cornerMatches: cornerMatchList,
-      hdpMatches: hdpMatchData,
       mainMarkets: result.mainMarkets || {},
       generatedAt: (result && result.generatedAt) || new Date().toISOString(),
       count: matchList.length,
-      cornerCount: cornerMatchList.length,
-      hdpCount: Object.keys(hdpMatchData).length,
       cacheAge: (result && result.cacheAge != null) ? result.cacheAge : null,
       cacheEmpty: (result && result.cacheEmpty) ? true : false,
       source: (result && result.source) || "cache"
@@ -49,6 +42,7 @@ router.get("/corner/live", async (req, res) => {
 // 即时爬取：直接调用 crawlCornerMatches()，不读缓存
 router.post("/corner/fetch", async (req, res) => {
   try {
+    resetBrowserClosedFlag();
     console.log("[cornerRoutes] /corner/fetch 即时爬取开始...");
     const timeoutMs = 90000;
     const timeoutPromise = new Promise((_, reject) =>
@@ -61,10 +55,8 @@ router.post("/corner/fetch", async (req, res) => {
       return res.status(500).json({ success: false, error: errMsg });
     }
     const matches = result.data?.matches || [];
-    const cornerMatches = result.data?.cornerMatches || [];
-    const hdpMatches = result.data?.hdpMatches || [];
-    console.log("[cornerRoutes] /corner/fetch 完成:", matches.length, "场比赛 (角球=" + cornerMatches.length + " 让球=" + hdpMatches.length + ")");
-    res.json({ success: true, data: matches, cornerMatches, hdpMatches, mainMarkets: result.mainMarkets || {}, count: matches.length, cornerCount: cornerMatches.length, hdpCount: hdpMatches.length, source: "live-fetch" });
+    console.log("[cornerRoutes] /corner/fetch 完成:", matches.length, "场比赛");
+    res.json({ success: true, data: matches, mainMarkets: result.mainMarkets || {}, count: matches.length, source: "live-fetch" });
   } catch (err) {
     const msg = err.message || String(err);
     console.error("[cornerRoutes] /corner/fetch error:", msg);
@@ -168,6 +160,11 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
       return res.status(500).json({ success: false, error: "登录服务返回异常数据" });
     }
 
+    // 登录成功后重置浏览器关闭标志
+    if (result.success) {
+      resetBrowserClosedFlag();
+    }
+
     // 根据失败原因提供友好建议（hgCrawler 返回 error 字段）
     if (!result.success) {
       const errorMsg = result.error || "";
@@ -211,6 +208,7 @@ router.get("/corner/status", async (req, res) => {
 // ======================== POST /api/corner/start ========================
 router.post("/corner/start", async (req, res) => {
   try {
+    resetBrowserClosedFlag();
     // 启动后端轮询
     const result = startCornerBackendPolling();
     console.log("[cornerRoutes] 后端轮询已启动");

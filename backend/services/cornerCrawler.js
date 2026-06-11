@@ -5,39 +5,15 @@ import path from "path";
 import {
   getSharedBrowser, getSharedPage, setSharedPage,
   getLoginCookies, setLoginCookies,
-  getBalance, setBalance, isLoggedIn, isBrowserActive, getUid,
-  closeSharedBrowser, HG_URL, checkDomainReachable, diagnoseNavigationError,
+  getBalance, setBalance, isLoggedIn, isBrowserActive,
+  closeSharedBrowser, HG_URL,
   saveCookiesToDisk, loadCookiesFromDisk,
-  isPageLoggedIn
+  MOBILE_UA
 } from "./browserPool.js";
-import { loginToHG as hgLoginToHG } from "./hgCrawlerService.js";
-import { performStableLogin } from "./stableLogin.js";
-import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
-import { fetchGameList, RTYPE, extractParamsWithRetry } from "./transformApi.js";
-import { parseGameListXML } from "./xhrDataParser.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
-import {
-  extractTokenFromUrl as gismoExtractToken,
-  extractMatchIdFromUrl as gismoExtractMatchId,
-  processGismoResponse,
-  fetchCornerData,
-  fetchAllCornerData,
-  findCornerDataByTeamName,
-  getGismoStatus,
-  resetAll as gismoResetAll,
-} from "./gismoApiClient.js";
-import { fetchCornerMatches } from "./cornerApiClient.js";
-import {
-  subscribeMatches as gismoSubscribe,
-  unsubscribeAll as gismoUnsubscribeAll,
-  getSubscriberStatus as getGismoSubscriberStatus,
-} from "./GismoSubscriber.js";
-import {
-  injectGismoDelta,
-  evaluateWithGismoData,
-  setStrategyTriggerCallback,
-  clearLiveMatchStates,
-} from "./cornerStrategyEngine.js";
+import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate } from "./credentialManager.js";
+import { fetchCornerData, fetchHdpOuData, fetchGameDetail } from "./hgApiClient.js";
+import { loginToHG as hgCrawlerLogin } from "./hgCrawlerService.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -51,26 +27,19 @@ const POLL_INTERVAL = 3000 + Math.random() * 7000;
 
 // 运行时凭据
 let runtimeCredentials = null;
+let loginInProgress = false;
 let crawlingLock = false;
 let lastLoginErrorDetail = null;
 let browserExplicitlyClosed = false;
 let pollingActive = false;
 let pollingStopFn = null;
 
-// ---- gismo 混合数据流 ----
-let latestOddsCache = new Map(); // matchId → { handicap, odds, ... } from transform.php
-let gismoSubscriberActive = false;
-
-/**
- * 为策略引擎提供最新 transform.php 赔率数据
- */
-function getLatestOddsForMatch(matchId) {
-  return latestOddsCache.get(String(matchId)) || null;
-}
-
 // XHR 拦截缓存
 let capturedResponses = [];
 const seenRequestUrls = new Set();
+
+// ★ API 模式：缓存 uid/ver
+let cachedSessionInfo = null;
 
 // ======================== 保活等待（waitForFunction + 定期滚动防检测） ========================
 /**
@@ -209,17 +178,6 @@ async function handlePasscodePage(page, maxRetries = 3) {
         if (btn) btn.click();
       });
       console.log("[cornerCrawler] 已重新登录，等待页面加载...");
-      // 等待 chk_login 响应，确保登录真正完成
-      try {
-        const chkResp = await page.waitForResponse(
-          (resp) => resp.url().includes("chk_login") || resp.url().includes("transform_nl.php"),
-          { timeout: 30000 }
-        );
-        const chkText = await chkResp.text();
-        console.log("[cornerCrawler] handlePasscode: chk_login 响应长度 " + chkText.length);
-      } catch(e) {
-        console.warn("[cornerCrawler] handlePasscode: chk_login 等待超时，继续...");
-      }
       await randomDelay(5000, 7000);
 
       // 验证是否成功离开简易密码页面
@@ -239,6 +197,353 @@ async function handlePasscodePage(page, maxRetries = 3) {
   return { detected: true, handled: false };
 }
 
+async function ensureLogin() {
+  // 用户主动发起登录/启动监控，允许浏览器正常启动
+  browserExplicitlyClosed = false;
+  const _loginStart = Date.now();
+  // 登录并发保护
+  if (loginInProgress) {
+    console.log("[cornerCrawler] 登录正在进行中，等待...");
+    const _waitStart = Date.now();
+    const MAX_WAIT = 60000;
+    while (loginInProgress) {
+      if (Date.now() - _waitStart > MAX_WAIT) {
+        console.warn("[cornerCrawler] loginInProgress 超时(60s)，强制释放锁");
+        loginInProgress = false;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    const existingPage = getSharedPage();
+    if (existingPage && isBrowserActive()) {
+      try {
+        await existingPage.url();
+        return existingPage;
+      } catch (e) {}
+    }
+  }
+
+  const bi = await getSharedBrowser(false);
+  console.log("[cornerCrawler] [耗时] getSharedBrowser: " + (Date.now() - _loginStart) + "ms");
+
+  // ✗ 浏览器启动失败
+  if (!bi) {
+    lastLoginErrorDetail = "browser_launch_failed:浏览器启动失败，请检查 Chromium 是否安装，或设置 CRAWLER_HEADLESS=false 试试";
+    console.error("[cornerCrawler] 浏览器未启动，登录中止");
+    return null;
+  }
+
+  // ★ Cookie 快速登录：尝试从磁盘恢复会话
+  const savedCookies = loadCookiesFromDisk();
+  if (savedCookies && savedCookies.length > 0) {
+    try {
+      console.log("[cornerCrawler] 尝试 Cookie 快速登录...");
+      const quickPage = await bi.newPage();
+      await quickPage.setUserAgent(process.env.USE_MOBILE_UA === "true" ? MOBILE_UA : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+      await quickPage.setViewport({ width: 1920, height: 1400 });
+      for (const ck of savedCookies) {
+        try { await quickPage.setCookie(ck); } catch (_) {}
+      }
+      await quickPage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 10000 });
+      await new Promise(r => setTimeout(r, 2000));
+      const isValid = await quickPage.evaluate(() => {
+        const body = document.body?.textContent || "";
+        const hasInPlay = body.includes("In-Play") && body.includes("Soccer");
+        const sportBtn = document.getElementById("old_ft_live_league");
+        const hasSport = sportBtn && getComputedStyle(sportBtn).display !== 'none' && getComputedStyle(sportBtn).visibility !== 'hidden';
+        const hasMyEvents = body.includes("My Events");
+        // 检测简易密码页面（#back_login 可见说明在简易密码页面，不应认为已登录）
+        const backLoginBtn = document.getElementById("back_login");
+        const hasPasscodePage = backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
+        if (hasPasscodePage) return false;
+        return hasInPlay || hasSport || hasMyEvents;
+      });
+      if (isValid) {
+        setSharedPage(quickPage);
+        console.log("[cornerCrawler] Cookie 快速登录成功: " + (Date.now() - _loginStart) + "ms");
+        return quickPage;
+      }
+      // ★ Cookie 有效但可能在简易密码页面，尝试处理
+      const passcodeResult = await handlePasscodePage(quickPage);
+      if (passcodeResult.detected && passcodeResult.handled) {
+        setSharedPage(quickPage);
+        console.log("[cornerCrawler] Cookie 登录后处理了简易密码页面: " + (Date.now() - _loginStart) + "ms");
+        return quickPage;
+      }
+      console.log("[cornerCrawler] Cookie 已过期，降级到完整登录");
+      await quickPage.close();
+    } catch (e) {
+      console.warn("[cornerCrawler] Cookie 快速登录失败:", e.message);
+    }
+  }
+
+  // 如果已有活跃页面且已登录，直接复用
+  const existingPage = getSharedPage();
+  if (existingPage && isBrowserActive()) {
+    try {
+      // 检查页面是否仍然可用
+      const url = await existingPage.url();
+      console.log("[cornerCrawler] 复用已有登录会话，当前页面:", url);
+      // ★ 检查是否在简易密码页面
+      const passcodeResult = await handlePasscodePage(existingPage);
+      if (passcodeResult.detected && passcodeResult.handled) {
+        console.log("[cornerCrawler] 复用页面时处理了简易密码页面");
+      }
+      return existingPage;
+    } catch (e) {
+      console.warn("[cornerCrawler] 页面不可用，需要重新登录:", e.message);
+      setSharedPage(null);
+    }
+  }
+
+  // 检查是否已登录（浏览器活跃但页面可能已关闭）
+  if (isLoggedIn()) {
+    console.log("[cornerCrawler] 浏览器已登录但页面为空，创建新页面...");
+    loginInProgress = true;
+    try {
+    const page = await bi.newPage();
+    await page.setUserAgent(process.env.USE_MOBILE_UA === "true" ? MOBILE_UA : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+    await page.setViewport({ width: 1920, height: 1400 });
+    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await new Promise(r => setTimeout(r, 4000));
+    // ★ 检查是否跳转到简易密码页面
+    const passcodeResult = await handlePasscodePage(page);
+    if (passcodeResult.detected && passcodeResult.handled) {
+      console.log("[cornerCrawler] 新页面处理了简易密码页面");
+    }
+    setSharedPage(page);
+    console.log("[cornerCrawler] 新页面创建完成");
+    return page;
+    } finally {
+      loginInProgress = false;
+    }
+  }
+
+  
+  // ========== 完整登录（含 3 次重试，30s 间隔） ==========
+  const MAX_LOGIN_RETRIES = 3;
+  const LOGIN_RETRY_DELAY = 30000;
+
+  for (let loginAttempt = 1; loginAttempt <= MAX_LOGIN_RETRIES; loginAttempt++) {
+    if (loginAttempt > 1) {
+      console.log("[cornerCrawler] === 登录重试 " + loginAttempt + "/" + MAX_LOGIN_RETRIES + "，等待 " + (LOGIN_RETRY_DELAY/1000) + "s...");
+      await new Promise(r => setTimeout(r, LOGIN_RETRY_DELAY));
+      try { await closeSharedBrowser(); } catch (e) {}
+      await new Promise(r => setTimeout(r, 2000));
+      const biRetry = await getSharedBrowser(false);
+      if (!biRetry) {
+        lastLoginErrorDetail = "browser_launch_failed_retry";
+        console.error("[cornerCrawler] 重试时浏览器启动失败");
+        continue;
+      }
+    }
+
+    loginInProgress = true;
+    let page = null;
+    try {
+      console.log("[cornerCrawler] 正在登录 HG... (attempt " + loginAttempt + "/" + MAX_LOGIN_RETRIES + ")");
+      page = await bi.newPage();
+
+      await page.setUserAgent(
+        process.env.USE_MOBILE_UA === "true" ? MOBILE_UA : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+      );
+      await page.setViewport({ width: 1920, height: 1400 });
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, "webdriver", { get: () => false });
+        Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+      });
+
+      await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await new Promise(r => setTimeout(r, 4000));
+
+      const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
+      const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
+
+      console.log("[cornerCrawler] 填入用户名密码...");
+      await page.evaluate((usr, pw) => {
+        const u = document.getElementById('usr');
+        const p = document.getElementById('pwd');
+        if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+      }, username, password);
+
+      // 勾选「记住我」
+      try {
+        const rememberCheckbox = await page.$('#remember');
+        if (rememberCheckbox) {
+          const isChecked = await page.evaluate(el => el.checked, rememberCheckbox);
+          if (!isChecked) {
+            await rememberCheckbox.click();
+            console.log("[cornerCrawler] 已勾选「记住我」");
+          }
+        }
+      } catch (e) {}
+
+      // 点击登录按钮
+      await new Promise(r => setTimeout(r, 500));
+      console.log("[cornerCrawler] 点击登录按钮...");
+      await page.evaluate(() => {
+        const btn = document.getElementById('btn_login');
+        if (btn) btn.click();
+      });
+
+      // 轮询检测登录结果（最多 80 秒）
+      console.log("[cornerCrawler] 轮询等待登录结果（最多 80s）...");
+      let loginResult = null;
+      for (let i = 0; i < 80; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        await handlePopups(page);
+
+        const status = await page.evaluate(() => {
+          const body = document.body;
+          const bodyText = body ? body.textContent || "" : "";
+          const accShow = document.getElementById("acc_show");
+          const loginHidden = !accShow || accShow.style.display === "none" || (function(){ const s = getComputedStyle(accShow); return s.display === 'none' || s.visibility === 'hidden'; })();
+          const errEl = document.getElementById("text_error");
+          const hasError = errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0;
+          const hasMyEvents = bodyText.includes("My Events") || bodyText.includes("My Bets");
+          const hasInPlaySoccer = bodyText.includes("In-Play") && bodyText.includes("Soccer");
+          const hasSportSelector = (function(){ const el = document.getElementById("old_ft_live_league"); return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'; })();
+          // 检测简易密码页面（#back_login 按钮可见）
+          const backLoginBtn = document.getElementById("back_login");
+          const hasPasscodePage = backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
+          return {
+            loginHidden, hasError, hasMyEvents, hasInPlaySoccer, hasSportSelector,
+            hasPasscode: bodyText.includes("Passcode Login") || bodyText.includes("简易密码"),
+            hasTwoFactor: bodyText.includes("普通登入"),
+            hasPasscodePage,
+            currentUrl: window.location.href,
+            bodyTextSample: bodyText.substring(0, 200)
+          };
+        });
+
+        // 密码错误 => 不重试
+        if (status.hasError) {
+          const errMsg = await page.evaluate(() => document.getElementById("text_error")?.textContent || "未知错误");
+          console.error("[cornerCrawler] 登录失败（密码错误）: " + errMsg);
+          lastLoginErrorDetail = "login_wrong_password:" + errMsg;
+          await saveDebugScreenshot(page, "error-" + loginAttempt);
+          loginInProgress = false;
+          return null;
+        }
+
+        // 简易密码页面 — 优先处理（必须在登录成功判断之前）
+        if (status.hasPasscodePage || status.hasTwoFactor) {
+          console.log("[cornerCrawler] 检测到简易密码页面，点击普通登入...");
+          await page.evaluate(() => {
+            const btn = document.querySelector("#back_login");
+            if (btn) btn.click();
+          });
+          await new Promise(r => setTimeout(r, 3000));
+          // 重新输入账号密码
+          console.log("[cornerCrawler] 重新输入账号密码...");
+          const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
+          const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
+          await page.evaluate((usr, pw) => {
+            const u = document.getElementById('usr');
+            const p = document.getElementById('pwd');
+            if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
+            if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+          }, reUser, rePwd);
+          await new Promise(r => setTimeout(r, 500));
+          // 点击登录按钮
+          await page.evaluate(() => {
+            const btn = document.getElementById('btn_login');
+            if (btn) btn.click();
+          });
+          console.log("[cornerCrawler] 已重新点击登录按钮，继续等待...");
+          continue;
+        }
+
+        // 登录成功
+        if (status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector) {
+          console.log("[cornerCrawler] ✅ 登录成功！（轮次 " + (i + 1) + "）");
+          loginResult = { success: true };
+          break;
+        }
+
+        // 弹窗处理
+        if (status.hasPasscode) {
+          console.log("[cornerCrawler] 检测到密码弹窗，尝试关闭...");
+          await page.evaluate(() => {
+            const btn = document.querySelector("#C_no_btn, #no_btn, .btn_cancel");
+            if (btn) btn.click();
+          });
+        }
+
+        if (i % 5 === 4) {
+          console.log("[cornerCrawler] 登录轮询中... (" + (i + 1) + "/80) " + status.bodyTextSample.substring(0, 80));
+        }
+      }
+
+      // 登录超时 => 重试
+      if (!loginResult) {
+        console.error("[cornerCrawler] 登录超时（80s）(attempt " + loginAttempt + "/" + MAX_LOGIN_RETRIES + ")");
+        lastLoginErrorDetail = "login_timeout:登录超时（80s）";
+        await saveDebugScreenshot(page, "timeout-" + loginAttempt);
+        continue;
+      }
+
+      // 登录成功
+      console.log("[cornerCrawler] [耗时] 登录完成: " + (Date.now() - _loginStart) + "ms");
+      console.log("[cornerCrawler] ✅ 登录成功！");
+      lastLoginErrorDetail = null;
+      await saveDebugScreenshot(page, "success");
+
+      // ★ 登录成功后，监听 chk_login 响应来捕获 uid/ver（用于 API 模式跳过导航）
+      try {
+        page.on("response", async (response) => {
+          const url = response.url();
+          if (url.includes("chk_login")) {
+            try {
+              const text = await response.text();
+              const uidMatch = text.match(/<uid>([^<]+)<\/uid>/);
+              if (uidMatch) {
+                const verMatch = url.match(/[?&]ver=([^&]+)/);
+                cachedSessionInfo = {
+                  uid: uidMatch[1],
+                  ver: verMatch ? verMatch[1] : (cachedSessionInfo?.ver || ""),
+                  domain: new URL(url).origin
+                };
+                console.log("[cornerCrawler] 登录时从 chk_login 捕获 uid=" + cachedSessionInfo.uid.substring(0, 10) + "..., ver=" + cachedSessionInfo.ver);
+              }
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
+
+      try {
+        const saved = await page.cookies();
+        setLoginCookies(saved);
+        saveCookiesToDisk(saved);
+        console.log("[cornerCrawler] Cookie 已保存 (" + saved.length + " 条)");
+      } catch (_) {}
+      setSharedPage(page);
+      console.log("[cornerCrawler] [耗时] ensureLogin 完成: " + (Date.now() - _loginStart) + "ms");
+      await extractBalance(page);
+      console.log("[cornerCrawler] 登录完成，页面已就绪");
+      loginInProgress = false;
+      return page;
+
+    } catch (e) {
+      console.error("[cornerCrawler] 登录异常 (attempt " + loginAttempt + "/" + MAX_LOGIN_RETRIES + "):", e.message);
+      lastLoginErrorDetail = "login_exception:" + e.message;
+    } finally {
+      loginInProgress = false;
+      // 仅在登录失败时关闭 page，成功时已被 setSharedPage 接管
+      if (page && !page.isClosed() && getSharedPage() !== page) {
+        try { await page.close(); } catch (_) {}
+      }
+    }
+  }
+
+  // 所有重试都失败
+  console.error("[cornerCrawler] 登录失败: 已重试 " + MAX_LOGIN_RETRIES + " 次，放弃");
+  return null;
+}
+
+// ======================== 导航到角球页面 ========================
+// ======================== 导航到角球页面（简化版：Soccer → HDP&O/U → Corners） ========================
 export async function navigateToCorners(page) {
   console.log("[cornerCrawler] ===== Navigating to Corner page (simplified) =====");
 
@@ -1035,17 +1340,8 @@ async function setupXHRInterception(page) {
 
     try {
       const text = await response.text();
-      // Extract ver signature for subsequent API calls
-      if (url.includes("transform.php") || url.includes("transform_nl.php")) {
-        extractVerFromRequest(url);
-      }
-
-      // Try to parse as JSON (transform_nl.php returns JSON)
       let jsonData = null;
-      try { jsonData = JSON.parse(text); } catch (e) {
-        // transform.php returns XML, JSON parse failure is expected
-        // Continue to check for XML format match data
-      }
+      try { jsonData = JSON.parse(text); } catch (e) { return; }
 
       // transform.php 处理 - 扩展：尝试从任意响应提取比赛数据
       if (url.includes("transform.php") || url.includes("transform_nl.php")) {
@@ -1126,9 +1422,6 @@ async function setupXHRInterception(page) {
 
       // Betradar / Sportradar gismo API interception
       if (url.includes("betradar.hgapp0003.com") || url.includes("ws-fn-cdn001.akamaized.net")) {
-        // ★ gismo API：提取 token、matchId、角球数据
-        processGismoResponse(url, jsonData);
-
         if (saveCount < 5) {
           try {
             const fname = "debug/betradar-" + Date.now() + ".json";
@@ -1232,6 +1525,490 @@ async function setupXHRInterception(page) {
       }
     } catch (e) {}
   });
+}
+
+// ======================== XML 解析工具 ========================
+function extractGamesFromXML(xmlStr) {
+  const games = [];
+  // ★ 先尝试 <game> 标签，如果没有则尝试其他根标签
+  const rootTags = ["game", "match", "event", "data", "row"];
+  let found = false;
+  for (const tag of rootTags) {
+    const gameRegex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "g");
+    let m;
+    while ((m = gameRegex.exec(xmlStr)) !== null) {
+      found = true;
+      const obj = {};
+      const content = m[1];
+      // 匹配 <TAG>value</TAG> 格式
+      const tagRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
+      let tm;
+      while ((tm = tagRegex.exec(content)) !== null) {
+        obj[tm[1]] = tm[2].trim();
+      }
+      // 匹配自闭合标签 <TAG/> 或 <TAG />（值为空字符串）
+      const selfCloseRegex = /<(\w+)\s*\/>/g;
+      let sc;
+      while ((sc = selfCloseRegex.exec(content)) !== null) {
+        if (!(sc[1] in obj)) obj[sc[1]] = "";
+      }
+      // 匹配属性标签 <TAG attr="val"/>（值为属性字符串）
+      const attrTagRegex = /<(\w+)\s+([^>]*?)\/>/g;
+      let at;
+      while ((at = attrTagRegex.exec(content)) !== null) {
+        if (!(at[1] in obj)) obj[at[1]] = at[2].trim();
+      }
+      if (Object.keys(obj).length > 0) games.push(obj);
+    }
+    if (found) break;
+  }
+
+  // ★ 如果没有找到任何根标签，尝试直接提取所有二级标签（扁平结构）
+  if (games.length === 0) {
+    // 检测最外层标签（如 <xml>、<response> 等）
+    const outerMatch = xmlStr.match(/<(\w+)[^>]*>([\s\S]*)<\/\1>/);
+    if (outerMatch) {
+      const inner = outerMatch[2];
+      const obj = {};
+      const tagRegex = /<(\w+)>([\s\S]*?)<\/\1>/g;
+      let tm;
+      while ((tm = tagRegex.exec(inner)) !== null) {
+        obj[tm[1]] = tm[2].trim();
+      }
+      const selfCloseRegex = /<(\w+)\s*\/>/g;
+      let sc;
+      while ((sc = selfCloseRegex.exec(inner)) !== null) {
+        if (!(sc[1] in obj)) obj[sc[1]] = "";
+      }
+      if (Object.keys(obj).length > 0) games.push(obj);
+    }
+  }
+
+  return games;
+}
+
+// ======================== 分类型 XML 解析 ========================
+function parseCornerXML(xmlStr, rtype) {
+  if (!xmlStr || xmlStr === "FETCH_ERROR:" || typeof xmlStr !== "string" || xmlStr.startsWith("FETCH_ERROR:")) return [];
+
+  // ★ 诊断：打印原始 XML 前 300 字符
+  console.log(`[cornerCrawler] parseCornerXML(${rtype}): 原始XML前300字: ${xmlStr.substring(0, 300)}`);
+
+  const games = extractGamesFromXML(xmlStr);
+  console.log(`[cornerCrawler] parseCornerXML(${rtype}): 提取 ${games.length} 个 game 节点`);
+
+  if (games.length > 0) {
+    const sampleKeys = Object.keys(games[0]).join(", ");
+    console.log(`[cornerCrawler] parseCornerXML(${rtype}): 首个 game 的字段: ${sampleKeys}`);
+    // ★ 打印首个 game 的完整字段和值（用于确认实际字段名）
+    console.log(`[cornerCrawler] parseCornerXML(${rtype}): 首个 game 完整数据:`, JSON.stringify(games[0]).substring(0, 500));
+    if (rtype === "rcn") {
+      console.log(`[cornerCrawler] parseCornerXML(${rtype}): TEAM_H="${games[0].TEAM_H || games[0].team_h}", TEAM_C="${games[0].TEAM_C || games[0].team_c}", GID="${games[0].GID || games[0].gid}"`);
+    } else if (rtype === "rrnou") {
+      console.log(`[cornerCrawler] parseCornerXML(${rtype}): TEAM_H="${games[0].TEAM_H || games[0].team_h}", TEAM_C="${games[0].TEAM_C || games[0].team_c}", GID="${games[0].GID || games[0].gid}"`);
+    } else if (rtype === "get_game_more") {
+      // ★ 打印所有 game 节点的字段（get_game_more 可能返回多个盘口类型）
+      for (let gi = 0; gi < Math.min(games.length, 5); gi++) {
+        console.log(`[cornerCrawler] parseCornerXML(get_game_more): game[${gi}] 字段:`, Object.keys(games[gi]).join(", "));
+        console.log(`[cornerCrawler] parseCornerXML(get_game_more): game[${gi}] 数据:`, JSON.stringify(games[gi]).substring(0, 500));
+      }
+    }
+  }
+
+  if (rtype === "rcn" || rtype === "get_game_more") {
+    return games.filter(g => {
+      const ht = g.TEAM_H || g.team_h || "";
+      const at = g.TEAM_C || g.team_c || "";
+      // get_game_more 可能没有 TEAM_H/TEAM_C，但有盘口数据，不过滤掉
+      if (rtype === "get_game_more") return true;
+      return ht && at;
+    });
+  } else if (rtype === "rrnou") {
+    return games.filter(g => {
+      const ht = g.TEAM_H || g.team_h || "";
+      const at = g.TEAM_C || g.team_c || "";
+      return ht && at;
+    });
+  }
+  return games;
+}
+
+// ======================== API 模式：获取 uid/ver ========================
+async function getSessionInfo(page) {
+  // 1. 缓存
+  if (cachedSessionInfo?.uid && cachedSessionInfo?.ver) {
+    console.log("[cornerCrawler] API: 使用缓存的 uid/ver");
+    return cachedSessionInfo;
+  }
+
+  // 2. 拦截 XHR 请求提取 uid/ver（优先于 top.uid，因为跨域 iframe 中 top.uid 不可用）
+  console.log("[cornerCrawler] API: 尝试通过 XHR 拦截获取 uid/ver...");
+  try {
+    const info = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("XHR拦截超时(8s)")), 8000);
+      const handler = (request) => {
+        const url = request.url();
+        if (!url.includes("transform")) return;
+        const verMatch = url.match(/[?&]ver=([^&]+)/);
+        const ver = verMatch ? verMatch[1] : "";
+        const body = request.postData() || "";
+        const uidMatch = body.match(/uid=([^&]+)/);
+        const uid = uidMatch ? uidMatch[1] : "";
+        if (uid && ver && uid !== "undefined") {
+          clearTimeout(timeout);
+          page.off("request", handler);
+          let domain = HG_URL;
+          try { domain = new URL(url).origin; } catch (e) {}
+          resolve({ uid, ver, domain });
+        }
+      };
+      page.on("request", handler);
+      // 触发页面发请求
+      page.evaluate(() => {
+        try { document.getElementById("live_page")?.click(); } catch (e) {}
+      }).catch(() => {});
+    });
+    cachedSessionInfo = info;
+    console.log("[cornerCrawler] API: 通过 XHR 拦截获取 uid/ver 成功");
+    return info;
+  } catch (e) {
+    console.log("[cornerCrawler] API: XHR 拦截获取 uid/ver 失败: " + e.message);
+  }
+
+  // 3. 兜底：尝试 top.uid/top.ver（跨域 iframe 中通常不可用）
+  try {
+    const info = await page.evaluate(() => {
+      try {
+        const uid = top.uid || "";
+        const ver = top.ver || "";
+        return { uid, ver, domain: location.origin };
+      } catch (e) { return { uid: "", ver: "", domain: location.origin }; }
+    });
+    if (info.uid && info.ver) {
+      cachedSessionInfo = info;
+      console.log("[cornerCrawler] API: 通过 top.uid/ver 获取成功（兜底）");
+      return info;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+// ======================== API 模式：直接调用 transform.php ========================
+async function fetchCornerDataViaAPI(page) {
+  const _start = Date.now();
+  console.log("[cornerCrawler] ===== Fetching corner data via direct API =====");
+  try {
+    const sessionInfo = await getSessionInfo(page);
+    if (!sessionInfo) return null;
+
+    const ts = Date.now();
+    const listUrl = sessionInfo.domain + "/transform.php?ver=" + sessionInfo.ver;
+    const fetchOpts = { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest" }, credentials: "include" };
+
+    const rcnBody = ["uid=" + sessionInfo.uid, "ver=" + sessionInfo.ver, "langx=en-us",
+      "p=get_game_list", "p3type=", "date=", "gtype=ft", "showtype=live",
+      "rtype=rcn", "ltype=3", "filter=", "cupFantasy=N", "sorttype=L",
+      "specialClick=", "isFantasy=N", "ts=" + ts, "chgSortTS=" + ts].join("&");
+
+    const rnouBody = ["uid=" + sessionInfo.uid, "ver=" + sessionInfo.ver, "langx=en-us",
+      "p=get_game_list", "p3type=", "date=", "gtype=ft", "showtype=live",
+      "rtype=rrnou", "ltype=3", "filter=", "cupFantasy=N", "sorttype=L",
+      "specialClick=", "isFantasy=N", "ts=" + ts, "chgSortTS=" + (ts + 100)].join("&");
+
+    // ★ 并行请求角球列表 + HDP&O/U
+    console.log("[cornerCrawler] API: 并行请求 rcn + rrnou...");
+    const [listXml, rnouXml] = await page.evaluate(async (url, b1, b2, opts) => {
+      const [r1, r2] = await Promise.all([
+        fetch(url, { ...opts, body: b1 }).then(r => r.text()).catch(e => "FETCH_ERROR:" + e.message),
+        fetch(url, { ...opts, body: b2 }).then(r => r.text()).catch(e => "")
+      ]);
+      return [r1, r2];
+    }, listUrl, rcnBody, rnouBody, fetchOpts);
+    console.log("[cornerCrawler] API: 并行请求完成: " + (Date.now() - _start) + "ms");
+
+    if (!listXml || listXml.startsWith("FETCH_ERROR:")) {
+      console.log("[cornerCrawler] API: rcn 请求失败");
+      return null;
+    }
+
+    // ★ rcn XML 字段名是小写混合：gid, team_h, team_c, league, re_time, ratio_rouho, ior_ROUHO 等
+    const games = parseCornerXML(listXml, "rcn");
+    console.log("[cornerCrawler] API: 角球列表返回 " + games.length + " 场比赛");
+    if (games.length === 0) return [];
+
+    // ★ rrnou XML 字段名是全大写：GID, TEAM_H, TEAM_C, LEAGUE, SCORE_H, SCORE_C, RETIMESET, RATIO_RE, IOR_REH 等
+    const rnouGames = parseCornerXML(rnouXml, "rrnou");
+    const scoreMap = {};
+    for (const g of rnouGames) {
+      const ht = g.TEAM_H || g.team_h || "";
+      const at = g.TEAM_C || g.team_c || "";
+      const key = (ht + "|" + at).toLowerCase();
+      scoreMap[key] = { homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0, awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0, retime: g.RETIMESET || g.re_time || "" };
+    }
+    console.log("[cornerCrawler] API: HDP&O/U " + rnouGames.length + " 场，比分映射 " + Object.keys(scoreMap).length + " 条");
+
+    // 解析角球数据（rcn 格式，字段名小写混合）
+    const cornerMatches = [];
+    const needDetail = [];
+    for (const game of games) {
+      const homeTeam = game.TEAM_H || game.team_h || "";
+      const awayTeam = game.TEAM_C || game.team_c || "";
+      const league = game.LEAGUE || game.league || "";
+      if (!homeTeam || !awayTeam) continue;
+      const scoreKey = (homeTeam + "|" + awayTeam).toLowerCase();
+      const si = scoreMap[scoreKey] || {};
+
+      let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
+      // ★ 打印完整 game 数据用于调试（确认 rcn 实际返回哪些字段）
+      console.log(`[cornerCrawler] rcn game 完整数据:`, JSON.stringify(game).substring(0, 800));
+      // O/U — 先尝试角球专用字段，再回退到常规字段
+      const rouo = parseFloat(game.RATIO_CROUO || game.ratio_crouo || game.RATIO_ROUO || game.ratio_rouo || 0);
+      const iorouh = parseFloat(game.IOR_CROUO || game.ior_crouo || game.IOR_ROUH || game.ior_rouh || 0);
+      const iorouc = parseFloat(game.IOR_CROUU || game.ior_crouu || game.IOR_ROUC || game.ior_rouc || 0);
+      if (rouo > 0 || iorouh > 0) cornerOU = { line: rouo, overOdds: iorouh, underOdds: iorouc, locked: iorouh === 0 && iorouc === 0 };
+      // HDP — 先尝试角球专用字段，再回退到常规字段
+      const rre = game.RATIO_CRGH || game.ratio_crgh || game.RATIO_RE || game.ratio_re || "";
+      const iorh = parseFloat(game.IOR_CRGH || game.ior_crgh || game.IOR_REH || game.ior_reh || 0);
+      const iorc = parseFloat(game.IOR_CRGC || game.ior_crgc || game.IOR_REC || game.ior_rec || 0);
+      if (rre || iorh > 0) cornerHDP = { line: rre, homeOdds: iorh, awayOdds: iorc, locked: iorh === 0 && iorc === 0 };
+      // O/E — 大写优先
+      const ioo = parseFloat(game.IOR_REOO || game.ior_reoo || 0);
+      const ioe = parseFloat(game.IOR_REOE || game.ior_reoe || 0);
+      if (ioo > 0 || ioe > 0) cornerOE = { oddOdds: ioo, evenOdds: ioe, locked: ioo === 0 && ioe === 0 };
+      // ★ NEXT CORNER — 使用 rcn 专用字段 WTYPE_RNC / IOR_RNCH / IOR_RNCC
+      const rncType = game.WTYPE_RNC || game.wtype_rnc || "";
+      const rnch = parseFloat(game.IOR_RNCH || game.ior_rnch || 0);
+      const rncc = parseFloat(game.IOR_RNCC || game.ior_rncc || 0);
+      if (rnch > 0 || rncc > 0) nextCorner = { corner: rncType, homeOdds: rnch, awayOdds: rncc, locked: rnch === 0 && rncc === 0 };
+
+      // ★ 时间 — 大写优先
+      const retime = game.RETIMESET || game.re_time || si.retime || "";
+      let elapsed = 0;
+      const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
+      if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+      else if (retime.includes("HT")) elapsed = 45;
+
+      const m = {
+        matchId: game.GID || game.gid || "api_" + cornerMatches.length,
+        matchName: homeTeam + " vs " + awayTeam, homeTeam, awayTeam, league,
+        time: retime, elapsedMinutes: elapsed,
+        homeScore: si.homeScore || 0,
+        awayScore: si.awayScore || 0,
+        totalCorners: 0, homeCorners: 0, awayCorners: 0,
+        _cornerSource: "api",
+        cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
+        cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,
+        cornerOU, cornerHDP, nextCorner, cornerOE,
+        handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE }),
+        dataQuality: (cornerHDP || cornerOU || nextCorner) ? "full" : "partial",
+        timestamp: Date.now(), triggeredStrategies: [], ecid: game.ECID || game.ecid || ""
+      };
+      console.log(`[cornerCrawler] 解析比赛: ${homeTeam} vs ${awayTeam}, cornerOU=${JSON.stringify(cornerOU)}, cornerHDP=${JSON.stringify(cornerHDP)}, nextCorner=${JSON.stringify(nextCorner)}, cornerOE=${JSON.stringify(cornerOE)}, ECID=${game.ECID || game.ecid}`);
+      cornerMatches.push(m);
+      // 放宽触发条件：缺少盘口数据时，尝试用 GID 作为 ecid
+      const ecid = game.ECID || game.ecid || game.GID || game.gid || "";
+      if (ecid && (!cornerOU || !cornerHDP)) needDetail.push({ idx: cornerMatches.length - 1, ecid: ecid });
+    }
+
+    // ★ 并行请求 get_game_more
+    if (needDetail.length > 0) {
+      console.log("[cornerCrawler] API: 并行请求 " + needDetail.length + " 个 get_game_more...");
+      const bodies = needDetail.map(g => ["uid=" + sessionInfo.uid, "ver=" + sessionInfo.ver, "langx=en-us",
+        "p=get_game_more", "from=right_panel", "gtype=ft", "showtype=live", "ltype=3", "ecid=" + g.ecid].join("&"));
+      const results = await page.evaluate(async (url, bodies, opts) => {
+        return await Promise.all(bodies.map(b => fetch(url, { ...opts, body: b }).then(r => r.text()).catch(() => "")));
+      }, listUrl, bodies, fetchOpts);
+      for (let i = 0; i < needDetail.length; i++) {
+        // ★ 诊断：打印 get_game_more 原始响应
+        const rawResp = results[i] || "";
+        console.log(`[cornerCrawler] get_game_more[${i}] 原始响应前500字: ${rawResp.substring(0, 500)}`);
+        if (!rawResp || rawResp.length < 10) {
+          console.log(`[cornerCrawler] get_game_more[${i}] 响应为空或过短，跳过`);
+          continue;
+        }
+        const moreGames = parseCornerXML(rawResp, "get_game_more");
+        const m = cornerMatches[needDetail[i].idx];
+        if (moreGames.length === 0) {
+          console.log(`[cornerCrawler] get_game_more[${i}] 解析出 0 个 game 节点，原始响应前1000字: ${rawResp.substring(0, 1000)}`);
+          continue;
+        }
+
+        console.log(`[cornerCrawler] get_game_more[${i}]: 返回 ${moreGames.length} 个 game 节点`);
+
+        // ★ 辅助函数：大小写兼容获取字段值
+        const gv = (obj, ...keys) => {
+          for (const k of keys) { if (obj[k] != null && obj[k] !== "") return obj[k]; }
+          return "";
+        };
+        const gvf = (obj, ...keys) => {
+          for (const k of keys) { const v = parseFloat(obj[k]); if (!isNaN(v) && v !== 0) return v; }
+          return 0;
+        };
+
+        // ★ 遍历所有 game 节点，每个节点可能包含不同盘口类型
+        for (const d of moreGames) {
+          console.log(`[cornerCrawler] get_game_more game节点: 字段=`, Object.keys(d).join(","));
+          console.log(`[cornerCrawler] get_game_more game节点: 数据=`, JSON.stringify(d).substring(0, 800));
+
+          // ★ 角球让球 (Corner Handicap) — 不依赖 SW 开关，直接尝试读取字段值
+          if (!m.cornerHDP) {
+            const h = gvf(d, "IOR_CRGH", "ior_CRGH", "IOR_REH", "ior_reh", "IOR_HDPH", "ior_hdph");
+            const c = gvf(d, "IOR_CRGC", "ior_CRGC", "IOR_REC", "ior_rec", "IOR_HDPC", "ior_hdpc");
+            const line = gv(d, "RATIO_CRGH", "ratio_CRGH", "RATIO_RE", "ratio_re", "RATIO_HDP", "ratio_hdp");
+            if (h > 0 || c > 0 || line) {
+              m.cornerHDP = {
+                line: line || "",
+                homeOdds: h, awayOdds: c, locked: h === 0 && c === 0
+              };
+              m.cornerHandicap = parseAsianHandicap(m.cornerHDP.line);
+              m.cornerOdds = h;
+            }
+          }
+
+          // ★ 角球大小 (Corner O/U) — 不依赖 SW 开关，直接尝试读取字段值
+          if (!m.cornerOU) {
+            const co = gvf(d, "RATIO_CROUO", "ratio_CROUO", "RATIO_ROUO", "ratio_rouo", "RATIO_CROU", "ratio_crou");
+            const ioo = gvf(d, "IOR_CROUO", "ior_CROUO", "IOR_ROUH", "ior_rouh", "IOR_CROUH", "ior_crouh");
+            const iou = gvf(d, "IOR_CROUU", "ior_CROUU", "IOR_ROUC", "ior_rouc", "IOR_CROUC", "ior_crouc");
+            if (co > 0 || ioo > 0) {
+              m.cornerOU = { line: co, overOdds: ioo, underOdds: iou, locked: ioo === 0 && iou === 0 };
+            }
+          }
+
+          // ★ 下个角球 (Next Corner) — 不依赖 SW 开关，直接尝试读取字段值
+          if (!m.nextCorner) {
+            const nh = gvf(d, "IOR_CRNH", "ior_CRNH", "IOR_CROUH", "ior_CROUH",
+              "IOR_CROU_NEXT_H", "ior_crou_next_h", "IOR_NEXT_H", "ior_next_h");
+            const nc = gvf(d, "IOR_CRNC", "ior_CRNC", "IOR_CROUC", "ior_CROUC",
+              "IOR_CROU_NEXT_C", "ior_crou_next_c", "IOR_NEXT_C", "ior_next_c");
+            const cornerLine = gv(d, "RATIO_CRN", "ratio_CRN", "RATIO_CROUH", "ratio_CROUH",
+              "RATIO_CROU_NEXT", "ratio_crou_next", "RATIO_NEXT", "ratio_next");
+            if (nh > 0 || nc > 0) {
+              m.nextCorner = {
+                corner: cornerLine || "",
+                homeOdds: nh, awayOdds: nc, locked: nh === 0 && nc === 0
+              };
+            }
+          }
+
+          // ★ 角球单双 (Corner O/E) — 不依赖 SW 开关，直接尝试读取字段值
+          if (!m.cornerOE) {
+            const ioo = gvf(d, "IOR_REOO", "ior_REOO", "IOR_CROO", "ior_CROO", "IOR_CROEO", "ior_croeo");
+            const ioe = gvf(d, "IOR_REOE", "ior_REOE", "IOR_CROE", "ior_CROE", "IOR_CROEE", "ior_croee");
+            if (ioo > 0 || ioe > 0) {
+              m.cornerOE = { oddOdds: ioo, evenOdds: ioe, locked: ioo === 0 && ioe === 0 };
+            }
+          }
+        }
+
+        // 更新 handicaps 和 dataQuality
+        m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE });
+        m.dataQuality = (m.cornerHDP || m.cornerOU || m.nextCorner) ? "full" : "partial";
+        console.log(`[cornerCrawler] get_game_more 结果: ${m.homeTeam} vs ${m.awayTeam}, cornerOU=${JSON.stringify(m.cornerOU)}, cornerHDP=${JSON.stringify(m.cornerHDP)}, nextCorner=${JSON.stringify(m.nextCorner)}, cornerOE=${JSON.stringify(m.cornerOE)}`);
+      }
+    }
+
+    console.log("[cornerCrawler] API: 完成 " + cornerMatches.length + " 场，耗时 " + (Date.now() - _start) + "ms");
+    for (const m of cornerMatches.slice(0, 5)) {
+      const h = m.cornerHDP || {}, o = m.cornerOU || {};
+      console.log("  " + (m.league || "") + ": " + m.homeTeam + " vs " + m.awayTeam +
+        (m.elapsedMinutes ? " @" + m.elapsedMinutes + "'" : "") +
+        (m.homeScore || m.awayScore ? " " + m.homeScore + "-" + m.awayScore : "") +
+        (h.line ? " hdp:" + h.line : "") + (o.line ? " ou:" + o.line : ""));
+    }
+
+    // ★ 构建 mainMarkets 数据（用于前端 "让球和大小" tab）
+    // rrnou 字段名全大写：TEAM_H, TEAM_C, LEAGUE, SCORE_H, SCORE_C, RETIMESET, RATIO_RE, IOR_REH, RATIO_ROUO, IOR_ROUH 等
+    // ★ 还包含 A_sub_*, B_sub_*, C_sub_* 子盘口数据
+    const mainMarkets = {};
+    for (const g of rnouGames) {
+      const key = (g.TEAM_H || g.team_h || "") + "|" + (g.TEAM_C || g.team_c || "");
+      const gid = g.GID || g.gid || "";
+      const hdpItems = [];
+      const ouItems = [];
+      const hdpHalfItems = [];
+      const ouHalfItems = [];
+
+      // ★ 诊断：打印首个 rrnou game 的完整数据
+      if (Object.keys(mainMarkets).length === 0) {
+        console.log(`[cornerCrawler] rrnou 首个 game 完整数据:`, JSON.stringify(g).substring(0, 2000));
+      }
+
+      // ★ 辅助函数：提取指定前缀的盘口数据
+      const extractMarketItems = (prefix, g) => {
+        const p = prefix ? prefix + "_" : "";
+        const items = { hdp: [], ou: [], hdpHalf: [], ouHalf: [] };
+        // 全场让球
+        const ratioRe = g[p + "RATIO_RE"] || "";
+        const iorReh = parseFloat(g[p + "IOR_REH"]) || 0;
+        const iorRec = parseFloat(g[p + "IOR_REC"]) || 0;
+        if (ratioRe || iorReh > 0) {
+          items.hdp.push({ line: ratioRe, homeOdds: iorReh, awayOdds: iorRec });
+        }
+        // 全场大小
+        const ratioRouo = parseFloat(g[p + "RATIO_ROUO"]) || 0;
+        const iorRouh = parseFloat(g[p + "IOR_ROUH"]) || 0;
+        const iorRouc = parseFloat(g[p + "IOR_ROUC"]) || 0;
+        if (ratioRouo > 0 || iorRouh > 0) {
+          items.ou.push({ line: ratioRouo, overOdds: iorRouh, underOdds: iorRouc });
+        }
+        // 上半场让球
+        const ratioHre = g[p + "RATIO_HRE"] || "";
+        const iorHreh = parseFloat(g[p + "IOR_HREH"]) || 0;
+        const iorHrec = parseFloat(g[p + "IOR_HREC"]) || 0;
+        if (ratioHre || iorHreh > 0) {
+          items.hdpHalf.push({ line: ratioHre, homeOdds: iorHreh, awayOdds: iorHrec });
+        }
+        // 上半场大小
+        const ratioHrouo = parseFloat(g[p + "RATIO_HROUO"]) || 0;
+        const iorHrouh = parseFloat(g[p + "IOR_HROUH"]) || 0;
+        const iorHrouc = parseFloat(g[p + "IOR_HROUC"]) || 0;
+        if (ratioHrouo > 0 || iorHrouh > 0) {
+          items.ouHalf.push({ line: ratioHrouo, overOdds: iorHrouh, underOdds: iorHrouc });
+        }
+        return items;
+      };
+
+      // 主盘口
+      const main = extractMarketItems("", g);
+      hdpItems.push(...main.hdp);
+      ouItems.push(...main.ou);
+      hdpHalfItems.push(...main.hdpHalf);
+      ouHalfItems.push(...main.ouHalf);
+
+      // A/B/C 子盘口
+      for (const sub of ["A_sub", "B_sub", "C_sub"]) {
+        const subItems = extractMarketItems(sub, g);
+        hdpItems.push(...subItems.hdp);
+        ouItems.push(...subItems.ou);
+        hdpHalfItems.push(...subItems.hdpHalf);
+        ouHalfItems.push(...subItems.ouHalf);
+      }
+
+      if (hdpItems.length > 0 || ouItems.length > 0 || hdpHalfItems.length > 0 || ouHalfItems.length > 0) {
+        const marketData = {
+          league: g.LEAGUE || g.league || "",
+          time: g.RETIMESET || g.re_time || "",
+          homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
+          awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
+          hdp: hdpItems,
+          ou: ouItems,
+          hdpHalf: hdpHalfItems,
+          ouHalf: ouHalfItems
+        };
+        // ★ 同时使用 homeTeam|awayTeam 和 gid 作为 key，方便前端匹配
+        mainMarkets[key] = marketData;
+        if (gid) mainMarkets[gid] = marketData;
+      }
+    }
+    console.log("[cornerCrawler] mainMarkets: " + Object.keys(mainMarkets).length + " 场有盘口数据");
+
+    return { matches: cornerMatches, mainMarkets };
+  } catch (e) {
+    console.error("[cornerCrawler] API: 失败:", e.message);
+    return null;
+  }
 }
 
 // ======================== 数据映射 ========================
@@ -1356,50 +2133,290 @@ function buildHandicapsArray(m) {
   return result;
 }
 
-// ======================== 主函数：爬取角球比赛数据 ========================
+// ======================== 纯 HTTP 数据获取路径 ========================
+
 /**
- * 激活 Soccer 标签页，确保页面加载了角球数据
- * @param {Page} page - Puppeteer 页面实例
- * @returns {Promise<boolean>} - 是否成功激活
+ * 等待页面发起 transform.php 请求，从中提取 uid 和 ver
+ * @param {import('puppeteer').Page} page
+ * @returns {Promise<{uid: string, ver: string} | null>}
  */
-async function activateSoccerTab(page) {
-    console.log('[cornerCrawler] 导航到 Soccer 标签页...');
-    try {
-        // 1. 尝试等待 Soccer 标签可见
-        try {
-            await page.waitForSelector('#old_ft_live_league:not([style*="display: none"])', { timeout: 5000 });
-        } catch (e) {
-            // 2. 如果不可见，检查元素是否存在（不要求可见）
-            const exists = await page.evaluate(() => !!document.getElementById('old_ft_live_league'));
-            if (!exists) {
-                console.warn('[cornerCrawler] #old_ft_live_league 元素不存在');
-                return false;
-            }
-            console.log('[cornerCrawler] #old_ft_live_league 存在但不可见，尝试直接点击');
-        }
+async function waitForTransformRequest(page) {
+  return new Promise((resolve) => {
+    const handler = async (response) => {
+      const url = response.url();
+      if (!url.includes("transform.php")) return;
 
-        // 3. 点击（两种方式确保点击成功）
-        try { await page.click('#old_ft_live_league'); } catch (_) {}
-        await page.evaluate(() => {
-            const btn = document.getElementById("old_ft_live_league");
-            if (btn) btn.click();
-        });
-        console.log('[cornerCrawler] 已点击 Soccer 标签');
+      // 从 URL 提取 ver
+      const verMatch = url.match(/[?&]ver=([^&]+)/);
+      const ver = verMatch ? verMatch[1] : null;
 
-        // 4. 等待 transform.php 请求被发出（容错：超时不阻断）
-        try {
-            await page.waitForResponse((res) => res.url().includes('transform.php'), { timeout: 10000 });
-            console.log('[cornerCrawler] transform.php 请求已发出');
-        } catch (e) {
-            console.log('[cornerCrawler] 等待 transform.php 请求超时，继续...');
-        }
-        return true;
-    } catch (e) {
-        console.warn('[cornerCrawler] 导航到 Soccer 标签页失败:', e.message);
-        return false;
-    }
+      // 从请求体提取 uid
+      const request = response.request();
+      const postData = request.postData() || "";
+      const uidMatch = postData.match(/uid=([^&]+)/);
+      const uid = uidMatch ? uidMatch[1] : null;
+
+      if (uid && ver) {
+        page.off("response", handler);
+        console.log("[cornerCrawler] 从 transform.php 拦截到 uid=" + uid.substring(0, 10) + "... ver=" + ver.substring(0, 16) + "...");
+        resolve({ uid, ver });
+      }
+    };
+    page.on("response", handler);
+    // 10秒超时
+    setTimeout(() => {
+      page.off("response", handler);
+      console.warn("[cornerCrawler] waitForTransformRequest 超时（10秒）");
+      resolve(null);
+    }, 10000);
+  });
 }
 
+async function _crawlViaPureHttp() {
+  // 1. 先尝试从内存/磁盘加载并验证凭证（快速恢复路径，不启动浏览器）
+  let creds = null;
+  try {
+    const validation = await loadAndValidate();
+    if (validation.valid && validation.credentials) {
+      creds = validation.credentials;
+      console.log("[cornerCrawler] 纯HTTP: 凭证验证通过（快速恢复，无需浏览器）");
+    }
+  } catch (e) {
+    console.warn("[cornerCrawler] 纯HTTP: loadAndValidate 异常:", e.message);
+  }
+
+  // 2. 凭证无效或缺失时，优先尝试 autoLogin（独立浏览器，登录后关闭）
+  if (!creds) {
+    console.log("[cornerCrawler] 纯HTTP: 凭证无效，尝试 autoLogin...");
+    try {
+      const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
+      const loginResult = await autoLoginAndGetCredentials({
+        username: process.env.HG_USERNAME || "",
+        password: process.env.HG_PASSWORD || "",
+      });
+      if (loginResult.success && loginResult.uid && loginResult.ver) {
+        updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
+        creds = loadCredentials();
+        console.log("[cornerCrawler] 纯HTTP: autoLogin 成功获取凭证");
+      }
+    } catch (e) {
+      console.warn("[cornerCrawler] 纯HTTP: autoLogin 失败:", e.message);
+    }
+  }
+
+  // 3. autoLogin 也失败时，回退到 hgCrawlerLogin（启动共享浏览器）
+  if (!creds) {
+    console.log("[cornerCrawler] 纯HTTP: 尝试共享浏览器登录...");
+    const loginResult = await hgCrawlerLogin({
+      username: process.env.HG_USERNAME || "",
+      password: process.env.HG_PASSWORD || "",
+    });
+    if (!loginResult.success) {
+      console.warn("[cornerCrawler] 纯HTTP: hgCrawlerService 登录失败:", loginResult.error);
+      return null;
+    }
+    // 从页面拦截 transform.php 提取 uid/ver
+    const { getSharedPage } = await import("./browserPool.js");
+    const page = getSharedPage();
+    if (page) {
+      const credentials = await waitForTransformRequest(page);
+      if (credentials) {
+        const cookies = await page.cookies();
+        updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+        console.log("[cornerCrawler] 纯HTTP: 凭证已从页面拦截保存");
+      }
+    }
+    creds = loadCredentials();
+    if (!creds) {
+      console.warn("[cornerCrawler] 纯HTTP: 登录后凭证仍不完整");
+      return null;
+    }
+  }
+
+  const { uid, ver, cookieStr } = creds;
+
+  console.log("[cornerCrawler] 纯HTTP: 并行请求 rcn + rrnou...");
+  const [rcnResult, rnouResult] = await Promise.all([
+    fetchCornerData(uid, ver, cookieStr),
+    fetchHdpOuData(uid, ver, cookieStr),
+  ]);
+
+  // 检测 CheckEMNU 响应（今日数据可能需要 EMNU 验证）
+  if (rcnResult.data === "CheckEMNU") {
+    console.warn("[cornerCrawler] 纯HTTP: rcn 返回 CheckEMNU，跳过今日角球数据");
+    rcnResult.data = "";
+  }
+  if (rnouResult.data === "CheckEMNU") {
+    console.warn("[cornerCrawler] 纯HTTP: rnou 返回 CheckEMNU，跳过今日比分数据");
+    rnouResult.data = "";
+  }
+
+  if (rcnResult.expired || rnouResult.expired) {
+    console.warn("[cornerCrawler] 纯HTTP: 会话已过期，尝试重新登录...");
+    invalidateCookieCache();
+    const loginResult = await hgCrawlerLogin({
+      username: process.env.HG_USERNAME || "",
+      password: process.env.HG_PASSWORD || "",
+    });
+    if (!loginResult.success) return null;
+    // 从页面拦截 transform.php 提取 uid/ver
+    const { getSharedPage: getSharedPage2 } = await import("./browserPool.js");
+    const page2 = getSharedPage2();
+    if (page2) {
+      const credentials = await waitForTransformRequest(page2);
+      if (credentials) {
+        const cookies = await page2.cookies();
+        updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+      }
+    }
+    const newCreds = loadCredentials();
+    if (!newCreds) return null;
+    const [retryRcn, retryRnou] = await Promise.all([
+      fetchCornerData(newCreds.uid, newCreds.ver, newCreds.cookieStr),
+      fetchHdpOuData(newCreds.uid, newCreds.ver, newCreds.cookieStr),
+    ]);
+    if (retryRcn.expired) return null;
+    rcnResult.data = retryRcn.data;
+    rcnResult.expired = retryRcn.expired;
+    rnouResult.data = retryRnou.data;
+    rnouResult.expired = retryRnou.expired;
+  }
+
+  const rcnXml = rcnResult.data;
+  const rnouXml = rnouResult.data;
+  if (!rcnXml || rcnXml.length < 10) {
+    console.warn("[cornerCrawler] 纯HTTP: rcn 数据为空");
+    return null;
+  }
+
+  const games = parseCornerXML(rcnXml, "rcn");
+  console.log("[cornerCrawler] 纯HTTP: 角球列表返回 " + games.length + " 场比赛");
+  if (games.length === 0) return null;
+
+  const rnouGames = parseCornerXML(rnouXml || "", "rrnou");
+  const scoreMap = {};
+  for (const g of rnouGames) {
+    const ht = g.TEAM_H || g.team_h || "";
+    const at = g.TEAM_C || g.team_c || "";
+    const key = (ht + "|" + at).toLowerCase();
+    scoreMap[key] = {
+      homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
+      awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
+      retime: g.RETIMESET || g.re_time || ""
+    };
+  }
+
+  const cornerMatches = [];
+  const needDetail = [];
+  for (const game of games) {
+    const homeTeam = game.TEAM_H || game.team_h || "";
+    const awayTeam = game.TEAM_C || game.team_c || "";
+    const league = game.LEAGUE || game.league || "";
+    if (!homeTeam || !awayTeam) continue;
+    const scoreKey = (homeTeam + "|" + awayTeam).toLowerCase();
+    const si = scoreMap[scoreKey] || {};
+
+    let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
+    const rouo = parseFloat(game.RATIO_CROUO || game.ratio_crouo || game.RATIO_ROUO || game.ratio_rouo || 0);
+    const iorouh = parseFloat(game.IOR_CROUO || game.ior_crouo || game.IOR_ROUH || game.ior_rouh || 0);
+    const iorouc = parseFloat(game.IOR_CROUU || game.ior_crouu || game.IOR_ROUC || game.ior_rouc || 0);
+    if (rouo > 0 || iorouh > 0) cornerOU = { line: rouo, overOdds: iorouh, underOdds: iorouc, locked: iorouh === 0 && iorouc === 0 };
+    const rre = game.RATIO_CRGH || game.ratio_crgh || game.RATIO_RE || game.ratio_re || "";
+    const iorh = parseFloat(game.IOR_CRGH || game.ior_crgh || game.IOR_REH || game.ior_reh || 0);
+    const iorc = parseFloat(game.IOR_CRGC || game.ior_crgc || game.IOR_REC || game.ior_rec || 0);
+    if (rre || iorh > 0) cornerHDP = { line: rre, homeOdds: iorh, awayOdds: iorc, locked: iorh === 0 && iorc === 0 };
+    const ioo = parseFloat(game.IOR_REOO || game.ior_reoo || 0);
+    const ioe = parseFloat(game.IOR_REOE || game.ior_reoe || 0);
+    if (ioo > 0 || ioe > 0) cornerOE = { oddOdds: ioo, evenOdds: ioe, locked: ioo === 0 && ioe === 0 };
+    const rncType = game.WTYPE_RNC || game.wtype_rnc || "";
+    const rnch = parseFloat(game.IOR_RNCH || game.ior_rnch || 0);
+    const rncc = parseFloat(game.IOR_RNCC || game.ior_rncc || 0);
+    if (rnch > 0 || rncc > 0) nextCorner = { corner: rncType, homeOdds: rnch, awayOdds: rncc, locked: rnch === 0 && rncc === 0 };
+
+    const retime = game.RETIMESET || game.re_time || si.retime || "";
+    let elapsed = 0;
+    const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
+    if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+    else if (retime.includes("HT")) elapsed = 45;
+
+    const m = {
+      matchId: game.GID || game.gid || "api_" + cornerMatches.length,
+      matchName: homeTeam + " vs " + awayTeam, homeTeam, awayTeam, league,
+      time: retime, elapsedMinutes: elapsed,
+      homeScore: si.homeScore || 0, awayScore: si.awayScore || 0,
+      totalCorners: 0, homeCorners: 0, awayCorners: 0,
+      _cornerSource: "api",
+      cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
+      cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,
+      cornerOU, cornerHDP, nextCorner, cornerOE,
+      handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE }),
+      dataQuality: (cornerHDP || cornerOU || nextCorner) ? "full" : "partial",
+      timestamp: Date.now(), triggeredStrategies: [], ecid: game.ECID || game.ecid || ""
+    };
+    cornerMatches.push(m);
+    const ecid = game.ECID || game.ecid || game.GID || game.gid || "";
+    if (ecid && (!cornerOU || !cornerHDP)) needDetail.push({ idx: cornerMatches.length - 1, ecid: ecid });
+  }
+
+  if (needDetail.length > 0) {
+    console.log("[cornerCrawler] 纯HTTP: 并行请求 " + needDetail.length + " 个 get_game_more...");
+    const detailPromises = needDetail.map(g =>
+      fetchGameDetail(uid, ver, cookieStr, g.ecid).catch(() => ({ data: "", expired: false }))
+    );
+    const detailResults = await Promise.all(detailPromises);
+    for (let i = 0; i < needDetail.length; i++) {
+      const rawResp = detailResults[i].data || "";
+      if (!rawResp || rawResp.length < 10) continue;
+      const moreGames = parseCornerXML(rawResp, "get_game_more");
+      const m = cornerMatches[needDetail[i].idx];
+      if (moreGames.length === 0) continue;
+      const gv = (obj, ...keys) => { for (const k of keys) { if (obj[k] != null && obj[k] !== "") return obj[k]; } return ""; };
+      const gvf = (obj, ...keys) => { for (const k of keys) { const v = parseFloat(obj[k]); if (!isNaN(v) && v !== 0) return v; } return 0; };
+      for (const d of moreGames) {
+        const ptype = gv(d, "PTYPE", "ptype");
+        if (!ptype || !ptype.includes("Corners")) continue;
+        if (!m.cornerOU) {
+          const rouo = gvf(d, "RATIO_CROUO", "ratio_crouo", "RATIO_ROUO", "ratio_rouo");
+          const iorouh = gvf(d, "IOR_CROUO", "ior_crouo", "IOR_ROUH", "ior_rouh");
+          const iorouc = gvf(d, "IOR_CROUU", "ior_crouu", "IOR_ROUC", "ior_rouc");
+          if (rouo > 0 || iorouh > 0) m.cornerOU = { line: rouo, overOdds: iorouh, underOdds: iorouc, locked: iorouh === 0 && iorouc === 0 };
+        }
+        if (!m.cornerHDP) {
+          const rre = gv(d, "RATIO_CRGH", "ratio_crgh", "RATIO_RE", "ratio_re");
+          const iorh = gvf(d, "IOR_CRGH", "ior_crgh", "IOR_REH", "ior_reh");
+          const iorc = gvf(d, "IOR_CRGC", "ior_crgc", "IOR_REC", "ior_rec");
+          if (rre || iorh > 0) {
+            m.cornerHDP = { line: rre, homeOdds: iorh, awayOdds: iorc, locked: iorh === 0 && iorc === 0 };
+            m.cornerHandicap = parseAsianHandicap(rre);
+            m.cornerOdds = iorh;
+          }
+        }
+      }
+      m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE });
+      m.dataQuality = (m.cornerHDP || m.cornerOU || m.nextCorner) ? "full" : "partial";
+    }
+  }
+
+  const mainMarkets = {};
+  for (const m of cornerMatches) {
+    if (m.cornerOU || m.cornerHDP) {
+      mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE };
+    }
+  }
+
+  console.log("[cornerCrawler] 纯HTTP: 完成，" + cornerMatches.length + " 场比赛, mainMarkets: " + Object.keys(mainMarkets).length);
+  for (const m of cornerMatches) { m._dataSource = "http"; }
+
+  return {
+    success: true,
+    data: { matches: cornerMatches, allText: [], allElements: [] },
+    count: cornerMatches.length,
+    timestamp: new Date().toISOString(),
+    mainMarkets: mainMarkets,
+  };
+}
+
+// ======================== 主函数：爬取角球比赛数据 ========================
 export async function crawlCornerMatches() {
   // 并发保护：如果已有爬取在进行中，直接返回
   if (crawlingLock) {
@@ -1419,6 +2436,19 @@ export async function crawlCornerMatches() {
     }
   }, LOCK_TIMEOUT_MS);
 
+  // ★ 纯 HTTP 快速路径：优先使用 axios 直接调用 API
+  try {
+    const httpResult = await _crawlViaPureHttp();
+    if (httpResult) {
+      crawlingLock = false;
+      clearTimeout(lockTimeout);
+      return httpResult;
+    }
+    console.log("[cornerCrawler] 纯 HTTP 路径失败，回退到浏览器模式...");
+  } catch (e) {
+    console.warn("[cornerCrawler] 纯 HTTP 路径异常:", e.message);
+  }
+
   // 检查浏览器是否已被用户手动关闭，不自动重启
   if (browserExplicitlyClosed) {
     console.log("[cornerCrawler] 浏览器已被手动关闭，跳过爬取");
@@ -1427,163 +2457,95 @@ export async function crawlCornerMatches() {
     return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "browser_closed" };
   }
 
-  // ★ API 优先模式：纯 API 获取数据（快速，无需页面导航）
-  if (process.env.CORNER_API_MODE === "true") {
-    console.log("[cornerCrawler] CORNER_API_MODE=true，使用纯 API 模式");
-    try {
-      let page = getSharedPage();
-
-      // ★ 用 isPageLoggedIn() 检查登录状态
-      let loginOk = false;
-      try {
-        loginOk = await isPageLoggedIn(page);
-      } catch (e) {}
-
-      if (!loginOk) {
-        console.log('[cornerCrawler] 页面未登录，执行完整登录...');
-        const result = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-        if (!result.success || !result.page) throw new Error(result?.error || 'StableLogin 登录失败');
-        page = result.page;
-      } else {
-        console.log('[cornerCrawler] 页面已登录，跳过登录步骤');
-      }
-
-      // ★ 设置 XHR 拦截（用于捕获 gismo 数据）
-      try {
-        await setupXHRInterception(page);
-      } catch (e) {
-        console.warn("[cornerCrawler] XHR interception setup failed:", e.message);
-      }
-
-      // ★ 主动拦截 transform.php 请求，提取 ver 签名
-      if (!global.HG_VER) {
-        try {
-          console.log('[cornerCrawler] 等待 transform.php 请求以提取 ver...');
-          const verResponse = await page.waitForResponse(
-            (res) => res.url().includes('transform.php') && res.url().includes('ver='),
-            { timeout: 15000 }
-          ).catch(() => null);
-
-          if (verResponse) {
-            const verUrl = verResponse.url();
-            const verMatch = verUrl.match(/ver=([^&\s]+)/);
-            if (verMatch && verMatch[1]) {
-              global.HG_VER = verMatch[1];
-              console.log('[cornerCrawler] 从请求中提取到 ver:', global.HG_VER.substring(0, 16) + '...');
-            }
-          } else {
-            console.warn('[cornerCrawler] 等待 transform.php 请求超时 (15s)，ver 将由 fallback 链获取');
-          }
-        } catch (e) {
-          console.warn('[cornerCrawler] ver 拦截失败:', e.message);
-        }
-      }
-
-      // ★ 纯 API 获取比赛数据（fetchCornerMatches 并行获取 rb + rcn）
-      const apiResult = await fetchCornerMatches(page);
-      console.log("[cornerCrawler] API 获取完成: " + (apiResult.matches?.length || 0) + " 场比赛 (角球=" + (apiResult.cornerMatches?.length || 0) + " 让球=" + (apiResult.hdpMatches?.length || 0) + " rb=" + apiResult.rbCount + " rcn=" + apiResult.rcnCount + ")");
-
-      if (!apiResult.success || !apiResult.matches?.length) {
-        console.log("[cornerCrawler] API 模式未获取到比赛数据");
-        crawlingLock = false;
-        clearTimeout(lockTimeout);
-        return { success: false, data: { matches: [], cornerMatches: [], hdpMatches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "api_no_matches" };
-      }
-
-      const matches = apiResult.matches;
-      const cornerMatches = apiResult.cornerMatches || [];
-      const hdpMatches = apiResult.hdpMatches || [];
-
-      // ★ gismo 补充角球数
-      const gismoStatus = getGismoStatus();
-      if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0 && matches.length > 0) {
-        console.log("[cornerCrawler] gismo 补充: token=" + gismoStatus.tokenAge + ", matchIds=" + gismoStatus.matchIdCount);
-        try {
-          let gismoEnriched = 0;
-          for (const match of matches) {
-            const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
-            if (gismoCorner) {
-              match.homeCorners = gismoCorner.homeCorners;
-              match.awayCorners = gismoCorner.awayCorners;
-              match.totalCorners = gismoCorner.totalCorners;
-              match._cornerSource = "gismo";
-              match._gismoMatchId = gismoCorner.matchId;
-              gismoEnriched++;
-            }
-          }
-          const unmatched = matches.filter(m => m._cornerSource !== "gismo");
-          if (unmatched.length > 0) {
-            await fetchAllCornerData(page);
-            for (const match of unmatched) {
-              const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
-              if (gismoCorner) {
-                match.homeCorners = gismoCorner.homeCorners;
-                match.awayCorners = gismoCorner.awayCorners;
-                match.totalCorners = gismoCorner.totalCorners;
-                match._cornerSource = "gismo";
-                match._gismoMatchId = gismoCorner.matchId;
-                gismoEnriched++;
-              }
-            }
-          }
-          console.log("[cornerCrawler] gismo 补充完成: " + gismoEnriched + "/" + matches.length);
-        } catch (gismoErr) {
-          console.warn("[cornerCrawler] gismo 补充失败:", gismoErr.message);
-        }
-      }
-
-      crawlingLock = false;
-      clearTimeout(lockTimeout);
-      return {
-        success: true,
-        data: { matches, cornerMatches, hdpMatches, allText: [], allElements: [] },
-        count: matches.length,
-        cornerCount: cornerMatches.length,
-        hdpCount: hdpMatches.length,
-        timestamp: ts,
-        source: "api",
-      };
-    } catch (apiErr) {
-      console.warn("[cornerCrawler] API 模式失败:", apiErr.message);
-      crawlingLock = false;
-      clearTimeout(lockTimeout);
-      return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: apiErr.message };
-    }
-  }
-
   try {
     // 清空上次捕获的 XHR 响应
     capturedResponses = [];
     seenRequestUrls.clear();
 
-    // 强制页面激活：如果 sharedPage 是 about:blank 或无效，重新导航
-    const existingPage2 = getSharedPage();
-    if (existingPage2) {
-      try {
-        const url = existingPage2.url();
-        if (url === "about:blank" || !url) {
-          console.log("[cornerCrawler] Shared page 是 about:blank，强制导航到 HG_URL");
-          // 域名可达性预检
-          const dnsCheck = await checkDomainReachable(HG_URL);
-          if (!dnsCheck.reachable) {
-            console.error("[cornerCrawler] 域名不可达: " + dnsCheck.error);
-          } else {
-            try {
-              await existingPage2.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-              await new Promise(r => setTimeout(r, 5000));
-            } catch (navErr) {
-              await diagnoseNavigationError(existingPage2, HG_URL, navErr);
-            }
-          }
-        }
-      } catch(e) {}
-    }
-
-    const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-    if (!loginOk || !page) {
-      console.error("[cornerCrawler] StableLogin 登录失败，无法爬取");
+    const page = await ensureLogin();
+    if (!page) {
+      console.error("[cornerCrawler] Login failed, cannot crawl");
       return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "Login failed" };
     }
+
+    // ★ 设置 chk_login 响应监听（兜底：如果 ensureLogin 中未捕获）
+    if (!page._chkLoginListenerSet) {
+      page.on("response", async (response) => {
+        const url = response.url();
+        if (url.includes("chk_login")) {
+          try {
+            const text = await response.text();
+            const uidMatch = text.match(/<uid>([^<]+)<\/uid>/);
+            if (uidMatch) {
+              const verMatch = url.match(/[?&]ver=([^&]+)/);
+              cachedSessionInfo = {
+                uid: uidMatch[1],
+                ver: verMatch ? verMatch[1] : (cachedSessionInfo?.ver || ""),
+                domain: new URL(url).origin
+              };
+              console.log("[cornerCrawler] 从 chk_login 捕获 uid=" + cachedSessionInfo.uid.substring(0, 10) + "...");
+            }
+          } catch (e) {}
+        }
+      });
+      page._chkLoginListenerSet = true;
+    }
+
+    // ★ 如果已有 uid/ver（从登录时捕获），跳过导航步骤
+    if (cachedSessionInfo?.uid && cachedSessionInfo?.ver) {
+      console.log("[cornerCrawler] 已有 uid/ver 缓存，跳过导航到 Soccer 页面");
+    } else {
+      // 需要导航到 Soccer 页面以触发 XHR 请求获取 uid/ver
+      console.log("[cornerCrawler] 无 uid/ver 缓存，导航到 Soccer 页面以激活会话...");
+      try {
+        // 点击 In-Play
+        await page.evaluate(() => {
+          const btn = document.getElementById("live_page");
+          if (btn) btn.click();
+        });
+        await new Promise(r => setTimeout(r, 2000));
+        // 点击 Soccer
+        await page.evaluate(() => {
+          const btn = document.getElementById("symbol_ft");
+          if (btn) btn.click();
+        });
+        await new Promise(r => setTimeout(r, 3000));
+      } catch (e) {
+        console.log("[cornerCrawler] 导航到 Soccer 失败: " + e.message);
+      }
+    }
+
+    // ★ 优先使用 API 模式获取角球数据
+    console.log("[cornerCrawler] 尝试 API 模式...");
+    let apiResult = null;
+    try {
+      apiResult = await fetchCornerDataViaAPI(page);
+      if (apiResult) {
+        console.log("[cornerCrawler] API 模式结果: " + apiResult.matches.length + " 场, mainMarkets: " + Object.keys(apiResult.mainMarkets).length + " 场");
+      } else {
+        console.log("[cornerCrawler] API 模式结果: null(回退DOM)");
+      }
+    } catch (e) {
+      console.warn("[cornerCrawler] API 调用异常，回退到 DOM 解析:", e.message);
+    }
+
+    if (apiResult && apiResult.matches.length > 0) {
+      // API 数据可用，直接返回
+      console.log("[cornerCrawler] ===== Done (API): " + apiResult.matches.length + " corner matches =====");
+      for (const m of apiResult.matches) { m._dataSource = "api"; }
+      crawlingLock = false;
+      clearTimeout(lockTimeout);
+      return {
+        success: true,
+        data: { matches: apiResult.matches, allText: [], allElements: [] },
+        count: apiResult.matches.length,
+        timestamp: ts,
+        mainMarkets: apiResult.mainMarkets || {}
+      };
+    }
+
+    // API 失败，回退到 DOM 解析
+    console.log("[cornerCrawler] API 无数据，回退到 DOM 解析...");
 
     // 设置 XHR 拦截（在导航之前）
     try {
@@ -1609,7 +2571,6 @@ export async function crawlCornerMatches() {
     await randomDelay(500, 1000);
 
     // 主动登出检测：检查 kick_ok_btn 弹窗
-    // ★ 修复：被踢出时先关闭弹窗+刷新页面恢复会话，避免"登录→被踢→重新登录→再被踢"死循环
     try {
       const kickedOut = await page.evaluate(() => {
           const kickBtn = document.querySelector("#kick_ok_btn");
@@ -1618,31 +2579,15 @@ export async function crawlCornerMatches() {
           return style.display !== 'none' && style.visibility !== 'hidden';
         });
       if (kickedOut) {
-        console.log("[cornerCrawler] 检测到登出弹窗(kick_ok_btn)，关闭弹窗并刷新页面...");
+        console.log("[cornerCrawler] 检测到登出弹窗(kick_ok_btn)，尝试重新登录...");
         try { await page.click("#kick_ok_btn"); } catch (_) {}
         await randomDelay(1000, 2000);
-        // 先尝试刷新页面恢复会话（而非立即重新登录）
-        try {
-          await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-          await new Promise(r => setTimeout(r, 3000));
-          const restored = await isPageLoggedIn(page);
-          if (restored) {
-            console.log("[cornerCrawler] 刷新后已恢复登录状态，重新导航...");
-            await setupXHRInterception(page);
-            await navigateToCorners(page);
-            await randomDelay(500, 1000);
-          } else {
-            console.log("[cornerCrawler] 刷新后仍未登录，执行登录...");
-            const { success: reLoginOk, page: rePage } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-            if (reLoginOk && rePage) {
-              console.log("[cornerCrawler] 重新登录成功，重新导航...");
-              await setupXHRInterception(rePage);
-              await navigateToCorners(rePage);
-              await randomDelay(500, 1000);
-            }
-          }
-        } catch (reloadErr) {
-          console.warn("[cornerCrawler] 页面刷新失败:", reloadErr.message);
+        const rePage = await ensureLogin();
+        if (rePage) {
+          console.log("[cornerCrawler] 重新登录成功，重新导航...");
+          await setupXHRInterception(rePage);
+          await navigateToCorners(rePage);
+          await randomDelay(500, 1000);
         }
       }
     } catch (e) {
@@ -1680,27 +2625,6 @@ export async function crawlCornerMatches() {
     await randomDelay(1500, 3000);
 
     // 解析 DOM 获取角球盘口（使用专用 parseCornerMarkets 替代通用 parseAllMarkets）
-    // ★ DOM 诊断：截图 + 选择器检查
-    try {
-      await page.screenshot({ path: "debug/corner-dom-before-parse.png", fullPage: true });
-      const domDiag = await page.evaluate(() => {
-        return {
-          boxLebet: document.querySelectorAll("div.box_lebet").length,
-          betBox: document.querySelectorAll("div.bet_box").length,
-          teamH: document.querySelectorAll("div.teamH").length,
-          teamC: document.querySelectorAll("div.teamC").length,
-          textTeam: document.querySelectorAll("span.text_team").length,
-          textOdds: document.querySelectorAll("span.text_odds").length,
-          tabCn: !!document.getElementById("tab_cn"),
-          bodyLength: document.body?.innerHTML?.length || 0,
-          url: location.href,
-        };
-      });
-      console.log("[cornerCrawler] DOM 诊断: " + JSON.stringify(domDiag));
-    } catch (diagErr) {
-      console.log("[cornerCrawler] DOM 诊断失败: " + diagErr.message);
-    }
-
     const domData = await parseCornerMarkets(page, matchScores);
     console.log("[cornerCrawler] DOM corner markets: " + domData.length);
 
@@ -1770,145 +2694,6 @@ export async function crawlCornerMatches() {
           }
         }
       }
-    }
-
-        
-    // ★ 混合模式：API 增强盘口数据
-    const apiUid = getUid();
-    const apiVer = getCurrentVer();
-
-    // ★ 主动拦截 transform.php 请求，提取 ver 签名（非 API 模式）
-    if (!global.HG_VER && apiUid) {
-      try {
-        console.log('[cornerCrawler] 等待 transform.php 请求以提取 ver...');
-        const verResponse = await page.waitForResponse(
-          (res) => res.url().includes('transform.php') && res.url().includes('ver='),
-          { timeout: 15000 }
-        ).catch(() => null);
-
-        if (verResponse) {
-          const verUrl = verResponse.url();
-          const verMatch = verUrl.match(/ver=([^&\s]+)/);
-          if (verMatch && verMatch[1]) {
-            global.HG_VER = verMatch[1];
-            console.log('[cornerCrawler] 从请求中提取到 ver:', global.HG_VER.substring(0, 16) + '...');
-          }
-        } else {
-          console.warn('[cornerCrawler] 等待 transform.php 请求超时 (15s)，ver 将由 fallback 链获取');
-        }
-      } catch (e) {
-        console.warn('[cornerCrawler] ver 拦截失败:', e.message);
-      }
-    }
-
-    if (apiUid && (apiVer || global.HG_VER) && matches.length > 0) {
-      console.log("[cornerCrawler] 并行请求 API 增强盘口数据...");
-      try {
-        const cachedParams = { uid: apiUid, ver: apiVer, langx: "en-us" };
-        const [rbXml, rcnXml, rrnouXml] = await Promise.all([
-          fetchGameList(page, RTYPE.RB),
-          fetchGameList(page, RTYPE.RCN),
-          fetchGameList(page, RTYPE.RNOU),
-        ]);
-        const rcnResult = rcnXml ? parseGameListXML(rcnXml) : { matches: [] };
-        const rrnouResult = rrnouXml ? parseGameListXML(rrnouXml) : { matches: [] };
-
-        // 按球队名建立索引（API 返回的 matchId/GID 与 DOM matchId 不同）
-        const rcnByName = new Map();
-        for (const m of (rcnResult.matches || [])) {
-          const key = (m.homeTeam + "|" + m.awayTeam).toLowerCase();
-          rcnByName.set(key, m);
-        }
-        const rrnouByName = new Map();
-        for (const m of (rrnouResult.matches || [])) {
-          const key = (m.homeTeam + "|" + m.awayTeam).toLowerCase();
-          rrnouByName.set(key, m);
-        }
-
-        let enrichedCount = 0;
-        for (const match of matches) {
-          const key = (match.homeTeam + "|" + match.awayTeam).toLowerCase();
-          const rcn = rcnByName.get(key);
-          const rrn = rrnouByName.get(key);
-
-          if (rcn) {
-            match._cornerOULine = rcn._cornerOULine || "";
-            match._cornerOUOdds = rcn._cornerOUOdds || "";
-            match._hasCornerMarket = rcn._hasCornerMarket || false;
-          }
-          if (rrn) {
-            match._hdpLine = rrn._hdpLine || "";
-            match._hdpHomeOdds = rrn._hdpHomeOdds || "";
-            match._hdpAwayOdds = rrn._hdpAwayOdds || "";
-            match._ouLine = rrn._ouLine || "";
-            match._ouOverOdds = rrn._ouOverOdds || "";
-            match._ouUnderOdds = rrn._ouUnderOdds || "";
-          }
-          if (rcn || rrn) enrichedCount++;
-        }
-        console.log("[cornerCrawler] API 增强完成: " + enrichedCount + "/" + matches.length + " 场比赛已补充盘口数据");
-        for (const m of matches) {
-          m._dataSource = "dom+api";
-        }
-      } catch (apiErr) {
-        console.warn("[cornerCrawler] API 增强失败，降级为纯 DOM 数据:", apiErr.message);
-        for (const m of matches) {
-          m._dataSource = "dom";
-        }
-      }
-    } else {
-      if (!apiUid) console.log("[cornerCrawler] 无缓存 uid，跳过 API 增强");
-      else if (!apiVer) console.log("[cornerCrawler] 无缓存 ver，跳过 API 增强");
-      else console.log("[cornerCrawler] 无比赛数据，跳过 API 增强");
-    }
-
-    // ★ gismo 角球数补充：从 Sportradar CDN 获取精确角球数统计
-    const gismoStatus = getGismoStatus();
-    if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0 && matches.length > 0) {
-      console.log("[cornerCrawler] gismo 数据补充: token=" + gismoStatus.tokenAge + ", matchIds=" + gismoStatus.matchIdCount);
-      try {
-        // 1. 先尝试按球队名匹配已缓存的 gismo 数据
-        let gismoEnriched = 0;
-        for (const match of matches) {
-          const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
-          if (gismoCorner) {
-            // gismo 角球数优先级高于 DOM/XHR（更精确）
-            match.homeCorners = gismoCorner.homeCorners;
-            match.awayCorners = gismoCorner.awayCorners;
-            match.totalCorners = gismoCorner.totalCorners;
-            match._cornerSource = "gismo";
-            match._gismoMatchId = gismoCorner.matchId;
-            gismoEnriched++;
-          }
-        }
-
-        // 2. 如果还有未匹配的比赛，主动请求 gismo API
-        const unmatched = matches.filter(m => m._cornerSource !== "gismo");
-        if (unmatched.length > 0 && gismoStatus.hasToken) {
-          console.log("[cornerCrawler] 主动请求 gismo API 补充 " + unmatched.length + " 场未匹配比赛...");
-          const allCornerData = await fetchAllCornerData(page);
-          for (const match of unmatched) {
-            // 再次尝试按球队名匹配
-            const gismoCorner = findCornerDataByTeamName(match.homeTeam, match.awayTeam);
-            if (gismoCorner) {
-              match.homeCorners = gismoCorner.homeCorners;
-              match.awayCorners = gismoCorner.awayCorners;
-              match.totalCorners = gismoCorner.totalCorners;
-              match._cornerSource = "gismo";
-              match._gismoMatchId = gismoCorner.matchId;
-              gismoEnriched++;
-            }
-          }
-        }
-
-        console.log("[cornerCrawler] gismo 补充完成: " + gismoEnriched + "/" + matches.length + " 场比赛已获取精确角球数");
-      } catch (gismoErr) {
-        console.warn("[cornerCrawler] gismo 数据补充失败:", gismoErr.message);
-      }
-    } else {
-      if (!gismoStatus.hasToken) console.log("[cornerCrawler] 无 gismo token，跳过角球数补充");
-      else if (gismoStatus.matchIdCount === 0) console.log("[cornerCrawler] 无 gismo matchId，跳过角球数补充");
-      else console.log("[cornerCrawler] 无比赛数据，跳过 gismo 补充");
     }
 
         console.log("[cornerCrawler] ===== Done: " + matches.length + " corner matches =====");
@@ -2104,12 +2889,6 @@ export function startCornerPolling(onUpdate) {
   console.log("[cornerCrawler] 启动全局轮询...");
   pollingActive = true;
   pollingStopFn = null;
-  gismoSubscriberActive = false;
-
-  // 注册策略触发回调
-  setStrategyTriggerCallback((triggerInfo) => {
-    console.log("[cornerCrawler] 策略触发通知: matchId=" + triggerInfo.matchId + " strategy=" + triggerInfo.strategyName);
-  });
 
   const poll = async () => {
     if (!pollingActive) return;
@@ -2117,40 +2896,6 @@ export function startCornerPolling(onUpdate) {
       const page = getSharedPage(); if (page) await randomMouseMove(page);
       const result = await crawlCornerMatches();
       const matches = result.success ? (result.data?.matches || []) : [];
-
-      // 更新赔率缓存（来自 transform.php 的盘口数据）
-      for (const match of matches) {
-        const key = match._gismoMatchId || match.matchId || "";
-        if (key) {
-          latestOddsCache.set(key, {
-            handicap: match.cornerHandicap ?? match.handicap ?? 0,
-            odds: match.cornerOdds ?? match.odds ?? 0,
-            homeTeam: match.homeTeam,
-            awayTeam: match.awayTeam,
-            cornerHdpLine: match._cornerHdpLine || "",
-            cornerOULine: match._cornerOULine || "",
-            hdpLine: match._hdpLine || "",
-            ouLine: match._ouLine || "",
-          });
-        }
-      }
-
-      // 首次获取到比赛数据后，启动 GismoSubscriber
-      if (!gismoSubscriberActive && matches.length > 0) {
-        const gismoStatus = getGismoStatus();
-        if (gismoStatus.hasToken && gismoStatus.matchIdCount > 0) {
-          const subPage = getSharedPage();
-          if (subPage) {
-            console.log("[cornerCrawler] 启动 GismoSubscriber，订阅 " + gismoStatus.matchIdCount + " 场比赛...");
-            gismoSubscribe(gismoStatus.matchIds, (deltaData) => {
-              // 注入 gismo 实时数据到策略引擎
-              injectGismoDelta(deltaData);
-            }, subPage);
-            gismoSubscriberActive = true;
-          }
-        }
-      }
-
       if (pollingActive && onUpdate) onUpdate(matches);
     } catch (e) {
       console.error("[cornerCrawler] 轮询错误:", e.message);
@@ -2168,27 +2913,16 @@ export function stopCornerPolling() {
   console.log("[cornerCrawler] 停止全局轮询...");
   pollingActive = false;
   if (pollingStopFn) { clearTimeout(pollingStopFn); pollingStopFn = null; }
-
-  // 停止 GismoSubscriber
-  if (gismoSubscriberActive) {
-    gismoUnsubscribeAll();
-    gismoSubscriberActive = false;
-  }
-  clearLiveMatchStates();
-  latestOddsCache.clear();
-
   return { success: true };
 }
 
 export function getPollingStatus() {
-  const gismoSubStatus = gismoSubscriberActive ? getGismoSubscriberStatus() : null;
   return {
     isPolling: pollingActive,
     isLoggedIn: isLoggedIn(),
     balance: getBalance(),
     lastUpdate: pollingActive ? Date.now() : null,
-    loginInProgress: false,
-    gismoSubscriber: gismoSubStatus,
+    loginInProgress
   };
 }
 
@@ -2202,8 +2936,8 @@ export async function loginToHG(username, password) {
   let lastReason = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-      if (loginOk && page) {
+      const page = await ensureLogin();
+      if (page) {
         return { success: true, message: "登录成功", balance: getBalance(), attempts: attempt };
       }
       lastError = "登录返回空页面";
@@ -2234,6 +2968,12 @@ export async function closeCrawler() {
   capturedResponses = [];
   browserExplicitlyClosed = true;
   return await closeSharedBrowser();
+}
+
+export function resetBrowserClosedFlag() {
+  console.log("[cornerCrawler] 浏览器关闭标志已重置");
+  browserExplicitlyClosed = false;
+  cachedSessionInfo = null; // 同时重置会话信息缓存
 }
 
 // ======================== 调试 ========================
@@ -2282,17 +3022,9 @@ export async function diagnoseCrawler() {
 
     report.steps.push("login_start");
     try {
-      const { success: loginOk, page } = await performStableLogin(HG_USERNAME, HG_PASSWORD);
-      if (loginOk && page) {
-        report.loginSuccess = true;
-        report.steps.push("login_ok");
-      } else {
-        report.errors.push({ step: "login", message: "StableLogin failed" });
-        report.steps.push("login_failed");
-        report.status = "login_failed";
-        report.totalTimeMs = Date.now() - startTime;
-        return report;
-      }
+      const page = await ensureLogin();
+      report.loginSuccess = true;
+      report.steps.push("login_ok");
     } catch (e) {
       report.errors.push({ step: "login", message: e.message });
       report.steps.push("login_failed");

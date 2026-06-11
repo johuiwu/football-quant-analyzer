@@ -322,8 +322,10 @@ export default function CrawlerControlPanel() {
         // 将 mainMarkets 转换为 handicaps 格式并合并到对应比赛
         const mergeMainMarkets = (matches: any[]) => {
           return matches.map((m: any) => {
-            const key = (m.homeTeam || "") + "|" + (m.awayTeam || "");
-            const mm = mainMarkets[key];
+            // ★ 尝试多种 key 匹配：matchId > homeTeam|awayTeam > gid
+            const teamKey = (m.homeTeam || "") + "|" + (m.awayTeam || "");
+            const matchIdKey = String(m.matchId || m.gid || "");
+            const mm = mainMarkets[matchIdKey] || mainMarkets[teamKey];
             if (!mm) return m;
 
             const extraHandicaps: any[] = [];
@@ -863,71 +865,131 @@ export default function CrawlerControlPanel() {
                           "O/E_half":{bg: "bg-amber-900/20", text: "text-amber-300/70", border: "border-amber-700/20" },
                         };
 
-                        const renderCompactCards = (handicaps: any[], colorsMap: Record<string, { bg: string; text: string; border: string }>) => (
-                          <div className="grid grid-cols-4 gap-1.5">
-                            {handicaps.map((h) => {
-                              const colorKey = h.period === "half" ? `${h.category}_half` : h.category;
-                              const colors = colorsMap[colorKey] || colorsMap["O/U"];
-                              let label = h.categoryLabel || h.category;
-                              if (label.length > 6) label = label.replace("上半场 ", "半");
+                        // 按盘口类型分组（合并角球+主盘口为统一布局）
+                        // 每个 group 包含同名同 type 的所有 line/odds 变体
+                        const groupByCategory = (handicaps: any[]) => {
+                          const groups: Record<string, any[]> = {};
+                          for (const h of handicaps) {
+                            const k = (h.categoryLabel || h.category) + (h.period === "half" ? "_half" : "");
+                            if (!groups[k]) groups[k] = [];
+                            groups[k].push(h);
+                          }
+                          return groups;
+                        };
 
-                              return (
-                                <div key={h.order || label} className={`${colors.bg} rounded px-1.5 py-1 border ${colors.border}`}>
-                                  <div className={`text-[10px] ${colors.text} font-medium text-center leading-tight`}>{label}</div>
-                                  {h.category === "O/U" && (
-                                    <div className="text-center mt-0.5">
-                                      <div className="text-[10px] text-slate-400">大{h.line ?? "--"} <span className="text-white font-bold">{(h.odds?.over || 0).toFixed(2)}</span></div>
-                                      <div className="text-[10px] text-slate-400">小{h.line ?? "--"} <span className="text-white font-bold">{(h.odds?.under || 0).toFixed(2)}</span></div>
-                                    </div>
-                                  )}
-                                  {h.category === "HDP" && (
-                                    <div className="text-center mt-0.5">
-                                      <div className="text-[10px] text-slate-400">主{h.line ?? "--"} <span className="text-white font-bold">{(h.odds?.home || 0).toFixed(2)}</span></div>
-                                      <div className="text-[10px] text-slate-400">客{h.line ?? "--"} <span className="text-white font-bold">{(h.odds?.away || 0).toFixed(2)}</span></div>
-                                    </div>
-                                  )}
-                                  {h.category === "1X2" && (
-                                    <div className="flex justify-around text-center mt-0.5">
-                                      <div><div className="text-[9px] text-slate-400">主</div><div className="text-[10px] font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div></div>
-                                      <div><div className="text-[9px] text-slate-400">平</div><div className="text-[10px] font-bold text-white">{(h.odds?.draw || 0).toFixed(2)}</div></div>
-                                      <div><div className="text-[9px] text-slate-400">客</div><div className="text-[10px] font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div></div>
-                                    </div>
-                                  )}
-                                  {h.category === "O/E" && (
-                                    <div className="text-center mt-0.5">
-                                      <div className="text-[10px] text-slate-400">单 <span className="text-white font-bold">{(h.odds?.odd || 0).toFixed(2)}</span></div>
-                                      <div className="text-[10px] text-slate-400">双 <span className="text-white font-bold">{(h.odds?.even || 0).toFixed(2)}</span></div>
-                                    </div>
-                                  )}
-                                  {h.category === "NEXT" && (
-                                    <div className="text-center mt-0.5">
-                                      <div className="text-[10px] text-slate-400">主 <span className="text-white font-bold">{(h.odds?.home || 0).toFixed(2)}</span></div>
-                                      <div className="text-[10px] text-slate-400">第{h.line}角</div>
-                                      <div className="text-[10px] text-slate-400">客 <span className="text-white font-bold">{(h.odds?.away || 0).toFixed(2)}</span></div>
-                                    </div>
-                                  )}
+                        const cornerGroups = groupByCategory(cornerHandicaps);
+                        const mainGroups = groupByCategory(mainHandicaps);
+
+                        const renderGroup = (groupKey: string, items: any[]) => {
+                          const first = items[0];
+                          const isOU = first.category === "O/U";
+                          const isHDP = first.category === "HDP";
+                          const isNext = first.category === "NEXT";
+                          const isOE = first.category === "O/E";
+                          const isOneX2 = first.category === "1X2";
+                          const label = first.categoryLabel || first.category;
+                          const shortLabel = label.length > 4 ? label.replace("上半场 ", "半") : label;
+                          const isCorner = first.marketGroup === "corner";
+                          const headerColor = isCorner ? "text-blue-300" : "text-amber-300";
+                          const borderColor = isCorner ? "border-blue-800/30" : "border-amber-800/30";
+
+                          return (
+                            <div className={`rounded border ${borderColor} bg-slate-900/40`}>
+                              <div className={`text-[11px] ${headerColor} font-medium text-center py-1 border-b ${borderColor}`}>
+                                {shortLabel}
+                              </div>
+                              {isOU && items.map((h, i) => (
+                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">大{h.line ?? "--"}</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.over || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">小{h.line ?? "--"}</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.under || 0).toFixed(2)}</div>
+                                  </div>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        );
+                              ))}
+                              {isHDP && items.map((h, i) => (
+                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">主{h.line ?? "--"}</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.home || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">客{h.line ?? "--"}</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.away || 0).toFixed(2)}</div>
+                                  </div>
+                                </div>
+                              ))}
+                              {isOE && items.map((h, i) => (
+                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">单</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.odd || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">双</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.even || 0).toFixed(2)}</div>
+                                  </div>
+                                </div>
+                              ))}
+                              {isNext && items.map((h, i) => (
+                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">主</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.home || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="px-1.5 py-1 text-center">
+                                    <div className="text-[10px] text-slate-400">客</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.away || 0).toFixed(2)}</div>
+                                  </div>
+                                </div>
+                              ))}
+                              {isOneX2 && items.map((h, i) => (
+                                <div key={i} className="grid grid-cols-3 divide-x divide-slate-800">
+                                  <div className="px-1 py-1 text-center">
+                                    <div className="text-[9px] text-slate-400">主</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.home || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="px-1 py-1 text-center">
+                                    <div className="text-[9px] text-slate-400">平</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.draw || 0).toFixed(2)}</div>
+                                  </div>
+                                  <div className="px-1 py-1 text-center">
+                                    <div className="text-[9px] text-slate-400">客</div>
+                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.away || 0).toFixed(2)}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        };
 
                         return (
                           <div className="space-y-2">
-                            {cornerHandicaps.length > 0 && (
+                            {Object.keys(cornerGroups).length > 0 && (
                               <div>
                                 <div className="text-[10px] text-blue-400 mb-1 font-medium flex items-center gap-1">
                                   <span className="w-1 h-1 rounded-full bg-blue-400" />角球盘口
                                 </div>
-                                {renderCompactCards(cornerHandicaps, cornerColors)}
+                                <div className="grid grid-cols-4 gap-1.5">
+                                  {Object.entries(cornerGroups).map(([k, items]) => (
+                                    <div key={k}>{renderGroup(k, items)}</div>
+                                  ))}
+                                </div>
                               </div>
                             )}
-                            {mainHandicaps.length > 0 && (
+                            {Object.keys(mainGroups).length > 0 && (
                               <div>
                                 <div className="text-[10px] text-amber-400 mb-1 font-medium flex items-center gap-1">
                                   <span className="w-1 h-1 rounded-full bg-amber-400" />主盘口
                                 </div>
-                                {renderCompactCards(mainHandicaps, mainColors)}
+                                <div className="grid grid-cols-4 gap-1.5">
+                                  {Object.entries(mainGroups).map(([k, items]) => (
+                                    <div key={k}>{renderGroup(k, items)}</div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>

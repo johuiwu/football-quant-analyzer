@@ -1,128 +1,10 @@
-
-/**
- * 检查页面是否处于已登录状态（通过 DOM 元素判断）
- */
-export async function isPageLoggedIn(page) {
-  if (!page || page.isClosed()) return false;
-  try {
-    return await page.evaluate(() => {
-      const bodyText = document.body?.textContent || "";
-      if (bodyText.includes("My Events") || bodyText.includes("My Bets")) return true;
-      if (bodyText.includes("In-Play") && bodyText.includes("Soccer")) return true;
-      const sportEl = document.getElementById("symbol_ft") || document.getElementById("old_ft_live_league");
-      if (sportEl) {
-        const style = getComputedStyle(sportEl);
-        if (style.display !== "none" && style.visibility !== "hidden") return true;
-      }
-      return false;
-    });
-  } catch (e) {
-    return false;
-  }
-}
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
-import dns from "dns";
 import { fileURLToPath } from "url";
 import { resolve } from "path";
 
 puppeteer.use(StealthPlugin());
-
-// ======================== 域名可达性预检 & 导航诊断 ========================
-
-/**
- * 域名可达性预检：通过 dns.resolve 检测域名是否可解析
- * @param {string} url - 目标 URL
- * @returns {{ reachable: boolean, hostname: string, error?: string }}
- */
-async function checkDomainReachable(url) {
-  let hostname;
-  try {
-    hostname = new URL(url).hostname;
-  } catch (e) {
-    return { reachable: false, hostname: url, error: "URL 格式无效: " + e.message };
-  }
-
-  return new Promise((resolve) => {
-    dns.resolve(hostname, (err, addresses) => {
-      if (err) {
-        const errCode = err.code || "UNKNOWN";
-        let hint = "";
-        if (errCode === "ENOTFOUND") hint = "域名不存在，请检查 URL 或 DNS 设置";
-        else if (errCode === "ESERVFAIL") hint = "DNS 服务器返回失败，请检查网络连接";
-        else if (errCode === "ETIMEOUT") hint = "DNS 解析超时，请检查网络连接";
-        else if (errCode === "ECONNREFUSED") hint = "DNS 服务器拒绝连接，浏览器可能仍可访问";
-        else hint = "DNS 错误码: " + errCode;
-        console.error("[browserPool] DNS 诊断: " + hostname + " 解析失败 - " + hint);
-        resolve({ reachable: false, hostname, error: hint });
-      } else {
-        console.log("[browserPool] DNS 诊断: " + hostname + " -> " + addresses[0]);
-        resolve({ reachable: true, hostname, addresses });
-      }
-    });
-  });
-}
-
-/**
- * 导航诊断：在 page.goto 失败时输出结构化诊断信息
- * @param {Page} page - Puppeteer 页面实例
- * @param {string} url - 目标 URL
- * @param {Error} error - 导航错误
- */
-async function diagnoseNavigationError(page, url, error) {
-  const errMsg = error.message || String(error);
-  let errorType = "unknown";
-
-  if (errMsg.includes("net::ERR_NAME_NOT_RESOLVED") || errMsg.includes("ERR_NAME_NOT_RESOLVED")) {
-    errorType = "DNS";
-  } else if (errMsg.includes("net::ERR_CERT") || errMsg.includes("ERR_CERT") || errMsg.includes("SSL")) {
-    errorType = "SSL";
-  } else if (errMsg.includes("net::ERR_CONNECTION_REFUSED") || errMsg.includes("ERR_CONNECTION_REFUSED")) {
-    errorType = "connection_refused";
-  } else if (errMsg.includes("net::ERR_CONNECTION_RESET") || errMsg.includes("ERR_CONNECTION_RESET")) {
-    errorType = "connection_reset";
-  } else if (errMsg.includes("net::ERR_CONNECTION_TIMED_OUT") || errMsg.includes("ERR_CONNECTION_TIMED_OUT") || errMsg.includes("timeout")) {
-    errorType = "timeout";
-  } else if (errMsg.includes("net::ERR_ABORTED") || errMsg.includes("ERR_ABORTED")) {
-    errorType = "aborted";
-  }
-
-  console.error("[browserPool] ====== 导航诊断 ======");
-  console.error("[browserPool] 错误类型: " + errorType);
-  console.error("[browserPool] 目标 URL: " + url);
-  console.error("[browserPool] 错误信息: " + errMsg);
-
-  // 尝试获取页面实际 URL 和内容
-  if (page && !page.isClosed()) {
-    try {
-      const actualUrl = page.url();
-      console.error("[browserPool] 实际 URL: " + actualUrl);
-      if (actualUrl && actualUrl !== "about:blank") {
-        const content = await page.evaluate(() => document.body?.textContent?.substring(0, 500) || "(空)").catch(() => "(无法读取)");
-        console.error("[browserPool] 页面内容摘要: " + content.substring(0, 200));
-        // 检测反爬拦截
-        if (content.includes("Cloudflare") || content.includes("cf-browser-verification") || content.includes("Just a moment")) {
-          console.error("[browserPool] 页面诊断: 疑似被 Cloudflare 反爬拦截");
-        } else if (content.includes("Access Denied") || content.includes("403")) {
-          console.error("[browserPool] 页面诊断: 疑似被 IP 封禁或访问被拒绝");
-        }
-      }
-    } catch (_) {}
-  }
-
-  // 针对性建议
-  const hints = {
-    DNS: "请检查网络连接、DNS 设置或 hosts 文件",
-    SSL: "已添加 --ignore-certificate-errors 参数，如仍失败请检查系统时间是否正确",
-    connection_refused: "目标服务器拒绝连接，可能网站已关闭或端口错误",
-    connection_reset: "连接被重置，可能被防火墙拦截或网站反爬机制拒绝",
-    timeout: "连接超时，请检查网络是否畅通，或尝试手动访问确认网站是否可达",
-    aborted: "导航被中断，可能页面重定向导致",
-  };
-  console.error("[browserPool] 建议: " + (hints[errorType] || "请检查网络连接和目标网站是否可达"));
-  console.error("[browserPool] ==========================");
-}
 
 // ======================== 单例浏览器管理 ========================
 
@@ -136,8 +18,12 @@ export function getRandomViewport() {
   return { width: w, height: h };
 }
 
-/** 随机 Chrome 版本 UA (127-130) */
+/** 移动端 iPhone UA */
+const MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
+
+/** 随机 Chrome 版本 UA (127-130) 或移动端 UA */
 export function getRandomUA() {
+  if (process.env.USE_MOBILE_UA === "true") return MOBILE_UA;
   const version = 127 + Math.floor(Math.random() * 4);
   return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + version + ".0.0.0 Safari/537.36";
 }
@@ -145,44 +31,17 @@ let browser = null;
 let sharedPage = null;
 let loginCookies = null;
 let lastBalance = 0;
-let cachedUid = null;
 let isLaunching = false; // 防止重复启动
 let lastActivityTime = 0; // 最后活动时间
 let heartbeatPage = null; // 心跳保活页面
 let heartbeatTimer = null;
-
-// ★ 登录锁：防止并发登录导致强制登出
-let loginLock = false;
-let loginLockWaiters = 0;
-
-/**
- * 获取登录锁，防止并发登录
- * 同一时间只允许一个登录操作，其他调用者等待锁释放后检查共享页面是否已登录
- */
-export async function acquireLoginLock() {
-  loginLockWaiters++;
-  while (loginLock) {
-    console.log("[browserPool] 等待登录锁... (当前等待: " + loginLockWaiters + ")");
-    await new Promise(r => setTimeout(r, 1000));
-  }
-  loginLock = true;
-  loginLockWaiters--;
-}
-
-/**
- * 释放登录锁
- */
-export function releaseLoginLock() {
-  loginLock = false;
-}
+let currentUid = null; // 当前 uid 缓存
 
 const HG_URL = process.env.HG_URL || "https://www.hga050.com";
 
-/** 角球系统浏览器模式（通过 CRAWLER_HEADLESS 环境变量控制，默认有头） */
+/** 角球系统浏览器固定无头模式 */
 function getHeadless() {
-  const val = (process.env.CRAWLER_HEADLESS || "").toLowerCase();
-  // true/1 -> 无头，false/0/未设置 -> 有头（默认）
-  return val === "true" || val === "1";
+  return true;
 }
 
 // ======================== 浏览器启动 ========================
@@ -238,32 +97,21 @@ async function launchBrowser() {
 
   try {
       const vp = getRandomViewport();
-    const launchArgs = [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-blink-features=AutomationControlled",
-      "--ignore-certificate-errors",
-      `--window-size=${vp.width},${vp.height}`,
-      "--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process,TranslateUI,IPCFloodingProtection",
-      "--enable-features=NetworkService,NetworkServiceInProcess",
-      "--lang=zh-CN,zh",
-      "--accept-lang=zh-CN,zh;q=0.9"
-    ];
-    // PUPPETEER_PROXY 环境变量控制代理：有值时走代理，无值时直连
-    const proxyServer = process.env.PUPPETEER_PROXY;
-    if (proxyServer) {
-      launchArgs.push(`--proxy-server=${proxyServer}`);
-      launchArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
-      console.log("[browserPool] 使用代理: " + proxyServer);
-    } else {
-      console.log("[browserPool] 未设置 PUPPETEER_PROXY，使用直连模式");
-    }
     const bi = await puppeteer.launch({
       headless,
       slowMo: process.env.CRAWLER_DEBUG === "1" ? 100 : 0,
-      args: launchArgs,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-blink-features=AutomationControlled",
+        `--window-size=${vp.width},${vp.height}`,
+        "--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process,TranslateUI,IPCFloodingProtection",
+        "--enable-features=NetworkService,NetworkServiceInProcess",
+        "--lang=zh-CN,zh",
+        "--accept-lang=zh-CN,zh;q=0.9"
+      ],
       timeout: 120000 // 启动超时 2 分钟
     });
     console.log("[browserPool] 浏览器已启动");
@@ -286,8 +134,8 @@ async function launchBrowser() {
         } catch (_) {}
       }
     });
-    // startHeartbeat(bi); // 禁用心跳，避免 about:blank 页面干扰 ensureLogin
-    // console.log("[browserPool] 心跳已启动");
+    startHeartbeat(bi);
+    console.log("[browserPool] 心跳已启动");
     isLaunching = false;
     lastActivityTime = Date.now();
     return bi;
@@ -377,15 +225,6 @@ function setBalance(balance) {
   lastBalance = balance;
 }
 
-function getUid() {
-  return cachedUid;
-}
-
-function setUid(uid) {
-  cachedUid = uid;
-  console.log("[browserPool] uid 已缓存: " + (uid ? uid.substring(0, 16) : "null") + "...");
-}
-
 function isLoggedIn() {
   // 检查是否有共享页面且浏览器活跃
   return !!sharedPage && isBrowserActive();
@@ -457,6 +296,14 @@ function loadCookiesFromDisk() {
   return null;
 }
 
+function getUid() {
+  return currentUid;
+}
+
+function setUid(uid) {
+  currentUid = uid;
+}
+
 export {
   getSharedBrowser,
   getSharedPage,
@@ -465,15 +312,13 @@ export {
   setLoginCookies,
   getBalance,
   setBalance,
-  getUid,
-  setUid,
   isLoggedIn,
   isBrowserActive,
   closeSharedBrowser,
   HG_URL,
   saveCookiesToDisk,
   loadCookiesFromDisk,
-  checkDomainReachable,
-  diagnoseNavigationError,
-  getHeadless
+  MOBILE_UA,
+  getUid,
+  setUid
 };

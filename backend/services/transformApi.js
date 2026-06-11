@@ -7,6 +7,7 @@
 
 import { HG_URL, setUid, getUid } from "./browserPool.js";
 import { extractVerFromRequest, getCurrentVer } from "./transformSigner.js";
+import { addMatchIds } from "./gismoApiClient.js";
 
 // ---- transform.php 基础 URL ----
 const API_BASE = HG_URL + "/transform.php";
@@ -475,6 +476,15 @@ export async function fetchGameList(page, rtype, extraParams = {}) {
   }
 
   console.log("[transformApi] " + rtype + " response: " + text.length + " bytes");
+
+  // ★ 从 XML 响应提取 ECID（gismo matchId）
+  const ecidMatches = text.matchAll(/<ECID>([^<]+)<\/ECID>/g);
+  const ecids = [...ecidMatches].map(m => m[1]).filter(Boolean);
+  if (ecids.length > 0) {
+    addMatchIds(ecids);
+    console.log(`[gismo] 从 transform.php 提取到 ${ecids.length} 个 matchId`);
+  }
+
   return text;
 }
 
@@ -518,6 +528,14 @@ export async function fetchGameList_FT(page, rtype) {
       return null;
     }
     console.log("[transformApi] " + rtype + " (FT) response: " + text.length + " bytes");
+
+    // ★ 从 XML 响应提取 ECID（gismo matchId）
+    const ecidMatches = text.matchAll(/<ECID>([^<]+)<\/ECID>/g);
+    const ecids = [...ecidMatches].map(m => m[1]).filter(Boolean);
+    if (ecids.length > 0) {
+      addMatchIds(ecids);
+      console.log(`[gismo] 从 transform.php 提取到 ${ecids.length} 个 matchId`);
+    }
   }
   return text;
 }
@@ -585,6 +603,14 @@ export async function fetchViaInterception(page, rtypes, triggerFn, timeout = 15
           // 读取响应体
           const body = await response.text();
           console.log("[transformApi] 拦截捕获: p=" + pValue + " rtype=" + rtype + " size=" + body.length);
+
+          // ★ 从拦截的响应中提取 ECID
+          const ecidMatches = body.matchAll(/<ECID>([^<]+)<\/ECID>/g);
+          const ecids = [...ecidMatches].map(m => m[1]).filter(Boolean);
+          if (ecids.length > 0) {
+            addMatchIds(ecids);
+            console.log(`[gismo] 从拦截响应提取到 ${ecids.length} 个 matchId`);
+          }
 
           // 校验响应格式（跳过 HTML 和 code_type error 响应）
           if (body && !body.includes("<!DOCTYPE html>") && !body.trimStart().startsWith("<!") && !body.includes("code_type error")) {

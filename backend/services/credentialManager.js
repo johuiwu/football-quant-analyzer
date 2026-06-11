@@ -1,0 +1,252 @@
+// ======================== 凭证管理模块 ========================
+// 统一管理 uid/ver/cookies 的读取、缓存和持久化
+// 供 hgApiClient 和 crawlCornerMatches 使用
+
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL } from "./browserPool.js";
+import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
+
+// ---- credentials.json 路径 ----
+let CRED_PATH;
+try {
+  CRED_PATH = fileURLToPath(new URL("../credentials.json", import.meta.url));
+} catch {
+  CRED_PATH = process.env.CRED_PATH || path.resolve(process.cwd(), "backend", "credentials.json");
+}
+
+// ---- 内存缓存 ----
+let cachedCookieStr = null;
+let cachedCookieStrAt = 0;
+const COOKIE_CACHE_TTL = 30000; // 30秒
+
+/**
+ * 检查 uid 是否有效（非空、长度>=10、非base64用户名）
+ */
+function isValidUid(uid) {
+  return uid && uid !== "undefined" && uid.length >= 10 && !uid.endsWith("=");
+}
+
+/**
+ * 加载凭证
+ * @returns {{ uid: string, ver: string, cookieStr: string } | null}
+ */
+export function loadCredentials() {
+  // 1. 获取 uid
+  const uid = getUid();
+  if (!isValidUid(uid)) {
+    console.warn("[credentialManager] uid 无效或缺失");
+    return null;
+  }
+
+  // 2. 获取 ver
+  const ver = getCurrentVer();
+  if (!ver) {
+    console.warn("[credentialManager] ver 缺失");
+    return null;
+  }
+
+  // 3. 获取 cookieStr（带缓存）
+  const cookieStr = _getCookieStr();
+  if (!cookieStr) {
+    console.warn("[credentialManager] cookies 缺失");
+    return null;
+  }
+
+  // 4. 获取 apiDomain（可选，从 credentials.json 读取）
+  let apiDomain = null;
+  try {
+    const credFile = JSON.parse(fs.readFileSync(CRED_PATH, "utf8"));
+    apiDomain = credFile.apiDomain || null;
+  } catch (e) {}
+
+  return { uid, ver, cookieStr, apiDomain };
+}
+
+/**
+ * 获取 Cookie 字符串（带内存缓存）
+ */
+function _getCookieStr() {
+  const now = Date.now();
+  if (cachedCookieStr && (now - cachedCookieStrAt) < COOKIE_CACHE_TTL) {
+    return cachedCookieStr;
+  }
+
+  const cookies = loadCookiesFromDisk();
+  if (!cookies || cookies.length === 0) return null;
+
+  cachedCookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
+  cachedCookieStrAt = now;
+  return cachedCookieStr;
+}
+
+/**
+ * 更新凭证
+ * @param {{ uid?: string, ver?: string, cookies?: Array }} updates
+ */
+export function updateCredentials(updates) {
+  if (updates.uid && isValidUid(updates.uid)) {
+    setUid(updates.uid);
+    console.log("[credentialManager] uid 已更新: " + updates.uid.substring(0, 12) + "...");
+  }
+
+  if (updates.ver) {
+    // 通过 extractVerFromRequest 更新 ver
+    extractVerFromRequest("transform.php?ver=" + updates.ver);
+    console.log("[credentialManager] ver 已更新: " + updates.ver.substring(0, 16) + "...");
+  }
+
+  if (updates.cookies && updates.cookies.length > 0) {
+    saveCookiesToDisk(updates.cookies);
+    // 清除 cookieStr 缓存，强制下次重新读取
+    cachedCookieStr = null;
+    cachedCookieStrAt = 0;
+    console.log("[credentialManager] cookies 已更新 (" + updates.cookies.length + " 条)");
+  }
+
+  // 当 uid 和 ver 同时存在时，自动持久化完整凭证到 credentials.json
+  if (updates.uid && updates.ver) {
+    saveToDisk({ uid: updates.uid, ver: updates.ver, cookies: updates.cookies || [], apiDomain: updates.apiDomain });
+  } else if (updates.apiDomain) {
+    // 单独更新 apiDomain 时，读取现有凭证后重新保存
+    const existing = loadFromDisk();
+    if (existing) {
+      saveToDisk({ uid: existing.uid, ver: existing.ver, cookies: [], apiDomain: updates.apiDomain });
+    }
+  }
+}
+
+/**
+ * 检查凭证是否有效
+ */
+export function isCredentialsValid() {
+  const uid = getUid();
+  const ver = getCurrentVer();
+  const cookies = loadCookiesFromDisk();
+  return isValidUid(uid) && !!ver && cookies && cookies.length > 0;
+}
+
+/**
+ * 清除 Cookie 缓存（强制下次从磁盘读取）
+ */
+export function invalidateCookieCache() {
+  cachedCookieStr = null;
+  cachedCookieStrAt = 0;
+}
+
+/**
+ * 获取基础 URL（优先使用 apiDomain，回退到 HG_URL）
+ */
+export function getBaseUrl() {
+  try {
+    const credFile = JSON.parse(fs.readFileSync(CRED_PATH, "utf8"));
+    if (credFile.apiDomain) return credFile.apiDomain;
+  } catch (e) {}
+  return HG_URL;
+}
+
+// ======================== 凭证验证与持久化 ========================
+
+/**
+ * 通过网络请求验证凭证是否仍然有效
+ * @param {string} uid
+ * @param {string} ver
+ * @param {string} cookieStr
+ * @returns {Promise<{ valid: boolean, reason?: string, error?: string }>}
+ */
+export async function validateCredentials(uid, ver, cookieStr, apiDomain) {
+  const baseUrl = apiDomain || HG_URL;
+  try {
+    const body = `p=get_member_data&uid=${uid}&ver=${ver}`;
+    const res = await fetch(`${baseUrl}/transform.php`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        Cookie: cookieStr,
+      },
+      body,
+    });
+
+    if (!res.ok) {
+      return { valid: false, reason: "session_expired" };
+    }
+
+    const text = await res.text();
+
+    // 响应包含 XML 数据（有效会话）
+    if (text.includes("<member>") || text.includes("<username>")) {
+      return { valid: true };
+    }
+
+    // 响应是 HTML（会话已过期，被重定向到登录页）
+    if (text.includes("<html>") || text.includes("<!DOCTYPE")) {
+      return { valid: false, reason: "session_expired" };
+    }
+
+    // 其他情况视为无效
+    return { valid: false, reason: "session_expired" };
+  } catch (err) {
+    return { valid: false, reason: "network_error", error: err.message };
+  }
+}
+
+/**
+ * 加载凭证并验证有效性
+ * @returns {Promise<{ valid: boolean, credentials?: object, reason?: string }>}
+ */
+export async function loadAndValidate() {
+  const creds = loadCredentials();
+  if (!creds) {
+    return { valid: false, credentials: null, reason: "no_credentials" };
+  }
+
+  const result = await validateCredentials(creds.uid, creds.ver, creds.cookieStr, creds.apiDomain);
+  if (result.valid) {
+    return { valid: true, credentials: { uid: creds.uid, ver: creds.ver, cookieStr: creds.cookieStr, apiDomain: creds.apiDomain } };
+  }
+
+  return { valid: false, credentials: null, reason: result.reason || "session_expired" };
+}
+
+/**
+ * 将完整凭证保存到 credentials.json
+ * @param {{ uid: string, ver: string, cookies?: Array }} param0
+ */
+export function saveToDisk({ uid, ver, cookies, apiDomain }) {
+  try {
+    const data = {
+      uid,
+      ver,
+      apiDomain: apiDomain || null,
+      savedAt: Date.now(),
+      cookieCount: cookies?.length || 0,
+    };
+    fs.writeFileSync(CRED_PATH, JSON.stringify(data, null, 2), "utf8");
+    console.log("[credentialManager] 凭证已持久化: " + CRED_PATH);
+
+    // 同时保存原始 cookies
+    if (cookies && cookies.length > 0) {
+      saveCookiesToDisk(cookies);
+    }
+  } catch (e) {
+    console.warn("[credentialManager] 凭证持久化失败:", e.message);
+  }
+}
+
+/**
+ * 从 credentials.json 读取保存的凭证
+ * @returns {{ uid: string, ver: string, savedAt: number, cookieCount: number } | null}
+ */
+export function loadFromDisk() {
+  try {
+    if (!fs.existsSync(CRED_PATH)) return null;
+    const raw = fs.readFileSync(CRED_PATH, "utf8");
+    const data = JSON.parse(raw);
+    if (!data.uid || !data.ver) return null;
+    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount };
+  } catch {
+    return null;
+  }
+}

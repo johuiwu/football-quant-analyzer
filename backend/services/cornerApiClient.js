@@ -37,14 +37,7 @@ export async function fetchCornerSchedule(page) {
         });
         await new Promise(r => setTimeout(r, 2000));
 
-        // ★ 强制刷新：先切换到其他运动标签，再切回 Soccer
-        await page.evaluate(() => {
-          const bkBtn = document.getElementById("old_bk_live_league") || document.getElementById("symbol_bk");
-          if (bkBtn) bkBtn.click();
-        });
-        await new Promise(r => setTimeout(r, 1000));
-
-        // 再点击 Soccer 标签
+        // ★ 直接点击 Soccer 标签（不再先切到篮球再切回，避免导航停留在篮球标签页）
         await page.evaluate(() => {
           const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
           if (soccerBtn) soccerBtn.click();
@@ -84,7 +77,7 @@ export async function fetchCornerSchedule(page) {
     cnXml = await fetchGameList_FT(page, RTYPE.CN);
   }
 
-  const cnResult = cnXml ? parseGameListXML(cnXml, "cn") : { matches: [], count: 0 };
+  const cnResult = cnXml ? parseGameListXML(cnXml, "rcn") : { matches: [], count: 0 };
   const matches = cnResult.matches || [];
 
   console.log("[cornerApiClient] 角球赛程: " + matches.length + " 场比赛");
@@ -121,14 +114,7 @@ export async function fetchCornerMatches(page) {
         });
         await new Promise(r => setTimeout(r, 2000));
 
-        // ★ 强制刷新：先切换到其他运动标签，再切回 Soccer
-        await page.evaluate(() => {
-          const bkBtn = document.getElementById("old_bk_live_league") || document.getElementById("symbol_bk");
-          if (bkBtn) bkBtn.click();
-        });
-        await new Promise(r => setTimeout(r, 1000));
-
-        // 点击 Soccer 标签
+        // ★ 直接点击 Soccer 标签（不再先切到篮球再切回，避免导航停留在篮球标签页）
         await page.evaluate(() => {
           const soccerBtn = document.getElementById("old_ft_live_league") || document.getElementById("symbol_ft");
           if (soccerBtn) soccerBtn.click();
@@ -192,8 +178,8 @@ export async function fetchCornerMatches(page) {
     ]);
   }
 
-  const rbResult = rbXml ? parseGameListXML(rbXml, "r") : { matches: [], count: 0 };
-  const rcnResult = rcnXml ? parseGameListXML(rcnXml, "cn") : { matches: [], count: 0 };
+  const rbResult = rbXml ? parseGameListXML(rbXml, "rb") : { matches: [], count: 0 };
+  const rcnResult = rcnXml ? parseGameListXML(rcnXml, "rcn") : { matches: [], count: 0 };
   const rrnouResult = rrnouXml ? parseGameListXML(rrnouXml, "rrnou") : { matches: [], count: 0 };
 
   console.log("[cornerApiClient] 解析: r=" + (rbResult.matches?.length || 0) + " 场, cn=" + (rcnResult.matches?.length || 0) + " 场, rrnou=" + (rrnouResult.matches?.length || 0) + " 场");
@@ -202,7 +188,8 @@ export async function fetchCornerMatches(page) {
 
   // ★ 分类：角球 tab（有角球盘口的比赛）+ 让球 tab（有 HDP/OU 盘口的比赛）
   const cornerMatches = merged.filter(m => m._hasCornerMarket);
-  const hdpMatches = merged.filter(m => m._hdpLine || m._ouLine);
+  // ★ hdpMatches：基于 handicaps 数组过滤，而非 _hdpLine/_ouLine
+  const hdpMatches = merged.filter(m => (m.handicaps || []).some(h => h.marketGroup !== "corner"));
 
   console.log("[cornerApiClient] 合并完成: " + merged.length + " 场 → 角球=" + cornerMatches.length + " 让球=" + hdpMatches.length + " (r=" + (rbResult.matches?.length || 0) + " cn=" + (rcnResult.matches?.length || 0) + ")");
   return { success: merged.length > 0, matches: merged, cornerMatches, hdpMatches, rbCount: rbResult.matches?.length || 0, rcnCount: rcnResult.matches?.length || 0 };
@@ -289,14 +276,14 @@ function mergeByName(rbMatches, rcnMatches, rrnouMatches = []) {
       _cornerHtOULine: rcn?._cornerHtOULine || "",
       _cornerHtOUOverOdds: rcn?._cornerHtOUOverOdds || "",
       _cornerHtOUUnderOdds: rcn?._cornerHtOUUnderOdds || "",
-      // 角球独赢（来自 rcn）
-      _corner1x2HomeOdds: rcn?._cornerHomeOdds || "",
-      _corner1x2AwayOdds: rcn?._cornerAwayOdds || "",
-      _corner1x2DrawOdds: rcn?._cornerDrawOdds || "",
-      // 角球半场独赢（来自 rcn）
-      _cornerHt1x2HomeOdds: rcn?._cornerHtHomeOdds || "",
-      _cornerHt1x2AwayOdds: rcn?._cornerHtAwayOdds || "",
-      _cornerHt1x2DrawOdds: rcn?._cornerHtDrawOdds || "",
+      // ★ 角球独赢：rcn 中无角球独赢数据，IOR_RGH 等是让球独赢，不填充
+      _corner1x2HomeOdds: "",
+      _corner1x2AwayOdds: "",
+      _corner1x2DrawOdds: "",
+      // ★ 角球上半场独赢：同上，rcn 中无此数据
+      _cornerHt1x2HomeOdds: "",
+      _cornerHt1x2AwayOdds: "",
+      _cornerHt1x2DrawOdds: "",
       // 角球单/双（来自 rcn）
       _cornerOddOdds: rcn?._cornerOddOdds || "",
       _cornerEvenOdds: rcn?._cornerEvenOdds || "",
@@ -429,33 +416,8 @@ function buildHandicapsArray(rcn, rb, rrnou) {
     });
   }
 
-  // 6. 角球独赢全场
-  if (rcn?._corner1x2HomeOdds || rcn?._corner1x2AwayOdds || rcn?._corner1x2DrawOdds) {
-    const home = parseFloat(rcn._corner1x2HomeOdds) || 0;
-    const away = parseFloat(rcn._corner1x2AwayOdds) || 0;
-    const draw = parseFloat(rcn._corner1x2DrawOdds) || 0;
-    result.push({
-      order: order++, category: "1X2", categoryLabel: "独赢",
-      period: "full",
-      odds: { home, away, draw },
-      homeOdds: home, awayOdds: away, drawOdds: draw,
-      source: "api", marketGroup: "corner",
-    });
-  }
-
-  // 7. 角球上半场独赢
-  if (rcn?._cornerHt1x2HomeOdds || rcn?._cornerHt1x2AwayOdds || rcn?._cornerHt1x2DrawOdds) {
-    const home = parseFloat(rcn._cornerHt1x2HomeOdds) || 0;
-    const away = parseFloat(rcn._cornerHt1x2AwayOdds) || 0;
-    const draw = parseFloat(rcn._cornerHt1x2DrawOdds) || 0;
-    result.push({
-      order: order++, category: "1X2", categoryLabel: "上半场 独赢",
-      period: "half",
-      odds: { home, away, draw },
-      homeOdds: home, awayOdds: away, drawOdds: draw,
-      source: "api", marketGroup: "corner",
-    });
-  }
+  // ★ 6. 角球独赢全场 — 已移除：rcn 中 IOR_RGH 等是让球独赢，不是角球独赢
+  // ★ 7. 角球上半场独赢 — 已移除：同上
 
   // 8. 角球单/双全场
   if (rcn?._cornerOddOdds || rcn?._cornerEvenOdds) {

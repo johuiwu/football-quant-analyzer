@@ -2,19 +2,18 @@ import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./corn
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 
+
 // ======================== 数据源配置 ========================
 const USE_REAL_DATA = process.env.USE_REAL_DATA !== "false";
 
 // ======================== 后端轮询缓存 ========================
 let cachedMatches = [];
 let cachedMainMarkets = {};
-let cachedCornerMatches = [];
-let cachedHdpMatches = {};
 let pollingInterval = null;
 let pollingActive = false;
 let lastFetchTime = 0;
 let lastEmptyLogTime = 0;
-const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "15000", 10); // 调整为15秒
+const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "3000", 10); // 3秒轮询
 const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
 
 // ======================== 策略配置 ========================
@@ -66,60 +65,80 @@ export function getBetConfig() {
 
 // ======================== 后端轮询 ========================
 
+// ======================== 增量更新 ========================
+
+const DELTA_FIELDS = ["elapsedMinutes", "homeScore", "awayScore", "totalCorners", "homeCorners", "awayCorners"];
+
+function computeDelta(oldMatches, newMatches) {
+  if (!oldMatches || oldMatches.length === 0) {
+    return newMatches.map(m => ({ matchId: m.matchId, field: "initial", oldValue: null, newValue: null }));
+  }
+  const oldMap = new Map(oldMatches.map(m => [m.matchId, m]));
+  const deltas = [];
+  for (const nm of newMatches) {
+    const om = oldMap.get(nm.matchId);
+    if (!om) {
+      deltas.push({ matchId: nm.matchId, field: "added", oldValue: null, newValue: null });
+      continue;
+    }
+    for (const field of DELTA_FIELDS) {
+      if (JSON.stringify(om[field]) !== JSON.stringify(nm[field])) {
+        deltas.push({ matchId: nm.matchId, field, oldValue: om[field], newValue: nm[field] });
+      }
+    }
+    if (JSON.stringify(om.cornerOU) !== JSON.stringify(nm.cornerOU)) {
+      deltas.push({ matchId: nm.matchId, field: "cornerOU", oldValue: om.cornerOU, newValue: nm.cornerOU });
+    }
+    if (JSON.stringify(om.cornerHDP) !== JSON.stringify(nm.cornerHDP)) {
+      deltas.push({ matchId: nm.matchId, field: "cornerHDP", oldValue: om.cornerHDP, newValue: nm.cornerHDP });
+    }
+    if (JSON.stringify(om.nextCorner) !== JSON.stringify(nm.nextCorner)) {
+      deltas.push({ matchId: nm.matchId, field: "nextCorner", oldValue: om.nextCorner, newValue: nm.nextCorner });
+    }
+  }
+  return deltas;
+}
+
 /**
  * 单次轮询核心逻辑（内部函数，消除 start/resume 中的重复代码）
  */
 async function pollOnce() {
+  await new Promise(r => setTimeout(r, Math.random() * 500)); // 随机抖动 0-500ms
   const result = await crawlCornerMatches();
   const rawMatches = result.success ? (result.data?.matches || []) : [];
   const mainMk = result.mainMarkets || {};
   const matches = rawMatches.map(mapMatchToCornerFormat);
 
-  // 策略评估：对每场比赛评估所有活跃策略
-  for (const match of matches) {
-    const triggeredIds = evaluateStrategies(match, activeStrategies);
-    match.triggeredStrategies = triggeredIds;
-    for (const sid of triggeredIds) {
-      saveCornerTrigger(match, sid).catch(e =>
-        console.error("[cornerService] 保存触发记录失败:", e.message)
-      );
+  // ★ 增量更新：计算数据变化
+  const delta = computeDelta(cachedMatches, matches);
+  const hasChanges = delta.length > 0;
+
+  if (hasChanges) {
+    console.log("[cornerService] 数据变化: " + delta.length + " 项, 触发策略评估");
+    for (const match of matches) {
+      const triggeredIds = evaluateStrategies(match, activeStrategies);
+      match.triggeredStrategies = triggeredIds;
+      for (const sid of triggeredIds) {
+        saveCornerTrigger(match, sid).catch(e =>
+          console.error("[cornerService] 保存触发记录失败:", e.message)
+        );
+      }
+    }
+  } else {
+    for (const match of matches) {
+      const oldMatch = cachedMatches.find(om => om.matchId === match.matchId);
+      if (oldMatch) match.triggeredStrategies = oldMatch.triggeredStrategies || [];
     }
   }
 
   cachedMatches = matches;
   cachedMainMarkets = mainMk || {};
-  // ★ 缓存分类数据
-  cachedCornerMatches = (result.data?.cornerMatches || []).map(mapMatchToCornerFormat);
-  const hdpList = result.data?.hdpMatches || [];
-  if (hdpList.length > 0) {
-    const hdpMarketData = {};
-    for (const m of hdpList) {
-      const key = (m.homeTeam || "") + "|" + (m.awayTeam || "");
-      const hdp = m.handicaps?.find(h => h.category === "HDP" && h.period === "full" && h.marketGroup !== "corner");
-      const ou = m.handicaps?.find(h => h.category === "O/U" && h.period === "full" && h.marketGroup !== "corner");
-      const hdpHalf = m.handicaps?.find(h => h.category === "HDP" && h.period === "half" && h.marketGroup !== "corner");
-      const ouHalf = m.handicaps?.find(h => h.category === "O/U" && h.period === "half" && h.marketGroup !== "corner");
-      hdpMarketData[key] = {
-        league: m.league || "",
-        time: m.time || "",
-        homeScore: m.homeScore || 0,
-        awayScore: m.awayScore || 0,
-        hdp: hdp ? [hdp] : [],
-        ou: ou ? [ou] : [],
-        hdpHalf: hdpHalf ? [hdpHalf] : [],
-        ouHalf: ouHalf ? [ouHalf] : [],
-      };
-    }
-    cachedHdpMatches = hdpMarketData;
-  } else {
-    cachedHdpMatches = mainMk || {};
-  }
   lastFetchTime = Date.now();
 
-  // 不再自动暂停：允许轮询持续运行，等待登录完成后获取数据
+  // 无比赛且无主盘口数据时自动暂停轮询，避免反复登录
   if (matches.length === 0 && Object.keys(mainMk).length === 0) {
-    console.log("[cornerService] 当前无有效比赛，等待下一轮轮询...");
-    // 不调用 pauseCornerBackendPolling()，让轮询持续运行
+    console.log("[cornerService] 暂无比赛，轮询已暂停");
+    pauseCornerBackendPolling();
     return;
   }
 
@@ -210,8 +229,6 @@ export function stopCornerBackendPolling() {
   }
   cachedMatches = [];
   cachedMainMarkets = {};
-  cachedCornerMatches = [];
-  cachedHdpMatches = {};
   return { success: true };
 }
 
@@ -337,12 +354,8 @@ export async function getLiveCornerData(filterMatchId) {
     const filtered = filterMatchId
       ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
       : cachedMatches;
-    // ★ 角球 tab 过滤
-    const cornerFiltered = filterMatchId
-      ? cachedCornerMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
-      : cachedCornerMatches;
-    console.log(`[cornerService] 返回缓存数据（${filtered.length}场，角球=${cornerFiltered.length}），缓存年龄: ${Math.floor((now - lastFetchTime) / 1000)}秒`);
-    return { data: filtered, cornerMatches: cornerFiltered, hdpMatches: cachedHdpMatches, generatedAt, count: filtered.length, cacheAge: now - lastFetchTime, mainMarkets: cachedMainMarkets };
+    console.log(`[cornerService] 返回缓存数据（${filtered.length}场），缓存年龄: ${Math.floor((now - lastFetchTime) / 1000)}秒`);
+    return { data: filtered, generatedAt, count: filtered.length, cacheAge: now - lastFetchTime, mainMarkets: cachedMainMarkets };
   }
 
   // 缓存无效或为空，检查是否正在轮询中
@@ -356,17 +369,14 @@ export async function getLiveCornerData(filterMatchId) {
     const filtered = filterMatchId
       ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
       : cachedMatches;
-    const cornerFiltered = filterMatchId
-      ? cachedCornerMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
-      : cachedCornerMatches;
-    return { data: filtered, cornerMatches: cornerFiltered, hdpMatches: cachedHdpMatches, generatedAt, count: filtered.length, cacheExpired: true, mainMarkets: cachedMainMarkets };
+    return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true, mainMarkets: cachedMainMarkets };
   }
   // 无缓存时直接返回空（不自动触发爬虫，由轮询/即时爬取入口负责）
   // 标记 cacheEmpty 让前端知道需要启动监控
   // ★ 即使角球缓存为空，也返回 mainMarkets（让球大小数据可能有效）
-  if (Object.keys(cachedMainMarkets).length > 0 || Object.keys(cachedHdpMatches).length > 0) {
-    console.log("[cornerService] 角球缓存为空，但让球数据有效");
-    return { data: [], cornerMatches: [], hdpMatches: cachedHdpMatches, generatedAt, count: 0, cacheEmpty: true, mainMarkets: cachedMainMarkets };
+  if (Object.keys(cachedMainMarkets).length > 0) {
+    console.log("[cornerService] 角球缓存为空，但 mainMarkets 有 " + Object.keys(cachedMainMarkets).length + " 场数据");
+    return { data: [], generatedAt, count: 0, cacheEmpty: true, mainMarkets: cachedMainMarkets };
   }
   // 限频日志：每30秒最多打印一次"无有效数据"，避免刷屏
   const logNow = Date.now();

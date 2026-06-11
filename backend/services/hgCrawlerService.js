@@ -3,10 +3,9 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, acquireLoginLock, releaseLoginLock, isPageLoggedIn, checkDomainReachable, diagnoseNavigationError, getHeadless } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
-import { fetchCornerMatches, fetchCornerSchedule } from "./cornerApiClient.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -158,18 +157,83 @@ async function clickNoButton(page) {
     return false;
   }
 }
-// ======================== 登录 ========================
-export async function loginToHG(credentials, forceNew = false, isolated = false) {
-  // ★ 登录锁：防止并发登录导致强制登出
-  await acquireLoginLock();
-  try {
-    return await _loginToHGImpl(credentials, forceNew, isolated);
-  } finally {
-    releaseLoginLock();
-  }
+
+async function detectLoginState(page) {
+  return await safeEvaluate(page, () => {
+    try {
+      // 优先级1: 简易密码页面（#back_login 可见）
+      var backLogin = document.getElementById('back_login');
+      if (backLogin) {
+        var s = getComputedStyle(backLogin);
+        if (s.display !== 'none' && s.visibility !== 'hidden') {
+          return { state: 'PASSCODE_PAGE', detail: '简易密码页面' };
+        }
+      }
+
+      // 优先级2: 被踢出（#alert_kick 容器激活 + #kick_ok_btn 可见）
+      var alertKick = document.getElementById('alert_kick');
+      if (alertKick && alertKick.classList.contains('on')) {
+        // 弹窗容器已激活，确认踢出按钮可见
+        var kickBtn = document.getElementById('kick_ok_btn');
+        if (kickBtn) {
+          var ks = getComputedStyle(kickBtn);
+          if (ks.display !== 'none' && ks.visibility !== 'hidden') {
+            return { state: 'KICKED_OUT', detail: '被踢出登录' };
+          }
+        }
+        // 容器激活但按钮不可见，仍然判定为被踢出（容器可见即表示弹窗显示）
+        return { state: 'KICKED_OUT', detail: '被踢出登录(容器激活)' };
+      }
+      // 回退：如果 #alert_kick 不存在，仅检查按钮可见性
+      if (!alertKick) {
+        var kickBtnFallback = document.getElementById('kick_ok_btn');
+        if (kickBtnFallback) {
+          var kfs = getComputedStyle(kickBtnFallback);
+          if (kfs.display !== 'none' && kfs.visibility !== 'hidden') {
+            return { state: 'KICKED_OUT', detail: '被踢出登录(无容器)' };
+          }
+        }
+      }
+
+      // 优先级3: 检测激活弹窗（容器 .on 类）— 必须在 LOGIN_PAGE 之前！
+      var popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show'];
+      for (var i = 0; i < popupIds.length; i++) {
+        var popupEl = document.getElementById(popupIds[i]);
+        if (popupEl && popupEl.classList.contains('on')) {
+          return { state: 'POPUP_ACTIVE', detail: '弹窗激活: ' + popupIds[i] };
+        }
+      }
+
+      // 优先级4: 已登录（主页特征）
+      var bodyText = document.body.textContent || "";
+      var hasMainFeature = (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
+                           (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
+      if (!hasMainFeature) {
+        var nav = document.getElementById("today_page") || document.getElementById("live_page");
+        if (nav && getComputedStyle(nav).display !== 'none' && getComputedStyle(nav).visibility !== 'hidden') hasMainFeature = true;
+        var symbol = document.getElementById("symbol_ft");
+        if (symbol && getComputedStyle(symbol).display !== 'none' && getComputedStyle(symbol).visibility !== 'hidden') hasMainFeature = true;
+      }
+      if (hasMainFeature) {
+        return { state: 'LOGGED_IN', detail: '主页特征可见' };
+      }
+
+      // 优先级5: 登录页面（#usr 可见）
+      var usrEl = document.querySelector('#usr');
+      if (usrEl && usrEl.offsetParent !== null) {
+        return { state: 'LOGIN_PAGE', detail: '登录页面' };
+      }
+
+      // 优先级6: 其他状态
+      return { state: 'WAIT_RESPONSE', detail: '等待响应' };
+    } catch (err) {
+      return { state: 'WAIT_RESPONSE', detail: '检测异常: ' + (err.message || '') };
+    }
+  });
 }
 
-async function _loginToHGImpl(credentials, forceNew, isolated) {
+// ======================== 登录 ========================
+export async function loginToHG(credentials, forceNew = false, isolated = false) {
   console.log("[HgCrawler] 开始登录...");
   crawlerStatus.error = null;
 
@@ -238,16 +302,10 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
 
   let bi;
   if (isolated) {
-    const headless = getHeadless();
-    const isolatedArgs = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--ignore-certificate-errors", "--window-size=1920,1400"];
-    const proxyServer = process.env.PUPPETEER_PROXY;
-    if (proxyServer) {
-      isolatedArgs.push(`--proxy-server=${proxyServer}`);
-      isolatedArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
-    }
+    const headless = true;
     bi = await puppeteer.launch({
       headless,
-      args: isolatedArgs,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1920,1400"],
       timeout: 60000
     });
     console.log("[HgCrawler] 隔离浏览器已启动");
@@ -257,11 +315,7 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
     await cookiePage.setViewport({ width: 1920, height: 1400 });
     if (savedCookies && savedCookies.length > 0) {
       for (const ck of savedCookies) { try { await cookiePage.setCookie(ck); } catch (_) {} }
-      try {
-        await cookiePage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-      } catch (navErr) {
-        await diagnoseNavigationError(cookiePage, HG_URL, navErr);
-      }
+      await cookiePage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
       await new Promise(r => setTimeout(r, 3000));
       const isValid = await safeEvaluate(cookiePage, () => {
         const body = document.body?.textContent || "";
@@ -290,238 +344,183 @@ async function _loginToHGImpl(credentials, forceNew, isolated) {
       Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
     });
 
-    // 域名可达性预检（仅警告，不阻止导航）
-    const dnsCheck = await checkDomainReachable(HG_URL);
-    if (!dnsCheck.reachable) {
-      console.warn("[HgCrawler] DNS 预检警告: " + dnsCheck.error + "（仍将尝试导航）");
-    }
-    try {
-      await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-    } catch (navErr) {
-      await diagnoseNavigationError(page, HG_URL, navErr);
-      throw navErr;
-    }
+    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
     console.log("[HgCrawler] 等待页面完全加载...");
     await new Promise((r) => setTimeout(r, 5000));
 
     let loginClicked = false;
-    let popupLastHandledAt = 0;
-    let consecutivePopupCount = 0;
+    const popupCount = { passcodePage: 0, passcodeDialog: 0, kickedOut: 0 };
+    const MAX_POPUP = 5;
+    const loginStartTime = Date.now();
+    const LOGIN_TIMEOUT = 60000;
 
-    const MAX_RETRIES = 3;
-    let retryCount = 0;
-    while (retryCount < MAX_RETRIES) {
-    if (retryCount > 0) {
-      console.log("[HgCrawler] 登录重试 " + retryCount + "/" + MAX_RETRIES + "...");
-      try {
-        await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-      } catch (navErr) {
-        await diagnoseNavigationError(page, HG_URL, navErr);
-        throw navErr;
-      }
-      await new Promise((r) => setTimeout(r, 5000));
-      loginClicked = false;
-      consecutivePopupCount = 0;
-      popupLastHandledAt = 0;
-    }
-    for (let i = 0; i < 80; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-
-      const status = await safeEvaluate(page, () => {
-        try {
-          const bodyText = document.body.textContent || "";
-          return {
-            hasSuccess: (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
-                        (bodyText.includes("In-Play") && bodyText.includes("Soccer")) ||
-                        (function(){
-                          // 必须真正看到主页元素，不能仅靠登录框隐藏
-                          var nav = document.getElementById("today_page") || document.getElementById("live_page");
-                          if (nav && getComputedStyle(nav).display !== 'none' && getComputedStyle(nav).visibility !== 'hidden') return true;
-                          var symbol = document.getElementById("symbol_ft");
-                          if (symbol && getComputedStyle(symbol).display !== 'none' && getComputedStyle(symbol).visibility !== 'hidden') return true;
-                          return false;
-                        })(),
-            hasLogin: (bodyText.includes("登入") || bodyText.includes("登录") || bodyText.includes("LOG IN")) &&
-                      (function(){ var el = document.querySelector("#usr"); return el ? el.offsetParent !== null : false; })(),
-            hasPasscodeDialog: (function(){
-              // 弹窗使用 position:fixed + visibility 控制显隐，offsetParent 为 null
-              // 改用 visibility 判断
-              var confirm = document.getElementById('C_alert_confirm');
-              if (confirm && getComputedStyle(confirm).display !== 'none' && getComputedStyle(confirm).visibility !== 'hidden') return true;
-              var confirm2 = document.getElementById('alert_confirm');
-              if (confirm2 && getComputedStyle(confirm2).display !== 'none' && getComputedStyle(confirm2).visibility !== 'hidden') return true;
-              var alertShow = document.getElementById('alert_show');
-              if (!alertShow) return false;
-              return getComputedStyle(alertShow).display !== 'none' && getComputedStyle(alertShow).visibility !== 'hidden' &&
-                     (alertShow.textContent || '').includes('简易密码');
-            })(),
-            hasLoggedOutMsg: (function(){
-              var kickBtn = document.getElementById('kick_ok_btn');
-              if (kickBtn && getComputedStyle(kickBtn).display !== 'none' && getComputedStyle(kickBtn).visibility !== 'hidden') return true;
-              return false;
-            })(),
-            hasTwoFactor: bodyText.includes("普通登入"),
-            hasPasscodePage: (function(){
-              // 检测简易密码页面（back_login按钮可见）
-              var btn = document.getElementById('back_login');
-              if (!btn) return false;
-              var style = getComputedStyle(btn);
-              return style.display !== 'none' && style.visibility !== 'hidden';
-            })(),
-            // 登录后页面特征：有导航菜单、比赛列表等
-            hasPostLogin: (function(){
-              var nav = document.getElementById("today_page") || document.getElementById("live_page");
-              if (nav && getComputedStyle(nav).display !== 'none' && getComputedStyle(nav).visibility !== 'hidden') return true;
-              var symbol = document.getElementById("symbol_ft");
-              if (symbol && getComputedStyle(symbol).display !== 'none' && getComputedStyle(symbol).visibility !== 'hidden') return true;
-              return false;
-            })()
-          };
-        } catch (err) { return null; }
-      });
-
-      if (!status) continue;
-
-      // 检测简易密码页面，优先处理（必须在 hasSuccess 之前检查，否则底层页面文本可能误判为成功）
-      if (status.hasPasscodePage) {
-        console.log("[HgCrawler] 检测到简易密码页面，点击普通登入...");
-        await page.evaluate(() => {
-          const btn = document.querySelector("#back_login");
-          if (btn) btn.click();
-        });
-        await new Promise((r) => setTimeout(r, 3000));
-        // 点击普通登入后会跳转回登录页面，需要重新输入账号密码
-        loginClicked = false;
-        console.log("[HgCrawler] 已点击普通登入，等待登录页面加载后重新登录...");
-        // 等待登录表单出现
-        try {
-          await page.waitForSelector("#usr", { timeout: 15000 });
-          console.log("[HgCrawler] 登录表单已加载，将在下一轮自动填表");
-        } catch(e) {
-          console.warn("[HgCrawler] 登录表单未在15s内加载:", e.message);
-        }
+    while (Date.now() - loginStartTime < LOGIN_TIMEOUT) {
+      const detected = await detectLoginState(page);
+      if (!detected || !detected.state) {
+        await new Promise((r) => setTimeout(r, 1000));
         continue;
       }
 
-      if (status.hasSuccess || (loginClicked && status.hasPostLogin && !status.hasLogin)) {
-        console.log("[HgCrawler] ✅ 登录成功！ (hasSuccess=" + status.hasSuccess + ", hasPostLogin=" + status.hasPostLogin + ", loginClicked=" + loginClicked + ")");
-        if (!isolated) { mainPage = page; setSharedPage(page); }
-        crawlerStatus.isLoggedIn = true;
-        if (process.env.CRAWLER_DEBUG === "1") {
-          await page.screenshot({ path: "debug-login-success.png" });
-        }
-        return isolated ? { success: true, page, browser: bi } : { success: true };
-      }
-
-      if (consecutivePopupCount > 8) {
-        console.log("[HgCrawler] WARNING: consecutive popup > 8, breaking loop (loginClicked=" + loginClicked + ")");
-        crawlerStatus.error = "popup loop timeout";
-        return isolated ? { success: false, error: "popup loop timeout" } : { success: false, error: "popup loop timeout" };
-      }
-
-      if ((status.hasPasscodeDialog || status.hasLoggedOutMsg) && (i - popupLastHandledAt >= 3 || i === 10)) {
-        console.log("[HgCrawler] 检测到弹窗，尝试处理... (loginClicked=" + loginClicked + ")");
-        const clicked = await clickNoButton(page);
-        if (clicked) {
-          popupLastHandledAt = i;
-          // 不重置 loginClicked —— 登录已点击后弹窗可能是正常后续流程，不应重置登录状态
-          consecutivePopupCount++;
-          await new Promise((r) => setTimeout(r, 2000));
-          try { await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }); } catch (_) {}
-        } else {
-          consecutivePopupCount++;
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-        // 不 continue，让循环自然进入下一次迭代，优先检查 hasSuccess
-        continue;
-      }
-
-      if (status.hasTwoFactor) {
-        console.log("[HgCrawler] ⚠ 进入二次验证，返回登录");
-        await safeEvaluate(page, () => {
-          const btn = document.querySelector("#back_login");
-          if (btn) btn.click();
-        });
-        await new Promise((r) => setTimeout(r, 5000));
-        loginClicked = false;
-        continue;
-      }
-
-      if (!loginClicked && status.hasLogin) {
-        console.log("[HgCrawler] 设置用户名密码并登录...");
-        const user = credentials && credentials.username ? credentials.username : HG_USERNAME;
-        const pwd = credentials && credentials.password ? credentials.password : HG_PASSWORD;
-
-        await page.evaluate((usr, pw) => {
-          const usrInput = document.querySelector("#usr") || document.querySelector("input[type='text']");
-          if (usrInput) {
-            usrInput.value = usr;
-            usrInput.dispatchEvent(new Event("input", { bubbles: true }));
+      switch (detected.state) {
+        case 'PASSCODE_PAGE':
+          popupCount.passcodePage++;
+          if (popupCount.passcodePage > MAX_POPUP) {
+            console.log("[HgCrawler] WARNING: passcodePage 弹窗超过 " + MAX_POPUP + " 次，登录失败");
+            crawlerStatus.error = "popup loop timeout (passcodePage)";
+            return isolated ? { success: false, error: "popup loop timeout (passcodePage)" } : { success: false, error: "popup loop timeout (passcodePage)" };
           }
-          const pwdInput = document.querySelector("#pwd") || document.querySelector("input[type='password']");
-          if (pwdInput) {
-            pwdInput.value = pw;
-            pwdInput.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-          setTimeout(() => {
-            const loginBtn = document.querySelector("#btn_login") || document.querySelector("input[type='button']") || document.querySelector("button");
-            if (loginBtn) loginBtn.click();
-          }, 500);
-        }, user, pwd);
-
-        loginClicked = true;
-        consecutivePopupCount = 0;  // reset popup counter
-        console.log("[HgCrawler] ✓ 已点击登录按钮");
-
-        // 等待 chk_login 响应以获取真实 uid
-        try {
-          console.log("[HgCrawler] 等待 chk_login 响应 (最多30s)...");
-          const chkResp = await page.waitForResponse(
-            (resp) => resp.url().includes("chk_login") || resp.url().includes("transform_nl.php"),
-            { timeout: 30000 }
-          );
-          const chkText = await chkResp.text();
-          console.log("[HgCrawler] chk_login 响应: " + chkText.substring(0, 200));
-          const uidMatch = chkText.match(/<uid>([^<]+)<\/uid>/);
-          if (uidMatch && uidMatch[1]) {
-            const realUid = uidMatch[1];
-            setUid(realUid);
-            global.HG_UID = realUid;
-            console.log("[HgCrawler] 从 chk_login 提取真实 uid: " + realUid + " (已缓存到 global)");
-          }
-        } catch (chkErr) {
-          console.warn("[HgCrawler] chk_login 等待失败: " + chkErr.message);
-          // 检测是否有验证码
-          const hasCaptcha = await page.evaluate(() => {
-            const iframes = document.querySelectorAll("iframe");
-            for (const f of iframes) {
-              if ((f.src || "").includes("captcha") || (f.src || "").includes("challenge")) return true;
-            }
-            const imgs = document.querySelectorAll("img");
-            for (const i of imgs) {
-              if ((i.src || "").includes("captcha") || (i.alt || "").includes("验证码")) return true;
-            }
-            const bodyText = (document.body?.textContent || "").toLowerCase();
-            if (bodyText.includes("captcha") || bodyText.includes("验证码")) return true;
-            return false;
+          console.log("[HgCrawler] 检测到简易密码页面，点击普通登入... (" + detected.detail + ")");
+          await page.evaluate(() => {
+            const btn = document.querySelector("#back_login");
+            if (btn) btn.click();
           });
-          if (hasCaptcha) {
-            console.warn("[HgCrawler] ⚠ 检测到验证码！需要手动处理。请在浏览器中完成验证码后按任意键继续...");
-            // 等待 120s 给用户手动处理
-            await new Promise(r => setTimeout(r, 120000));
-            console.log("[HgCrawler] 验证码等待结束，继续检测登录状态...");
+          await new Promise((r) => setTimeout(r, 3000));
+          loginClicked = false;
+          console.log("[HgCrawler] 已点击普通登入，等待登录页面加载后重新登录...");
+          break;
+
+        case 'KICKED_OUT':
+          popupCount.kickedOut++;
+          if (popupCount.kickedOut > MAX_POPUP) {
+            console.log("[HgCrawler] WARNING: kickedOut 弹窗超过 " + MAX_POPUP + " 次，登录失败");
+            crawlerStatus.error = "popup loop timeout (kickedOut)";
+            return isolated ? { success: false, error: "popup loop timeout (kickedOut)" } : { success: false, error: "popup loop timeout (kickedOut)" };
           }
-        }
-        continue;
+          console.log("[HgCrawler] 检测到被踢出登录，点击确认并清理... (" + detected.detail + ")");
+          // 1. 点击确认按钮
+          await page.evaluate(() => {
+            const btn = document.querySelector("#kick_ok_btn");
+            if (btn) btn.click();
+          });
+          await new Promise((r) => setTimeout(r, 1000));
+          // 2. 强制移除弹窗容器的 .on 类
+          await page.evaluate(() => {
+            const dialogIds = ["alert_kick", "C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "system_popup"];
+            for (const id of dialogIds) {
+              const el = document.getElementById(id);
+              if (el && el.classList.contains("on")) el.classList.remove("on");
+            }
+            if (document.body) {
+              document.body.classList.remove("scroll_lock", "locked");
+              document.body.style.overflow = "";
+            }
+          });
+          // 3. 首次被踢出时清除 Cookie 并重新导航
+          if (popupCount.kickedOut === 1) {
+            console.log("[HgCrawler] 首次被踢出，清除 Cookie 并重新导航...");
+            try {
+              const client = await page.target().createCDPSession();
+              await client.send("Network.clearBrowserCookies");
+              console.log("[HgCrawler] 已清除浏览器 Cookie");
+            } catch (e) {
+              console.warn("[HgCrawler] 清除 Cookie 失败:", e.message);
+            }
+            try {
+              await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+              await new Promise((r) => setTimeout(r, 3000));
+              console.log("[HgCrawler] 已重新导航到登录页");
+            } catch (e) {
+              console.warn("[HgCrawler] 重新导航失败:", e.message);
+            }
+          }
+          loginClicked = false;
+          break;
+
+        case 'PASSCODE_DIALOG':
+          popupCount.passcodeDialog++;
+          if (popupCount.passcodeDialog > MAX_POPUP) {
+            console.log("[HgCrawler] WARNING: passcodeDialog 弹窗超过 " + MAX_POPUP + " 次，登录失败");
+            crawlerStatus.error = "popup loop timeout (passcodeDialog)";
+            return isolated ? { success: false, error: "popup loop timeout (passcodeDialog)" } : { success: false, error: "popup loop timeout (passcodeDialog)" };
+          }
+          console.log("[HgCrawler] 检测到弹窗，尝试处理... (" + detected.detail + ", loginClicked=" + loginClicked + ")");
+          const clicked = await clickNoButton(page);
+          if (clicked) {
+            await new Promise((r) => setTimeout(r, 2000));
+            try { await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }); } catch (_) {}
+          } else {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          break;
+
+        case 'POPUP_ACTIVE':
+          console.log("[HgCrawler] 检测到激活弹窗，先点击取消按钮再清理...");
+          await clickNoButton(page);
+          await new Promise((r) => setTimeout(r, 1000));
+          // 强制清理弹窗
+          await page.evaluate(() => {
+            const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "system_popup"];
+            for (const id of dialogIds) {
+              const el = document.getElementById(id);
+              if (el && el.classList.contains("on")) el.classList.remove("on");
+            }
+            if (document.body) {
+              document.body.classList.remove("scroll_lock", "locked");
+              document.body.style.overflow = "";
+            }
+          });
+          break;
+
+        case 'LOGGED_IN':
+          console.log("[HgCrawler] ✅ 登录成功！ (" + detected.detail + ", loginClicked=" + loginClicked + ")");
+          if (!isolated) { mainPage = page; setSharedPage(page); }
+          crawlerStatus.isLoggedIn = true;
+          if (process.env.CRAWLER_DEBUG === "1") {
+            await page.screenshot({ path: "debug-login-success.png" });
+          }
+          return isolated ? { success: true, page, browser: bi } : { success: true };
+
+        case 'LOGIN_PAGE':
+          if (!loginClicked) {
+            console.log("[HgCrawler] 设置用户名密码并登录...");
+            const user = credentials && credentials.username ? credentials.username : HG_USERNAME;
+            const pwd = credentials && credentials.password ? credentials.password : HG_PASSWORD;
+
+            // 使用 Puppeteer type() 方法模拟真实键盘输入
+            const usernameInput = await page.$("#usr, input[name='username'], input[type='text']");
+            if (usernameInput) {
+              await usernameInput.click({ clickCount: 3 });
+              await usernameInput.type(user, { delay: 50 });
+            }
+            const passwordInput = await page.$("#pwd, input[name='password'], input[type='password']");
+            if (passwordInput) {
+              await passwordInput.click({ clickCount: 3 });
+              await passwordInput.type(pwd, { delay: 50 });
+            }
+            // 点击登录按钮
+            const btnSelectors = ["#btn_login", "input[type='submit']", "button[type='submit']", "input[type='button']"];
+            for (const sel of btnSelectors) {
+              try {
+                const btn = await page.$(sel);
+                if (btn) {
+                  const box = await btn.boundingBox();
+                  if (box && box.width > 0 && box.height > 0) {
+                    await btn.click();
+                    break;
+                  }
+                }
+              } catch (e) {}
+            }
+
+            loginClicked = true;
+            popupCount.passcodePage = 0;
+            popupCount.passcodeDialog = 0;
+            popupCount.kickedOut = 0;
+            console.log("[HgCrawler] ✓ 已点击登录按钮");
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+          break;
+
+        case 'WAIT_RESPONSE':
+        default:
+          await new Promise((r) => setTimeout(r, 1000));
+          break;
       }
     }
 
-    retryCount++;
-    console.log("[HgCrawler] ⚠ 第" + retryCount + "次登录超时");
-    }
-    console.log("[HgCrawler] ⚠ 所有 " + MAX_RETRIES + " 次登录尝试均超时");
-    crawlerStatus.error = "登录超时(已重试" + MAX_RETRIES + "次)";
-    return { success: false, error: "登录超时(已重试" + MAX_RETRIES + "次)" };
+    console.log("[HgCrawler] ⚠ 登录超时");
+    crawlerStatus.error = "登录超时";
+    return { success: false, error: "登录超时" };
   } catch (err) {
     console.error("[HgCrawler] 登录失败:", err.message);
     crawlerStatus.error = err.message;
@@ -1342,185 +1341,22 @@ export async function fetchAllLiveMatches() {
 }
 
 // ======================== 获取赛程（Today → CORNERS） ========================
-// ★ 修复：复用共享浏览器，不再使用隔离浏览器，避免强制登出
+// ======================== 获取赛程（Today → CORNERS） ========================
 export async function fetchSchedule(_retryCount = 0) {
   console.log("[HgCrawler] === 获取赛程 (Today → CORNERS) ===");
 
-  // ★ 使用共享浏览器（不再隔离）
-  let page = getSharedPage();
-
-  if (!page || page.isClosed() || !isBrowserActive()) {
-    console.log("[HgCrawler] 共享页面不可用，执行登录...");
-    const loginRes = await loginToHG(null, false, false);
-    if (!loginRes.success) {
-      return { success: false, error: loginRes.error || "登录失败" };
-    }
-    page = getSharedPage();
-  }
-
-  // 检查页面是否已登录
-  const loggedIn = await isPageLoggedIn(page);
-  if (!loggedIn) {
-    console.log("[HgCrawler] 页面未登录，执行登录...");
-    const loginRes = await loginToHG(null, false, false);
-    if (!loginRes.success) {
-      return { success: false, error: loginRes.error || "登录失败" };
-    }
-    page = getSharedPage();
-  }
+  // 使用隔离浏览器，不影响监控的共享浏览器
+  let privateBrowser = null;
+  let page = null;
 
   try {
-    // ★ API 模式：优先使用 API 获取赛程数据（2-3s vs DOM 40-60s）
-    const USE_API_MODE = true;
-    if (USE_API_MODE) {
-      console.log("[HgCrawler] fetchSchedule: 尝试 API 模式...");
-      try {
-        // ★ 获取赛程只获取 today 的角球数据（rtype=cn）
-        const apiResult = await fetchCornerSchedule(page);
-        if (apiResult.success && apiResult.matches && apiResult.matches.length > 0) {
-          console.log("[HgCrawler] API 模式成功: " + apiResult.matches.length + " 场角球赛程");
-
-          // 将 API matches 映射为 scheduleData 格式（兼容 DOM 模式返回格式）
-          const scheduleData = apiResult.matches.map((match, idx) => {
-            // 构建 handicaps 数组（兼容 parseAllMarkets 格式）
-            const handicaps = [];
-            let order = 1;
-
-            // 角球让球盘
-            if (match._cornerHdpLine || match._cornerHdpHomeOdds) {
-              handicaps.push({
-                order: order++,
-                category: "HDP",
-                categoryLabel: "角球让球",
-                period: "full",
-                source: "api",
-                marketGroup: "corner",
-                line: match._cornerHdpLine || "",
-                odds: { home: parseFloat(match._cornerHdpHomeOdds) || 0, away: parseFloat(match._cornerHdpAwayOdds) || 0 },
-              });
-            }
-            // 角球大小盘
-            if (match._cornerOULine || match._cornerOUOdds) {
-              handicaps.push({
-                order: order++,
-                category: "O/U",
-                categoryLabel: "角球大/小",
-                period: "full",
-                source: "api",
-                marketGroup: "corner",
-                line: parseFloat(match._cornerOULine) || 0,
-                odds: { over: parseFloat(match._cornerOUOdds) || 0, under: parseFloat(match._cornerOUUnderOdds) || 0 },
-              });
-            }
-            // 角球独赢
-            if (match._cornerHomeOdds || match._cornerDrawOdds) {
-              handicaps.push({
-                order: order++,
-                category: "1X2",
-                categoryLabel: "角球独赢",
-                period: "full",
-                source: "api",
-                marketGroup: "corner",
-                odds: {
-                  home: parseFloat(match._cornerHomeOdds) || 0,
-                  draw: parseFloat(match._cornerDrawOdds) || 0,
-                  away: parseFloat(match._cornerAwayOdds) || 0,
-                },
-              });
-            }
-            // 主盘让球
-            if (match._hdpLine || match._hdpHomeOdds) {
-              handicaps.push({
-                order: order++,
-                category: "HDP",
-                categoryLabel: "让球",
-                period: "full",
-                source: "api",
-                marketGroup: "main",
-                line: match._hdpLine || "",
-                odds: { home: parseFloat(match._hdpHomeOdds) || 0, away: parseFloat(match._hdpAwayOdds) || 0 },
-              });
-            }
-            // 主盘大小
-            if (match._ouLine || match._ouOverOdds) {
-              handicaps.push({
-                order: order++,
-                category: "O/U",
-                categoryLabel: "大/小",
-                period: "full",
-                source: "api",
-                marketGroup: "main",
-                line: parseFloat(match._ouLine) || 0,
-                odds: { over: parseFloat(match._ouOverOdds) || 0, under: parseFloat(match._ouUnderOdds) || 0 },
-              });
-            }
-            // 半场让球
-            if (match._htHdpLine || match._htHdpHomeOdds) {
-              handicaps.push({
-                order: order++,
-                category: "HDP",
-                categoryLabel: "上半场 让球",
-                period: "half",
-                source: "api",
-                marketGroup: "main",
-                line: match._htHdpLine || "",
-                odds: { home: parseFloat(match._htHdpHomeOdds) || 0, away: parseFloat(match._htHdpAwayOdds) || 0 },
-              });
-            }
-            // 半场大小
-            if (match._htOuLine || match._htOuOverOdds) {
-              handicaps.push({
-                order: order++,
-                category: "O/U",
-                categoryLabel: "上半场 大/小",
-                period: "half",
-                source: "api",
-                marketGroup: "main",
-                line: parseFloat(match._htOuLine) || 0,
-                odds: { over: parseFloat(match._htOuOverOdds) || 0, under: parseFloat(match._htOuUnderOdds) || 0 },
-              });
-            }
-
-            const hdpEntry = handicaps.find(h => h.category === "HDP" && h.period === "full" && h.marketGroup === "corner");
-            const ouEntry = handicaps.find(h => h.category === "O/U" && h.period === "full" && h.marketGroup === "corner");
-
-            return {
-              id: match.matchId || "sched_" + idx,
-              league: match.league || "",
-              homeTeam: match.homeTeam,
-              awayTeam: match.awayTeam,
-              time: match.time || "--:--",
-              date: new Date().toLocaleDateString(),
-              homeScore: match.homeScore || 0,
-              awayScore: match.awayScore || 0,
-              handicaps,
-              cornerHandicap: hdpEntry ? parseAsianHandicap(String(hdpEntry.line)) : (match.cornerHandicap || 0),
-              cornerOdds: hdpEntry?.odds?.home || ouEntry?.odds?.over || match.cornerOdds || 0,
-              hasCornerOdds: match.hasCornerOdds || handicaps.some(h => h.marketGroup === "corner"),
-            };
-          });
-
-          crawlerStatus.lastUpdate = Date.now();
-          crawlerStatus.matchesCount = scheduleData.length;
-
-          console.log("[HgCrawler] === 赛程完成 (API): " + scheduleData.length + " 场 ===");
-          if (scheduleData.length > 0) {
-            scheduleData.slice(0, 5).forEach((m, i) =>
-              console.log("  [" + i + "] " + m.league + " | " + m.homeTeam + " vs " + m.awayTeam + " | HDP=" + m.cornerHandicap + " odds=" + m.cornerOdds + " hdpCount=" + m.handicaps.length)
-            );
-          }
-
-          return {
-            success: true,
-            data: { matches: scheduleData },
-            count: scheduleData.length,
-          };
-        }
-        console.log("[HgCrawler] API 模式未获取到数据，回退到 DOM 模式...");
-      } catch (apiErr) {
-        console.warn("[HgCrawler] API 模式失败: " + apiErr.message + "，回退到 DOM 模式...");
-      }
+    const loginRes = await loginToHG(null, false, true); // isolated mode
+    if (!loginRes.success || !loginRes.page) {
+      return { success: false, error: loginRes.error || "隔离登录失败" };
     }
+    page = loginRes.page;
+    privateBrowser = loginRes.browser;
+    console.log("[HgCrawler] 隔离浏览器就绪");
 
     // 等待页面动态内容渲染（SPA 需要 JS 渲染 DOM）
     console.log("[HgCrawler] 等待页面动态内容渲染...");
@@ -1616,7 +1452,6 @@ export async function fetchSchedule(_retryCount = 0) {
     console.log("[HgCrawler] CORNERS 盘口: " + cornerOdds.length + " 条");
 
     // 数据为空时检测是否强制登出（仅可见弹窗触发，防误判隐藏DOM模板）
-    // ★ 修复：被踢出时先刷新页面，避免重新登录导致死循环
     if (cornerOdds.length === 0 && _retryCount < 2) {
       try {
         const kicked = await page.evaluate(() => {
@@ -1627,23 +1462,13 @@ export async function fetchSchedule(_retryCount = 0) {
           btn.click(); return true;
         });
         if (kicked) {
-          console.log("[HgCrawler] 检测到强制登出，点击 OK 并刷新页面...");
+          console.log("[HgCrawler] 检测到强制登出，点击 OK 并重新登录...");
           await new Promise(r => setTimeout(r, 3000));
-          try {
-            await page.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-            await new Promise(r => setTimeout(r, 3000));
-            const restored = await isPageLoggedIn(page);
-            if (restored) {
-              console.log("[HgCrawler] 刷新后已恢复登录，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
-              return await fetchSchedule(_retryCount + 1);
-            }
-          } catch (reloadErr) {
-            console.log("[HgCrawler] 刷新失败:", reloadErr.message);
-          }
-          // 刷新无效时才重新登录
-          const loginRes2 = await loginToHG(null, false, false);
-          if (loginRes2.success) {
-            page = getSharedPage();
+          const loginRes2 = await loginToHG(null, true, true);
+          if (loginRes2.success && loginRes2.page) {
+            try { await privateBrowser.close(); } catch(e) {}
+            page = loginRes2.page;
+            privateBrowser = loginRes2.browser;
             console.log("[HgCrawler] 重新登录成功，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
             return await fetchSchedule(_retryCount + 1);
           }
@@ -1708,8 +1533,17 @@ export async function fetchSchedule(_retryCount = 0) {
     console.error("[HgCrawler] 获取赛程失败:", err.message);
     crawlerStatus.error = err.message;
     return { success: false, error: err.message };
+  } finally {
+    // 关闭隔离浏览器
+    if (privateBrowser) {
+      try {
+        await privateBrowser.close();
+        console.log("[HgCrawler] 已关闭隔离浏览器");
+      } catch (e) {
+        console.warn("[HgCrawler] 关闭隔离浏览器失败:", e.message);
+      }
+    }
   }
-  // ★ 不再需要 finally 关闭隔离浏览器
 }
 export function startMatchPolling(onUpdate) {
   if (pollingActive) {
