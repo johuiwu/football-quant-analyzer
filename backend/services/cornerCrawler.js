@@ -2398,9 +2398,55 @@ async function _crawlViaPureHttp() {
   }
 
   const mainMarkets = {};
+  // ★ 角球盘口（按 matchId 索引）
   for (const m of cornerMatches) {
     if (m.cornerOU || m.cornerHDP) {
       mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE };
+    }
+  }
+  // ★ 让球/大小盘口（从 rrnou 数据构建，按 matchId 和 homeTeam|awayTeam 双索引）
+  for (const g of rnouGames) {
+    const ht = g.TEAM_H || g.team_h || "";
+    const at = g.TEAM_C || g.team_c || "";
+    const gid = g.GID || g.gid || "";
+    const teamKey = ht + "|" + at;
+    const hdpItems = [], ouItems = [], hdpHalfItems = [], ouHalfItems = [];
+
+    const extractMarketItems = (prefix, g) => {
+      const p = prefix ? prefix + "_" : "";
+      const items = { hdp: [], ou: [], hdpHalf: [], ouHalf: [] };
+      const ratioRe = g[p + "RATIO_RE"] || "";
+      const iorReh = parseFloat(g[p + "IOR_REH"]) || 0;
+      const iorRec = parseFloat(g[p + "IOR_REC"]) || 0;
+      if (ratioRe || iorReh > 0) items.hdp.push({ line: ratioRe, homeOdds: iorReh, awayOdds: iorRec });
+      const ratioRouo = parseFloat(g[p + "RATIO_ROUO"]) || 0;
+      const iorRouh = parseFloat(g[p + "IOR_ROUH"]) || 0;
+      const iorRouc = parseFloat(g[p + "IOR_ROUC"]) || 0;
+      if (ratioRouo > 0 || iorRouh > 0) items.ou.push({ line: ratioRouo, overOdds: iorRouh, underOdds: iorRouc });
+      const ratioHre = g[p + "RATIO_HRE"] || "";
+      const iorHreh = parseFloat(g[p + "IOR_HREH"]) || 0;
+      const iorHrec = parseFloat(g[p + "IOR_HREC"]) || 0;
+      if (ratioHre || iorHreh > 0) items.hdpHalf.push({ line: ratioHre, homeOdds: iorHreh, awayOdds: iorHrec });
+      const ratioHrouo = parseFloat(g[p + "RATIO_HROUO"]) || 0;
+      const iorHrouh = parseFloat(g[p + "IOR_HROUH"]) || 0;
+      const iorHrouc = parseFloat(g[p + "IOR_HROUC"]) || 0;
+      if (ratioHrouo > 0 || iorHrouh > 0) items.ouHalf.push({ line: ratioHrouo, overOdds: iorHrouh, underOdds: iorHrouc });
+      return items;
+    };
+
+    const main = extractMarketItems("", g);
+    hdpItems.push(...main.hdp); ouItems.push(...main.ou);
+    hdpHalfItems.push(...main.hdpHalf); ouHalfItems.push(...main.ouHalf);
+    for (const sub of ["A_sub", "B_sub", "C_sub"]) {
+      const subItems = extractMarketItems(sub, g);
+      hdpItems.push(...subItems.hdp); ouItems.push(...subItems.ou);
+      hdpHalfItems.push(...subItems.hdpHalf); ouHalfItems.push(...subItems.ouHalf);
+    }
+
+    if (hdpItems.length > 0 || ouItems.length > 0 || hdpHalfItems.length > 0 || ouHalfItems.length > 0) {
+      const marketData = { hdp: hdpItems, ou: ouItems, hdpHalf: hdpHalfItems, ouHalf: ouHalfItems };
+      mainMarkets[teamKey] = marketData;
+      if (gid) mainMarkets[gid] = marketData;
     }
   }
 
