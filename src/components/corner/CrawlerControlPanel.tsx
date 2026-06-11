@@ -36,8 +36,7 @@ export default function CrawlerControlPanel() {
   const setScheduleFreshLoaded = useCornerStore((s) => s.setScheduleFreshLoaded);
   const [crawlerData, setCrawlerData] = [useCornerStore((s) => s.crawlerData), useCornerStore((s) => s.setCrawlerData)];
   const [scheduleData, setScheduleData] = [useCornerStore((s) => s.scheduleData), useCornerStore((s) => s.setScheduleData)];
-  const [mainMarketData, setMainMarketData] = [useCornerStore((s) => s.mainMarketData), useCornerStore((s) => s.setMainMarketData)];
-  const [activeTab, setActiveTab] = useState<"matches" | "main_markets" | "schedule" | "raw" | "settings">("matches");
+  const [activeTab, setActiveTab] = useState<"matches" | "schedule" | "raw" | "settings">("matches");
   const storeAccount = useCornerStore((s) => s.accountConfig);
   const storeSettings = useCornerStore((s) => s.settings);
   const [credentials, setCredentials] = useState(() => ({
@@ -310,29 +309,29 @@ export default function CrawlerControlPanel() {
       
       console.log("[数据] 数据来源:", apiData?.success, "count:", apiData?.count, "source:", apiSource);
       if (apiData.success) {
+        // API 返回的数据结构：
+        // - /corner/live: { data: matchList[], mainMarkets, count }
+        // - /corner/fetch: { data: matches[], mainMarkets, count }
+        // 每场比赛的 handicaps[] 包含角球盘口(marketGroup=corner)和主盘口(marketGroup≠corner)
         const rawMatches = apiData.data || [];
-        const matchCount = Array.isArray(rawMatches) ? rawMatches.length : (rawMatches?.matches?.length || 0);
-        
-        // ★ 分类数据：角球 tab 使用 cornerMatches，让球 tab 使用 hdpMatches
-        const cornerMatches = apiData.cornerMatches || [];
-        const hdpMatches = apiData.hdpMatches || [];
+        const matchList = Array.isArray(rawMatches) ? rawMatches : (rawMatches?.matches || []);
+        const matchCount = matchList.length;
         
         if (matchCount > 0 || !apiData.cacheEmpty) {
           // 检查数据来源
-          const firstDataSource = rawMatches.length > 0 ? (rawMatches[0]._dataSource || "") : "";
+          const firstDataSource = matchList.length > 0 ? (matchList[0]._dataSource || "") : "";
           if (firstDataSource === "today" && !isBackendPolling) {
             showMessage("info", "当前无实时比赛，展示赛程数据");
           }
-          
-          // ★ 角球 tab：严格只使用 cornerMatches（有角球盘口的比赛），不回退
+
+          // 角球 tab：直接使用 API 返回的 matchList（所有盘口都在 handicaps 中）
           setCrawlerData({
-            matches: cornerMatches.map(normalizeMatchForRender),
-            allText: apiData.data?.allText || [],
-            allElements: apiData.data?.allElements || []
+            matches: matchList.map(normalizeMatchForRender),
+            allText: rawMatches.allText || [],
+            allElements: rawMatches.allElements || []
           } as any);
           setStatus(prev => ({ ...prev, matchesCount: matchCount, lastUpdate: Date.now() }));
-          
-          const matchList = Array.isArray(rawMatches) ? rawMatches : (rawMatches?.matches || []);
+
           if (matchList.length > 0) {
             const mapped = matchList.map((item) => ({
               matchId: String(item.matchId || "unknown"),
@@ -354,34 +353,10 @@ export default function CrawlerControlPanel() {
           } else {
             useCornerStore.getState().setLiveMatches([]);
           }
-          
-        }
 
-        // ★ 让球 tab：优先使用 hdpMatches 构建 mainMarketData，否则使用原有 mainMarkets
-        const recvMainMarkets = apiData.mainMarkets || {};
-        // hdpMatches 可能是数组（来自 /corner/fetch）或对象（来自 /corner/live）
-        if (Array.isArray(hdpMatches) && hdpMatches.length > 0) {
-          // 从 hdpMatches 数组构建 mainMarketData 格式（直接使用 handicaps 数组）
-          const hdpMarketData: Record<string, any> = {};
-          for (const m of hdpMatches) {
-            const key = (m.homeTeam || "") + "|" + (m.awayTeam || "");
-            hdpMarketData[key] = {
-              league: m.league || "",
-              time: m.time || "",
-              homeScore: m.homeScore || 0,
-              awayScore: m.awayScore || 0,
-              handicaps: m.handicaps || [],
-            };
-          }
-          setMainMarketData(hdpMarketData);
-        } else if (typeof hdpMatches === "object" && Object.keys(hdpMatches).length > 0) {
-          // hdpMatches 已经是 mainMarketData 格式的对象
-          setMainMarketData(hdpMatches);
-        } else if (Object.keys(recvMainMarkets).length > 0) {
-          setMainMarketData(recvMainMarkets);
         }
         
-        if (apiData.cacheEmpty && Object.keys(recvMainMarkets).length === 0) {
+        if (apiData.cacheEmpty) {
           showMessage("info", "数据采集中，请稍后刷新...");
         } else if (matchCount > 0) {
           // 禁用提示: showMessage("info", `获取到 ${matchCount} 场比赛`);
@@ -736,7 +711,6 @@ export default function CrawlerControlPanel() {
       <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
         {[
           { id: "matches", icon: <Activity className="w-3.5 h-3.5" />, label: "角球" },
-          { id: "main_markets", icon: <Trophy className="w-3.5 h-3.5" />, label: "让球和大小" },
           { id: "schedule", icon: <Calendar className="w-3.5 h-3.5" />, label: "赛程" },
           { id: "raw", icon: <Activity className="w-3.5 h-3.5" />, label: "原始数据" },
           { id: "settings", icon: <Settings className="w-3.5 h-3.5" />, label: "设置" },
@@ -802,20 +776,17 @@ export default function CrawlerControlPanel() {
                   {expandedMatches.has(match.matchId) && (
                     <div className="p-4 border-t border-slate-800 bg-slate-900/30">
                       {(() => {
-                        const handicaps = match.handicaps || [];
-                        
-                        if (handicaps.length === 0) {
+                        const allHandicaps = match.handicaps || [];
+                        const cornerHandicaps = allHandicaps.filter((h: any) => h.marketGroup === "corner");
+                        const mainHandicaps = allHandicaps.filter((h: any) => h.marketGroup !== "corner");
+
+                        if (allHandicaps.length === 0) {
                           return (
                             <div className="bg-slate-800/30 rounded-lg p-4 text-center text-slate-500 text-sm">
                               暂无盘口数据
                             </div>
                           );
                         }
-
-                        const colCount = handicaps.length;
-                        const gridCols = colCount <= 2 ? "grid-cols-2"
-                          : colCount <= 4 ? "grid-cols-4"
-                          : "grid-cols-4";
 
                         const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
                           "O/U":   { bg: "from-blue-900/50 to-slate-800/50",   text: "text-blue-300",   border: "border-blue-800/30" },
@@ -829,87 +800,128 @@ export default function CrawlerControlPanel() {
                           "NEXT": { bg: "from-teal-900/50 to-slate-800/50", text: "text-teal-300", border: "border-teal-800/30" },
                         };
 
-                        return (
-                          <div className={`grid ${gridCols} gap-3`}>
-                            {handicaps.map((h) => {
-                              const colorKey = h.period === "half" ? `${h.category}_half` : h.category;
-                              const colors = categoryColors[colorKey] || categoryColors["O/U"];
-                              let label = h.categoryLabel || h.category;
-                              if (label.length > 6) label = label.replace("上半场 ", "半");
+                        // 主盘口区使用统一的琥珀/橙色系
+                        const mainCategoryColors: Record<string, { bg: string; text: string; border: string }> = {
+                          "O/U":   { bg: "from-amber-900/50 to-slate-800/50",   text: "text-amber-300",   border: "border-amber-800/30" },
+                          "O/U_half": { bg: "from-amber-800/30 to-slate-800/50", text: "text-amber-300/70", border: "border-amber-700/20" },
+                          "HDP":   { bg: "from-orange-900/50 to-slate-800/50", text: "text-orange-300",  border: "border-orange-800/30" },
+                          "HDP_half":{ bg: "from-orange-800/30 to-slate-800/50",text: "text-orange-300/70",border: "border-orange-700/20" },
+                          "1X2":   { bg: "from-yellow-900/50 to-slate-800/50",text: "text-yellow-300",  border: "border-yellow-800/30" },
+                          "1X2_half":{bg: "from-yellow-800/30 to-slate-800/50",text: "text-yellow-300/70",border: "border-yellow-700/20" },
+                          "O/E":   { bg: "from-amber-900/40 to-slate-800/50", text: "text-amber-300",   border: "border-amber-700/20" },
+                          "O/E_half":{bg: "from-amber-800/30 to-slate-800/50", text: "text-amber-300/70", border: "border-amber-700/20" },
+                        };
 
-                              return (
-                                <div key={h.order || label} className={`bg-gradient-to-br ${colors.bg} rounded-lg p-3 border ${colors.border}`}>
-                                  <div className={`text-xs ${colors.text} mb-2 font-medium text-center`}>{label}</div>
-                                  {h.category === "O/U" && (
-                                    <>
-                                      <div className="text-center">
-                                        <div className="text-xs text-slate-400">大 {h.line ?? "--"}</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.over || 0).toFixed(2)}</div>
+                        const renderHandicapCards = (handicaps: any[], colorsMap: Record<string, { bg: string; text: string; border: string }>) => {
+                          const colCount = handicaps.length;
+                          const gridCols = colCount <= 2 ? "grid-cols-2"
+                            : colCount <= 4 ? "grid-cols-4"
+                            : "grid-cols-4";
+                          return (
+                            <div className={`grid ${gridCols} gap-3`}>
+                              {handicaps.map((h) => {
+                                const colorKey = h.period === "half" ? `${h.category}_half` : h.category;
+                                const colors = colorsMap[colorKey] || colorsMap["O/U"];
+                                let label = h.categoryLabel || h.category;
+                                if (label.length > 6) label = label.replace("上半场 ", "半");
+
+                                return (
+                                  <div key={h.order || label} className={`bg-gradient-to-br ${colors.bg} rounded-lg p-3 border ${colors.border}`}>
+                                    <div className={`text-xs ${colors.text} mb-2 font-medium text-center`}>{label}</div>
+                                    {h.category === "O/U" && (
+                                      <>
+                                        <div className="text-center">
+                                          <div className="text-xs text-slate-400">大 {h.line ?? "--"}</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.over || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                          <div className="text-xs text-slate-400">小 {h.line ?? "--"}</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.under || 0).toFixed(2)}</div>
+                                        </div>
+                                      </>
+                                    )}
+                                    {h.category === "HDP" && (
+                                      <>
+                                        <div className="text-center">
+                                          <div className="text-xs text-slate-400">{translateTeam(match.homeTeam)} ({h.line ?? "--"})</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                          <div className="text-xs text-slate-400">{translateTeam(match.awayTeam)} ({h.line ?? "--"})</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
+                                        </div>
+                                      </>
+                                    )}
+                                    {h.category === "1X2" && (
+                                      <div className="flex justify-around text-center">
+                                        <div>
+                                          <div className="text-xs text-slate-400">主</div>
+                                          <div className="text-sm font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="text-xs text-slate-400">平</div>
+                                          <div className="text-sm font-bold text-white">{(h.odds?.draw || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                          <div className="text-xs text-slate-400">客</div>
+                                          <div className="text-sm font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
+                                        </div>
                                       </div>
-                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                        <div className="text-xs text-slate-400">小 {h.line ?? "--"}</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.under || 0).toFixed(2)}</div>
-                                      </div>
-                                    </>
-                                  )}
-                                  {h.category === "HDP" && (
-                                    <>
-                                      <div className="text-center">
-                                        <div className="text-xs text-slate-400">{translateTeam(match.homeTeam)} ({h.line ?? "--"})</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                      </div>
-                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                        <div className="text-xs text-slate-400">{translateTeam(match.awayTeam)} ({h.line ?? "--"})</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                      </div>
-                                    </>
-                                  )}
-                                  {h.category === "1X2" && (
-                                    <div className="flex justify-around text-center">
-                                      <div>
-                                        <div className="text-xs text-slate-400">主</div>
-                                        <div className="text-sm font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                      </div>
-                                      <div>
-                                        <div className="text-xs text-slate-400">平</div>
-                                        <div className="text-sm font-bold text-white">{(h.odds?.draw || 0).toFixed(2)}</div>
-                                      </div>
-                                      <div>
-                                        <div className="text-xs text-slate-400">客</div>
-                                        <div className="text-sm font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {h.category === "O/E" && (
-                                    <>
-                                      <div className="text-center">
-                                        <div className="text-xs text-slate-400">单</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.odd || 0).toFixed(2)}</div>
-                                      </div>
-                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                        <div className="text-xs text-slate-400">双</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.even || 0).toFixed(2)}</div>
-                                      </div>
-                                    </>
-                                  )}
-                                  {h.category === "NEXT" && (
-                                    <>
-                                      <div className="text-center">
-                                        <div className="text-xs text-slate-400">{translateTeam(match.homeTeam)}</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                      </div>
-                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                        <div className="text-xs text-slate-400">第{h.line}个角球</div>
-                                      </div>
-                                      <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                        <div className="text-xs text-slate-400">{translateTeam(match.awayTeam)}</div>
-                                        <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                      </div>
-                                    </>
-                                  )}
+                                    )}
+                                    {h.category === "O/E" && (
+                                      <>
+                                        <div className="text-center">
+                                          <div className="text-xs text-slate-400">单</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.odd || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                          <div className="text-xs text-slate-400">双</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.even || 0).toFixed(2)}</div>
+                                        </div>
+                                      </>
+                                    )}
+                                    {h.category === "NEXT" && (
+                                      <>
+                                        <div className="text-center">
+                                          <div className="text-xs text-slate-400">{translateTeam(match.homeTeam)}</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                          <div className="text-xs text-slate-400">第{h.line}个角球</div>
+                                        </div>
+                                        <div className="text-center mt-2 pt-2 border-t border-slate-700">
+                                          <div className="text-xs text-slate-400">{translateTeam(match.awayTeam)}</div>
+                                          <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        };
+
+                        return (
+                          <div className="space-y-4">
+                            {cornerHandicaps.length > 0 && (
+                              <div>
+                                <div className="text-xs text-blue-400 mb-2 font-medium flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                  角球盘口
                                 </div>
-                              );
-                            })}
+                                {renderHandicapCards(cornerHandicaps, categoryColors)}
+                              </div>
+                            )}
+                            {mainHandicaps.length > 0 && (
+                              <div>
+                                <div className="text-xs text-amber-400 mb-2 font-medium flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                  主盘口
+                                </div>
+                                {renderHandicapCards(mainHandicaps, mainCategoryColors)}
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -1124,139 +1136,7 @@ export default function CrawlerControlPanel() {
           更新时间：{new Date(status.lastUpdate).toLocaleTimeString()}
         </div>
       )}
-      {activeTab === "main_markets" && (
-        <div className="space-y-4 max-h-[600px] overflow-y-auto">
-          {(!mainMarketData || Object.keys(mainMarketData).length === 0) ? (
-            <div className="text-center py-8 text-slate-500 text-sm">
-              暂无让球大小数据，请启动监控获取数据。
-            </div>
-          ) : (
-            Object.entries(mainMarketData).map(([key, val]: [string, any]) => {
-              const [home, away] = key.split("|");
-              const hasScore = typeof val.homeScore === 'number' && val.homeScore >= 0 && typeof val.awayScore === 'number' && val.awayScore >= 0;
-              
-              // 从 handicaps 数组筛选让球 tab 盘口（marketGroup !== "corner"）
-              const hdpHandicaps = (val.handicaps && Array.isArray(val.handicaps))
-                ? val.handicaps.filter((h: any) => h.marketGroup !== "corner")
-                : [];
-              
-              return (
-                <div key={key} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
-                  <div className="p-4">
-                    {/* 联赛 + 时间 */}
-                    <div className="flex items-center gap-3 mb-2">
-                      {val.league && (
-                        <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(val.league)}</span>
-                      )}
-                      {val.time && (
-                        <span className="text-xs text-slate-500">{translateTime(val.time)}</span>
-                      )}
-                    </div>
-                    {/* 队名 + 比分 */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex-1 text-center">
-                        <div className="text-sm font-medium text-slate-200">{translateTeam(home)}</div>
-                      </div>
-                      <div className="text-xs text-slate-500 px-2">
-                        {hasScore ? (
-                          <span className="text-lg font-bold text-slate-300">{val.homeScore} - {val.awayScore}</span>
-                        ) : "VS"}
-                      </div>
-                      <div className="flex-1 text-center">
-                        <div className="text-sm font-medium text-slate-200">{translateTeam(away)}</div>
-                      </div>
-                    </div>
-                    {/* 盘口卡片 - 从 handicaps 数组渲染 */}
-                    {hdpHandicaps.length > 0 ? (
-                      <div className="grid grid-cols-4 gap-2">
-                        {hdpHandicaps.map((h: any, idx: number) => {
-                          const colorKey = h.period === "half" ? `${h.category}_half` : h.category;
-                          const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
-                            "O/U":   { bg: "from-blue-900/50 to-slate-800/50",   text: "text-blue-300",   border: "border-blue-800/30" },
-                            "O/U_half": { bg: "from-blue-800/30 to-slate-800/50", text: "text-blue-300/70", border: "border-blue-700/20" },
-                            "HDP":   { bg: "from-orange-900/50 to-slate-800/50", text: "text-orange-300",  border: "border-orange-800/30" },
-                            "HDP_half":{ bg: "from-orange-800/30 to-slate-800/50",text: "text-orange-300/70",border: "border-orange-700/20" },
-                            "1X2":   { bg: "from-purple-900/50 to-slate-800/50",text: "text-purple-300",  border: "border-purple-800/30" },
-                            "1X2_half":{bg: "from-purple-800/30 to-slate-800/50",text: "text-purple-300/70",border: "border-purple-700/20" },
-                            "O/E":   { bg: "from-green-900/50 to-slate-800/50", text: "text-green-300",   border: "border-green-800/30" },
-                            "O/E_half":{bg: "from-green-800/30 to-slate-800/50", text: "text-green-300/70", border: "border-green-700/20" },
-                          };
-                          const colors = categoryColors[colorKey] || categoryColors["O/U"];
-                          let label = h.categoryLabel || h.category;
-                          if (label.length > 6) label = label.replace("上半场 ", "半");
-
-                          return (
-                            <div key={h.order || idx} className={`bg-gradient-to-br ${colors.bg} rounded-lg p-2 border ${colors.border}`}>
-                              <div className={`text-[10px] ${colors.text} mb-1 font-medium text-center`}>{label}</div>
-                              {h.category === "O/U" && (
-                                <>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-slate-400">大 {h.line ?? "--"}</div>
-                                    <div className="text-sm font-bold text-white">{(h.odds?.over || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="text-center mt-1 pt-1 border-t border-slate-700">
-                                    <div className="text-[10px] text-slate-400">小 {h.line ?? "--"}</div>
-                                    <div className="text-sm font-bold text-white">{(h.odds?.under || 0).toFixed(2)}</div>
-                                  </div>
-                                </>
-                              )}
-                              {h.category === "HDP" && (
-                                <>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-slate-400">{translateTeam(home)} ({h.line ?? "--"})</div>
-                                    <div className="text-sm font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="text-center mt-1 pt-1 border-t border-slate-700">
-                                    <div className="text-[10px] text-slate-400">{translateTeam(away)} ({h.line ?? "--"})</div>
-                                    <div className="text-sm font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                  </div>
-                                </>
-                              )}
-                              {h.category === "1X2" && (
-                                <div className="flex justify-around text-center">
-                                  <div>
-                                    <div className="text-[9px] text-slate-400">主</div>
-                                    <div className="text-[10px] font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-[9px] text-slate-400">平</div>
-                                    <div className="text-[10px] font-bold text-white">{(h.odds?.draw || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-[9px] text-slate-400">客</div>
-                                    <div className="text-[10px] font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                  </div>
-                                </div>
-                              )}
-                              {h.category === "O/E" && (
-                                <>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-slate-400">单</div>
-                                    <div className="text-sm font-bold text-white">{(h.odds?.odd || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="text-center mt-1 pt-1 border-t border-slate-700">
-                                    <div className="text-[10px] text-slate-400">双</div>
-                                    <div className="text-sm font-bold text-white">{(h.odds?.even || 0).toFixed(2)}</div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center text-slate-500 text-xs py-2">暂无盘口数据</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-
-{activeTab === "raw" && (
+      {activeTab === "raw" && (
         <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {!crawlerData ? (
             <div className="text-center py-8 text-slate-500 text-sm">
