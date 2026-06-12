@@ -45,8 +45,6 @@ export default function CrawlerControlPanel() {
   }));
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [expandedMatches, setExpandedMatches] = useState<Set<string>>(new Set());
-  const [executingBets, setExecutingBets] = useState(false);
-  const [showBetConfirm, setShowBetConfirm] = useState(false);
   const setLoginStatus = useCornerStore((s) => s.setLoginStatus);
   const storeIsLoggedIn = useCornerStore((s) => s.isLoggedIn);
   const storeLoginInProgress = useCornerStore((s) => s.loginInProgress);
@@ -321,7 +319,79 @@ export default function CrawlerControlPanel() {
 
         // 将 mainMarkets 转换为 handicaps 格式并合并到对应比赛
         const mergeMainMarkets = (matches: any[]) => {
-          return matches.map((m: any) => {
+          const existingKeys = new Set<string>();
+          const existingIds = new Set<string>();
+          for (const m of matches) {
+            const teamKey = (m.homeTeam || "") + "|" + (m.awayTeam || "");
+            existingKeys.add(teamKey.toLowerCase());
+            existingIds.add(String(m.matchId || m.gid || ""));
+          }
+
+          // ★ 从 mainMarkets 中找出没有对应 matchList 条目的比赛，创建新的比赛条目
+          const extraMatches: any[] = [];
+          for (const [key, mmRaw] of Object.entries(mainMarkets)) {
+            const mm = mmRaw as any;
+            if (existingIds.has(key) || existingKeys.has(key.toLowerCase())) continue;
+            // key 格式为 "homeTeam|awayTeam"
+            const sepIdx = key.indexOf("|");
+            if (sepIdx < 1) continue;
+            const homeTeam = key.substring(0, sepIdx);
+            const awayTeam = key.substring(sepIdx + 1);
+            if (!homeTeam || !awayTeam) continue;
+
+            const extraHandicaps: any[] = [];
+            let order = 1;
+            for (const h of (mm.hdp || [])) {
+              extraHandicaps.push({
+                order: order++, category: "HDP", categoryLabel: "让球",
+                period: "full", line: h.line || 0,
+                odds: { home: h.homeOdds || 0, away: h.awayOdds || 0 },
+                source: "api", marketGroup: "hdp",
+              });
+            }
+            for (const o of (mm.ou || [])) {
+              extraHandicaps.push({
+                order: order++, category: "O/U", categoryLabel: "大小球",
+                period: "full", line: o.line || 0,
+                odds: { over: o.overOdds || 0, under: o.underOdds || 0 },
+                source: "api", marketGroup: "ou",
+              });
+            }
+            for (const h of (mm.hdpHalf || [])) {
+              extraHandicaps.push({
+                order: order++, category: "HDP", categoryLabel: "上半场 让球",
+                period: "half", line: h.line || 0,
+                odds: { home: h.homeOdds || 0, away: h.awayOdds || 0 },
+                source: "api", marketGroup: "hdp",
+              });
+            }
+            for (const o of (mm.ouHalf || [])) {
+              extraHandicaps.push({
+                order: order++, category: "O/U", categoryLabel: "上半场 大小球",
+                period: "half", line: o.line || 0,
+                odds: { over: o.overOdds || 0, under: o.underOdds || 0 },
+                source: "api", marketGroup: "ou",
+              });
+            }
+
+            if (extraHandicaps.length > 0) {
+              extraMatches.push({
+                matchId: "mm_" + key,
+                matchName: homeTeam + " vs " + awayTeam,
+                homeTeam, awayTeam,
+                league: "", time: "",
+                elapsedMinutes: 0, homeScore: 0, awayScore: 0,
+                totalCorners: 0, homeCorners: 0, awayCorners: 0,
+                handicaps: extraHandicaps,
+                triggeredStrategies: [],
+                _dataSource: "api", _cornerSource: "none",
+                dataQuality: "hdp_only",
+              });
+            }
+          }
+
+          // 合并 mainMarkets 到已有比赛
+          const merged = matches.map((m: any) => {
             // ★ 尝试多种 key 匹配：matchId > homeTeam|awayTeam > gid
             const teamKey = (m.homeTeam || "") + "|" + (m.awayTeam || "");
             const matchIdKey = String(m.matchId || m.gid || "");
@@ -370,11 +440,13 @@ export default function CrawlerControlPanel() {
 
             return { ...m, handicaps: [...(m.handicaps || []), ...extraHandicaps] };
           });
+
+          return [...merged, ...extraMatches];
         };
 
         const mergedMatchList = mergeMainMarkets(matchList);
 
-        if (matchCount > 0 || !apiData.cacheEmpty) {
+        if (mergedMatchList.length > 0 || !apiData.cacheEmpty) {
           // 检查数据来源
           const firstDataSource = matchList.length > 0 ? (matchList[0]._dataSource || "") : "";
           if (firstDataSource === "today" && !isBackendPolling) {
@@ -497,34 +569,6 @@ export default function CrawlerControlPanel() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleExecutePendingBets = async (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (executingBets) return;
-    setExecutingBets(true);
-    try {
-      const res = await fetch("/api/corner/bets/execute", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        showMessage("success", `投注执行：${data.executed || 0} 成功, ${data.failed || 0} 失败`);
-      } else {
-        showMessage("error", data.error || "执行失败");
-      }
-    } catch (err) {
-      showMessage("error", "执行失败");
-    } finally {
-      setExecutingBets(false);
-    }
-  };
-
-  const cancelBetConfirm = () => {
-    setShowBetConfirm(false);
-  };
-
-  const confirmExecuteBets = async () => {
-    setShowBetConfirm(false);
-    await handleExecutePendingBets();
   };
 
   const toggleMatchExpand = (matchId: string) => {
@@ -703,18 +747,6 @@ export default function CrawlerControlPanel() {
           </button>
         )}
 
-        <button key="btn-execute-bets" type="button"
-          onClick={() => setShowBetConfirm(true)}
-          disabled={executingBets || (!status.isLoggedIn && !storeIsLoggedIn)}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:opacity-50 text-white text-xs rounded-lg transition-colors"
-        >
-          {executingBets ? (
-            <RefreshCw key="icon-executing" className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <TrendingUp key="icon-trending" className="w-3.5 h-3.5" />
-          )}
-          {executingBets ? "执行中..." : "执行待投注"}
-        </button>
         <button key="btn-close-browser" type="button"
           onClick={(e) => handleClose(e)}
           disabled={loading || (!status.isLoggedIn && !storeIsLoggedIn)}
@@ -735,34 +767,6 @@ export default function CrawlerControlPanel() {
           <span>自动刷新 (5s)</span>
         </label>
       </div>
-
-      {showBetConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <h3 className="text-lg font-semibold text-amber-400 mb-3">⚠️ 自动投注确认</h3>
-            <p className="text-sm text-slate-300 mb-4">
-              自动投注将通过模型判断并操作 HG 网站进行投注，请确认 DOM 选择器和网站版本无误，否则可能导致投注失败、损失等问题。
-            </p>
-            <p className="text-sm text-slate-400 mb-6">
-              提示：请确认 HG 网站页面结构无变化，测试无误后再使用。
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={cancelBetConfirm}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm rounded-lg transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={confirmExecuteBets}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-lg transition-colors"
-              >
-                确认执行投注
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
         {[

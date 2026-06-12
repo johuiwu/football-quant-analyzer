@@ -11,7 +11,7 @@ import {
   MOBILE_UA
 } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
-import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate } from "./credentialManager.js";
+import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate, getSavedLoginCredentials } from "./credentialManager.js";
 import { fetchCornerData, fetchHdpOuData, fetchGameDetail } from "./hgApiClient.js";
 import { loginToHG as hgCrawlerLogin } from "./hgCrawlerService.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
@@ -1736,10 +1736,16 @@ async function fetchCornerDataViaAPI(page) {
     // ★ rcn XML 字段名是小写混合：gid, team_h, team_c, league, re_time, ratio_rouho, ior_ROUHO 等
     const games = parseCornerXML(listXml, "rcn");
     console.log("[cornerCrawler] API: 角球列表返回 " + games.length + " 场比赛");
-    if (games.length === 0) return [];
+    // ★ 不再在角球为空时直接返回，继续解析 rrnou（让球/大小数据可能有效）
 
     // ★ rrnou XML 字段名是全大写：GID, TEAM_H, TEAM_C, LEAGUE, SCORE_H, SCORE_C, RETIMESET, RATIO_RE, IOR_REH 等
     const rnouGames = parseCornerXML(rnouXml, "rrnou");
+    console.log("[cornerCrawler] API: rrnou 返回 " + rnouGames.length + " 场比赛数据");
+    // ★ 角球和 rrnou 都为空时才返回空
+    if (games.length === 0 && rnouGames.length === 0) {
+      console.warn("[cornerCrawler] API: rcn 和 rrnou 数据均为空");
+      return [];
+    }
     const scoreMap = {};
     for (const g of rnouGames) {
       const ht = g.TEAM_H || g.team_h || "";
@@ -1761,13 +1767,14 @@ async function fetchCornerDataViaAPI(page) {
       const si = scoreMap[scoreKey] || {};
 
       let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
+      let cornerOUHalf = null, cornerHDPHalf = null;
       // ★ 打印完整 game 数据用于调试（确认 rcn 实际返回哪些字段）
       console.log(`[cornerCrawler] rcn game 完整数据:`, JSON.stringify(game).substring(0, 800));
       // O/U — 先尝试角球专用字段，再回退到常规字段
       const rouo = parseFloat(game.RATIO_CROUO || game.ratio_crouo || game.RATIO_ROUO || game.ratio_rouo || 0);
       const iorouh = parseFloat(game.IOR_CROUO || game.ior_crouo || game.IOR_ROUH || game.ior_rouh || 0);
       const iorouc = parseFloat(game.IOR_CROUU || game.ior_crouu || game.IOR_ROUC || game.ior_rouc || 0);
-      if (rouo > 0 || iorouh > 0) cornerOU = { line: rouo, overOdds: iorouh, underOdds: iorouc, locked: iorouh === 0 && iorouc === 0 };
+      if (rouo > 0 || iorouh > 0) cornerOU = { line: rouo, overOdds: iorouc, underOdds: iorouh, locked: iorouh === 0 && iorouc === 0 };
       // HDP — 先尝试角球专用字段，再回退到常规字段
       const rre = game.RATIO_CRGH || game.ratio_crgh || game.RATIO_RE || game.ratio_re || "";
       const iorh = parseFloat(game.IOR_CRGH || game.ior_crgh || game.IOR_REH || game.ior_reh || 0);
@@ -1782,6 +1789,16 @@ async function fetchCornerDataViaAPI(page) {
       const rnch = parseFloat(game.IOR_RNCH || game.ior_rnch || 0);
       const rncc = parseFloat(game.IOR_RNCC || game.ior_rncc || 0);
       if (rnch > 0 || rncc > 0) nextCorner = { corner: rncType, homeOdds: rnch, awayOdds: rncc, locked: rnch === 0 && rncc === 0 };
+      // ★ 上半场角球大小 (Half-time Corner O/U)
+      const hrouo = parseFloat(game.RATIO_HROUO || game.ratio_hrouo || 0);
+      const ihrouh = parseFloat(game.IOR_HROUH || game.ior_hrouh || 0);
+      const ihrouc = parseFloat(game.IOR_HROUC || game.ior_hrouc || 0);
+      if (hrouo > 0 || ihrouh > 0) cornerOUHalf = { line: hrouo, overOdds: ihrouc, underOdds: ihrouh, locked: ihrouh === 0 && ihrouc === 0 };
+      // ★ 上半场角球让球 (Half-time Corner HDP)
+      const hhre = game.RATIO_HRE || game.ratio_hre || "";
+      const ihreh = parseFloat(game.IOR_HREH || game.ior_hreh || 0);
+      const ihrec = parseFloat(game.IOR_HREC || game.ior_hrec || 0);
+      if (hhre || ihreh > 0) cornerHDPHalf = { line: hhre, homeOdds: ihreh, awayOdds: ihrec, locked: ihreh === 0 && ihrec === 0 };
 
       // ★ 时间 — 大写优先
       const retime = game.RETIMESET || game.re_time || si.retime || "";
@@ -1800,8 +1817,8 @@ async function fetchCornerDataViaAPI(page) {
         _cornerSource: "api",
         cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
         cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,
-        cornerOU, cornerHDP, nextCorner, cornerOE,
-        handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE }),
+        cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf,
+        handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf }),
         dataQuality: (cornerHDP || cornerOU || nextCorner) ? "full" : "partial",
         timestamp: Date.now(), triggeredStrategies: [], ecid: game.ECID || game.ecid || ""
       };
@@ -1873,7 +1890,7 @@ async function fetchCornerDataViaAPI(page) {
             const ioo = gvf(d, "IOR_CROUO", "ior_CROUO", "IOR_ROUH", "ior_rouh", "IOR_CROUH", "ior_crouh");
             const iou = gvf(d, "IOR_CROUU", "ior_CROUU", "IOR_ROUC", "ior_rouc", "IOR_CROUC", "ior_crouc");
             if (co > 0 || ioo > 0) {
-              m.cornerOU = { line: co, overOdds: ioo, underOdds: iou, locked: ioo === 0 && iou === 0 };
+              m.cornerOU = { line: co, overOdds: iou, underOdds: ioo, locked: ioo === 0 && iou === 0 };
             }
           }
 
@@ -1901,16 +1918,76 @@ async function fetchCornerDataViaAPI(page) {
               m.cornerOE = { oddOdds: ioo, evenOdds: ioe, locked: ioo === 0 && ioe === 0 };
             }
           }
+
+          // ★ 上半场角球大小 (Half-time Corner O/U)
+          if (!m.cornerOUHalf) {
+            const hco = gvf(d, "RATIO_HROUO", "ratio_hrouo", "RATIO_CROUO_H", "ratio_crouo_h");
+            const hioo = gvf(d, "IOR_HROUH", "ior_hrouh", "IOR_CROUH_H", "ior_crouh_h");
+            const hiou = gvf(d, "IOR_HROUC", "ior_hrouc", "IOR_CROUC_H", "ior_crouc_h");
+            if (hco > 0 || hioo > 0) {
+              m.cornerOUHalf = { line: hco, overOdds: hiou, underOdds: hioo, locked: hioo === 0 && hiou === 0 };
+            }
+          }
+
+          // ★ 上半场角球让球 (Half-time Corner HDP)
+          if (!m.cornerHDPHalf) {
+            const hline = gv(d, "RATIO_HRE", "ratio_hre", "RATIO_CRGH_H", "ratio_crgh_h");
+            const hiorh = gvf(d, "IOR_HREH", "ior_hreh", "IOR_CRGH_H", "ior_crgh_h");
+            const hiorc = gvf(d, "IOR_HREC", "ior_hrec", "IOR_CRGC_H", "ior_crgc_h");
+            if (hline || hiorh > 0) {
+              m.cornerHDPHalf = { line: hline, homeOdds: hiorh, awayOdds: hiorc, locked: hiorh === 0 && hiorc === 0 };
+            }
+          }
         }
 
         // 更新 handicaps 和 dataQuality
-        m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE });
+        m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf });
         m.dataQuality = (m.cornerHDP || m.cornerOU || m.nextCorner) ? "full" : "partial";
         console.log(`[cornerCrawler] get_game_more 结果: ${m.homeTeam} vs ${m.awayTeam}, cornerOU=${JSON.stringify(m.cornerOU)}, cornerHDP=${JSON.stringify(m.cornerHDP)}, nextCorner=${JSON.stringify(m.nextCorner)}, cornerOE=${JSON.stringify(m.cornerOE)}`);
       }
     }
 
     console.log("[cornerCrawler] API: 完成 " + cornerMatches.length + " 场，耗时 " + (Date.now() - _start) + "ms");
+
+    // ★ 当角球比赛为空但 rrnou 有让球/大小数据时，从 rrnou 创建比赛条目
+    const cornerMatchIds = new Set(cornerMatches.map(m => m.matchId));
+    const cornerTeamKeys = new Set(cornerMatches.map(m => (m.homeTeam + "|" + m.awayTeam).toLowerCase()));
+    for (const g of rnouGames) {
+      const ht = g.TEAM_H || g.team_h || "";
+      const at = g.TEAM_C || g.team_c || "";
+      const gid = g.GID || g.gid || "";
+      const teamKey = (ht + "|" + at).toLowerCase();
+      if (cornerMatchIds.has(gid) || cornerTeamKeys.has(teamKey)) continue;
+      if (!ht || !at) continue;
+
+      const retime = g.RETIMESET || g.re_time || "";
+      let elapsed = 0;
+      const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
+      if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+      else if (retime.includes("HT")) elapsed = 45;
+
+      const m = {
+        matchId: gid || "rnou_" + cornerMatches.length,
+        matchName: ht + " vs " + at,
+        homeTeam: ht, awayTeam: at,
+        league: g.LEAGUE || g.league || "",
+        time: retime, elapsedMinutes: elapsed,
+        homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
+        awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
+        totalCorners: 0, homeCorners: 0, awayCorners: 0,
+        _cornerSource: "none",
+        cornerHandicap: 0, cornerOdds: 0,
+        cornerOU: null, cornerHDP: null, nextCorner: null, cornerOE: null,
+        handicaps: [],
+        dataQuality: "hdp_only",
+        timestamp: Date.now(), triggeredStrategies: [],
+        ecid: g.ECID || g.ecid || "",
+      };
+      cornerMatches.push(m);
+      cornerMatchIds.add(m.matchId);
+      cornerTeamKeys.add(teamKey);
+    }
+
     for (const m of cornerMatches.slice(0, 5)) {
       const h = m.cornerHDP || {}, o = m.cornerOU || {};
       console.log("  " + (m.league || "") + ": " + m.homeTeam + " vs " + m.awayTeam +
@@ -1952,7 +2029,7 @@ async function fetchCornerDataViaAPI(page) {
         const iorRouh = parseFloat(g[p + "IOR_ROUH"]) || 0;
         const iorRouc = parseFloat(g[p + "IOR_ROUC"]) || 0;
         if (ratioRouo > 0 || iorRouh > 0) {
-          items.ou.push({ line: ratioRouo, overOdds: iorRouh, underOdds: iorRouc });
+          items.ou.push({ line: ratioRouo, overOdds: iorRouc, underOdds: iorRouh });
         }
         // 上半场让球
         const ratioHre = g[p + "RATIO_HRE"] || "";
@@ -1966,7 +2043,7 @@ async function fetchCornerDataViaAPI(page) {
         const iorHrouh = parseFloat(g[p + "IOR_HROUH"]) || 0;
         const iorHrouc = parseFloat(g[p + "IOR_HROUC"]) || 0;
         if (ratioHrouo > 0 || iorHrouh > 0) {
-          items.ouHalf.push({ line: ratioHrouo, overOdds: iorHrouh, underOdds: iorHrouc });
+          items.ouHalf.push({ line: ratioHrouo, overOdds: iorHrouc, underOdds: iorHrouh });
         }
         return items;
       };
@@ -2101,6 +2178,24 @@ function buildHandicapsArray(m) {
       locked: m.cornerHDP.locked || false
     });
   }
+  if (m.cornerOUHalf) {
+    result.push({
+      order: order++, category: "O/U", categoryLabel: "上半场 O/U",
+      period: "half", line: m.cornerOUHalf.line || 0,
+      odds: { over: m.cornerOUHalf.overOdds || 0, under: m.cornerOUHalf.underOdds || 0 },
+      source: "dom", marketGroup: "corner",
+      locked: m.cornerOUHalf.locked || false
+    });
+  }
+  if (m.cornerHDPHalf) {
+    result.push({
+      order: order++, category: "HDP", categoryLabel: "上半场 HDP",
+      period: "half", line: m.cornerHDPHalf.line || "",
+      odds: { home: m.cornerHDPHalf.homeOdds || 0, away: m.cornerHDPHalf.awayOdds || 0 },
+      source: "dom", marketGroup: "corner",
+      locked: m.cornerHDPHalf.locked || false
+    });
+  }
   if (m.nextCorner) {
     // 清理角球编号文本：支持中文数字和阿拉伯数字
     let cornerText = (m.nextCorner.corner || "").trim();
@@ -2191,9 +2286,11 @@ async function _crawlViaPureHttp() {
     console.log("[cornerCrawler] 纯HTTP: 凭证无效，尝试 autoLogin...");
     try {
       const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
+      // 优先使用保存的用户名/密码，回退到环境变量
+      const savedLogin = getSavedLoginCredentials();
       const loginResult = await autoLoginAndGetCredentials({
-        username: process.env.HG_USERNAME || "",
-        password: process.env.HG_PASSWORD || "",
+        username: savedLogin?.username || process.env.HG_USERNAME || "",
+        password: savedLogin?.password || process.env.HG_PASSWORD || "",
       });
       if (loginResult.success && loginResult.uid && loginResult.ver) {
         updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
@@ -2297,16 +2394,21 @@ async function _crawlViaPureHttp() {
 
   const rcnXml = rcnResult.data;
   const rnouXml = rnouResult.data;
-  if (!rcnXml || rcnXml.length < 10) {
-    console.warn("[cornerCrawler] 纯HTTP: rcn 数据为空");
+
+  // ★ 即使 rcn 为空，rrnou 仍可能有 HDP/O/U 数据，不能直接返回 null
+  const games = (!rcnXml || rcnXml.length < 10) ? [] : parseCornerXML(rcnXml, "rcn");
+  console.log("[cornerCrawler] 纯HTTP: 角球列表返回 " + games.length + " 场比赛");
+
+  // ★ 先解析 rrnou 数据（无论角球是否为空，HDP/O/U 数据都需要）
+  const rnouGames = parseCornerXML(rnouXml || "", "rrnou");
+  console.log("[cornerCrawler] 纯HTTP: rrnou 返回 " + rnouGames.length + " 场比赛数据");
+
+  // 如果角球和 rrnou 都为空，才返回 null
+  if (games.length === 0 && rnouGames.length === 0) {
+    console.warn("[cornerCrawler] 纯HTTP: rcn 和 rrnou 数据均为空");
     return null;
   }
 
-  const games = parseCornerXML(rcnXml, "rcn");
-  console.log("[cornerCrawler] 纯HTTP: 角球列表返回 " + games.length + " 场比赛");
-  if (games.length === 0) return null;
-
-  const rnouGames = parseCornerXML(rnouXml || "", "rrnou");
   const scoreMap = {};
   for (const g of rnouGames) {
     const ht = g.TEAM_H || g.team_h || "";
@@ -2330,10 +2432,11 @@ async function _crawlViaPureHttp() {
     const si = scoreMap[scoreKey] || {};
 
     let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
+    let cornerOUHalf = null, cornerHDPHalf = null;
     const rouo = parseFloat(game.RATIO_CROUO || game.ratio_crouo || game.RATIO_ROUO || game.ratio_rouo || 0);
     const iorouh = parseFloat(game.IOR_CROUO || game.ior_crouo || game.IOR_ROUH || game.ior_rouh || 0);
     const iorouc = parseFloat(game.IOR_CROUU || game.ior_crouu || game.IOR_ROUC || game.ior_rouc || 0);
-    if (rouo > 0 || iorouh > 0) cornerOU = { line: rouo, overOdds: iorouh, underOdds: iorouc, locked: iorouh === 0 && iorouc === 0 };
+    if (rouo > 0 || iorouh > 0) cornerOU = { line: rouo, overOdds: iorouc, underOdds: iorouh, locked: iorouh === 0 && iorouc === 0 };
     const rre = game.RATIO_CRGH || game.ratio_crgh || game.RATIO_RE || game.ratio_re || "";
     const iorh = parseFloat(game.IOR_CRGH || game.ior_crgh || game.IOR_REH || game.ior_reh || 0);
     const iorc = parseFloat(game.IOR_CRGC || game.ior_crgc || game.IOR_REC || game.ior_rec || 0);
@@ -2345,6 +2448,16 @@ async function _crawlViaPureHttp() {
     const rnch = parseFloat(game.IOR_RNCH || game.ior_rnch || 0);
     const rncc = parseFloat(game.IOR_RNCC || game.ior_rncc || 0);
     if (rnch > 0 || rncc > 0) nextCorner = { corner: rncType, homeOdds: rnch, awayOdds: rncc, locked: rnch === 0 && rncc === 0 };
+    // ★ 上半场角球大小 (Half-time Corner O/U)
+    const hrouo = parseFloat(game.RATIO_HROUO || game.ratio_hrouo || 0);
+    const ihrouh = parseFloat(game.IOR_HROUH || game.ior_hrouh || 0);
+    const ihrouc = parseFloat(game.IOR_HROUC || game.ior_hrouc || 0);
+    if (hrouo > 0 || ihrouh > 0) cornerOUHalf = { line: hrouo, overOdds: ihrouc, underOdds: ihrouh, locked: ihrouh === 0 && ihrouc === 0 };
+    // ★ 上半场角球让球 (Half-time Corner HDP)
+    const hhre = game.RATIO_HRE || game.ratio_hre || "";
+    const ihreh = parseFloat(game.IOR_HREH || game.ior_hreh || 0);
+    const ihrec = parseFloat(game.IOR_HREC || game.ior_hrec || 0);
+    if (hhre || ihreh > 0) cornerHDPHalf = { line: hhre, homeOdds: ihreh, awayOdds: ihrec, locked: ihreh === 0 && ihrec === 0 };
 
     const retime = game.RETIMESET || game.re_time || si.retime || "";
     let elapsed = 0;
@@ -2361,8 +2474,8 @@ async function _crawlViaPureHttp() {
       _cornerSource: "api",
       cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
       cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,
-      cornerOU, cornerHDP, nextCorner, cornerOE,
-      handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE }),
+      cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf,
+      handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf }),
       dataQuality: (cornerHDP || cornerOU || nextCorner) ? "full" : "partial",
       timestamp: Date.now(), triggeredStrategies: [], ecid: game.ECID || game.ecid || ""
     };
@@ -2392,7 +2505,7 @@ async function _crawlViaPureHttp() {
           const rouo = gvf(d, "RATIO_CROUO", "ratio_crouo", "RATIO_ROUO", "ratio_rouo");
           const iorouh = gvf(d, "IOR_CROUO", "ior_crouo", "IOR_ROUH", "ior_rouh");
           const iorouc = gvf(d, "IOR_CROUU", "ior_crouu", "IOR_ROUC", "ior_rouc");
-          if (rouo > 0 || iorouh > 0) m.cornerOU = { line: rouo, overOdds: iorouh, underOdds: iorouc, locked: iorouh === 0 && iorouc === 0 };
+          if (rouo > 0 || iorouh > 0) m.cornerOU = { line: rouo, overOdds: iorouc, underOdds: iorouh, locked: iorouh === 0 && iorouc === 0 };
         }
         if (!m.cornerHDP) {
           const rre = gv(d, "RATIO_CRGH", "ratio_crgh", "RATIO_RE", "ratio_re");
@@ -2404,17 +2517,75 @@ async function _crawlViaPureHttp() {
             m.cornerOdds = iorh;
           }
         }
+        // ★ 上半场角球大小 (Half-time Corner O/U)
+        if (!m.cornerOUHalf) {
+          const hco = gvf(d, "RATIO_HROUO", "ratio_hrouo", "RATIO_CROUO_H", "ratio_crouo_h");
+          const hioo = gvf(d, "IOR_HROUH", "ior_hrouh", "IOR_CROUH_H", "ior_crouh_h");
+          const hiou = gvf(d, "IOR_HROUC", "ior_hrouc", "IOR_CROUC_H", "ior_crouc_h");
+          if (hco > 0 || hioo > 0) {
+            m.cornerOUHalf = { line: hco, overOdds: hiou, underOdds: hioo, locked: hioo === 0 && hiou === 0 };
+          }
+        }
+        // ★ 上半场角球让球 (Half-time Corner HDP)
+        if (!m.cornerHDPHalf) {
+          const hline = gv(d, "RATIO_HRE", "ratio_hre", "RATIO_CRGH_H", "ratio_crgh_h");
+          const hiorh = gvf(d, "IOR_HREH", "ior_hreh", "IOR_CRGH_H", "ior_crgh_h");
+          const hiorc = gvf(d, "IOR_HREC", "ior_hrec", "IOR_CRGC_H", "ior_crgc_h");
+          if (hline || hiorh > 0) {
+            m.cornerHDPHalf = { line: hline, homeOdds: hiorh, awayOdds: hiorc, locked: hiorh === 0 && hiorc === 0 };
+          }
+        }
       }
-      m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE });
+      m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf });
       m.dataQuality = (m.cornerHDP || m.cornerOU || m.nextCorner) ? "full" : "partial";
     }
+  }
+
+  // ★ 当角球比赛为空但 rrnou 有让球/大小数据时，从 rrnou 创建比赛条目
+  const cornerMatchIds = new Set(cornerMatches.map(m => m.matchId));
+  const cornerTeamKeys = new Set(cornerMatches.map(m => (m.homeTeam + "|" + m.awayTeam).toLowerCase()));
+  for (const g of rnouGames) {
+    const ht = g.TEAM_H || g.team_h || "";
+    const at = g.TEAM_C || g.team_c || "";
+    const gid = g.GID || g.gid || "";
+    const teamKey = (ht + "|" + at).toLowerCase();
+    // 跳过已在角球列表中的比赛
+    if (cornerMatchIds.has(gid) || cornerTeamKeys.has(teamKey)) continue;
+    if (!ht || !at) continue;
+
+    const retime = g.RETIMESET || g.re_time || "";
+    let elapsed = 0;
+    const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
+    if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+    else if (retime.includes("HT")) elapsed = 45;
+
+    const m = {
+      matchId: gid || "rnou_" + cornerMatches.length,
+      matchName: ht + " vs " + at,
+      homeTeam: ht, awayTeam: at,
+      league: g.LEAGUE || g.league || "",
+      time: retime, elapsedMinutes: elapsed,
+      homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
+      awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
+      totalCorners: 0, homeCorners: 0, awayCorners: 0,
+      _cornerSource: "none",
+      cornerHandicap: 0, cornerOdds: 0,
+      cornerOU: null, cornerHDP: null, nextCorner: null, cornerOE: null,
+      handicaps: [],
+      dataQuality: "hdp_only",
+      timestamp: Date.now(), triggeredStrategies: [],
+      ecid: g.ECID || g.ecid || "",
+    };
+    cornerMatches.push(m);
+    cornerMatchIds.add(m.matchId);
+    cornerTeamKeys.add(teamKey);
   }
 
   const mainMarkets = {};
   // ★ 角球盘口（按 matchId 索引）
   for (const m of cornerMatches) {
     if (m.cornerOU || m.cornerHDP) {
-      mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE };
+      mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf };
     }
   }
   // ★ 让球/大小盘口（从 rrnou 数据构建，按 matchId 和 homeTeam|awayTeam 双索引）
@@ -2435,7 +2606,7 @@ async function _crawlViaPureHttp() {
       const ratioRouo = parseFloat(g[p + "RATIO_ROUO"]) || 0;
       const iorRouh = parseFloat(g[p + "IOR_ROUH"]) || 0;
       const iorRouc = parseFloat(g[p + "IOR_ROUC"]) || 0;
-      if (ratioRouo > 0 || iorRouh > 0) items.ou.push({ line: ratioRouo, overOdds: iorRouh, underOdds: iorRouc });
+      if (ratioRouo > 0 || iorRouh > 0) items.ou.push({ line: ratioRouo, overOdds: iorRouc, underOdds: iorRouh });
       const ratioHre = g[p + "RATIO_HRE"] || "";
       const iorHreh = parseFloat(g[p + "IOR_HREH"]) || 0;
       const iorHrec = parseFloat(g[p + "IOR_HREC"]) || 0;
@@ -2443,7 +2614,7 @@ async function _crawlViaPureHttp() {
       const ratioHrouo = parseFloat(g[p + "RATIO_HROUO"]) || 0;
       const iorHrouh = parseFloat(g[p + "IOR_HROUH"]) || 0;
       const iorHrouc = parseFloat(g[p + "IOR_HROUC"]) || 0;
-      if (ratioHrouo > 0 || iorHrouh > 0) items.ouHalf.push({ line: ratioHrouo, overOdds: iorHrouh, underOdds: iorHrouc });
+      if (ratioHrouo > 0 || iorHrouh > 0) items.ouHalf.push({ line: ratioHrouo, overOdds: iorHrouc, underOdds: iorHrouh });
       return items;
     };
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ExternalLink, History, DollarSign, RefreshCw, X } from "lucide-react";
+import { ExternalLink, History, DollarSign, RefreshCw, X, Lock } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
@@ -18,6 +18,319 @@ interface BetResult {
   message: string;
 }
 import { REAL_TEAMS } from "../../data/realTeamsData";
+
+// ==================== 盘口列映射 ====================
+
+const columnMap: Record<string, string> = {
+  "O/U_full_corner": "cornerOU",
+  "O/U_half_corner": "cornerOUHalf",
+  "HDP_full_corner": "cornerHDP",
+  "HDP_half_corner": "cornerHDPHalf",
+  "NEXT_full_corner": "nextCorner",
+  "O/E_full_corner": "cornerOE",
+  "HDP_full_hdp": "mainHDP",
+  "HDP_full_main": "mainHDP",
+  "O/U_full_ou": "mainOU",
+  "O/U_full_main": "mainOU",
+};
+
+type ColumnKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "cornerOE" | "mainHDP" | "mainOU";
+
+const COLUMN_KEYS: ColumnKey[] = ["cornerOU", "cornerOUHalf", "cornerHDP", "cornerHDPHalf", "nextCorner", "cornerOE", "mainHDP", "mainOU"];
+
+const COLUMN_HEADERS: Record<ColumnKey, string> = {
+  cornerOU: "角球大小",
+  cornerOUHalf: "角球大小/半",
+  cornerHDP: "角球让球",
+  cornerHDPHalf: "角球让球/半",
+  nextCorner: "下个角球",
+  cornerOE: "角球单双",
+  mainHDP: "主盘让球",
+  mainOU: "主盘大小",
+};
+
+/** 根据 category + period + marketGroup 生成 columnMap 的 key */
+function getColumnKey(h: HandicapEntry): string | null {
+  const key = `${h.category}_${h.period}_${h.marketGroup || ""}`;
+  if (columnMap[key]) return columnMap[key];
+  // fallback: 尝试不带 marketGroup
+  const key2 = `${h.category}_${h.period}`;
+  if (columnMap[key2]) return columnMap[key2];
+  return null;
+}
+
+/** 将 handicaps 数组映射为 { columnKey -> HandicapEntry } */
+function mapHandicapsToColumns(handicaps: HandicapEntry[]): Record<string, HandicapEntry> {
+  const result: Record<string, HandicapEntry> = {};
+  for (const h of handicaps) {
+    const colKey = getColumnKey(h);
+    if (colKey) {
+      result[colKey] = h;
+    }
+  }
+  return result;
+}
+
+/** 格式化赔率数字 */
+function fmt(v: number | undefined | null): string {
+  if (v == null || isNaN(v)) return "—";
+  return v.toFixed(2);
+}
+
+/** 格式化盘口线 */
+function fmtLine(v: number | string | undefined | null): string {
+  if (v == null) return "—";
+  return String(v);
+}
+
+// ==================== 单列赔率渲染 ====================
+
+interface OddsCellProps {
+  columnKey: ColumnKey;
+  handicap?: HandicapEntry;
+}
+
+function OddsCell({ columnKey, handicap }: OddsCellProps) {
+  const locked = (handicap as any)?.locked === true;
+  const selected = (handicap as any)?.isSelected === true;
+
+  if (!handicap) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-[11px]">
+        <span className="text-slate-700">—</span>
+        <span className="text-slate-700">—</span>
+      </div>
+    );
+  }
+
+  const odds = handicap.odds || {};
+  const line = handicap.line;
+  const textCls = locked ? "text-slate-600" : "";
+  const oddsCls = locked ? "text-slate-600" : "text-red-400";
+  const lineCls = locked ? "text-slate-600" : "text-slate-400";
+  const bgCls = selected ? "bg-orange-100/20" : "";
+
+  let topRow: React.ReactNode;
+  let bottomRow: React.ReactNode;
+
+  switch (columnKey) {
+    case "cornerOU":
+    case "cornerOUHalf":
+    case "mainOU":
+      topRow = (
+        <span className={textCls}>
+          <span className={lineCls}>大 {fmtLine(line)}</span>{" "}
+          <span className={oddsCls}>{fmt(odds.over)}</span>
+        </span>
+      );
+      bottomRow = (
+        <span className={textCls}>
+          <span className={lineCls}>小 {fmtLine(line)}</span>{" "}
+          <span className={oddsCls}>{fmt(odds.under)}</span>
+        </span>
+      );
+      break;
+    case "cornerHDP":
+    case "cornerHDPHalf":
+    case "mainHDP":
+      topRow = (
+        <span className={textCls}>
+          <span className={lineCls}>主 {fmtLine(line)}</span>{" "}
+          <span className={oddsCls}>{fmt(odds.home)}</span>
+        </span>
+      );
+      bottomRow = (
+        <span className={textCls}>
+          <span className={lineCls}>客 {fmtLine(line)}</span>{" "}
+          <span className={oddsCls}>{fmt(odds.away)}</span>
+        </span>
+      );
+      break;
+    case "nextCorner":
+      topRow = (
+        <span className={textCls}>
+          <span className={lineCls}>主</span>{" "}
+          <span className={oddsCls}>{fmt(odds.home)}</span>
+        </span>
+      );
+      bottomRow = (
+        <span className={textCls}>
+          <span className={lineCls}>客</span>{" "}
+          <span className={oddsCls}>{fmt(odds.away)}</span>
+        </span>
+      );
+      break;
+    case "cornerOE":
+      topRow = (
+        <span className={textCls}>
+          <span className={lineCls}>单</span>{" "}
+          <span className={oddsCls}>{fmt(odds.odd)}</span>
+        </span>
+      );
+      bottomRow = (
+        <span className={textCls}>
+          <span className={lineCls}>双</span>{" "}
+          <span className={oddsCls}>{fmt(odds.even)}</span>
+        </span>
+      );
+      break;
+    default:
+      topRow = <span className="text-slate-700">—</span>;
+      bottomRow = <span className="text-slate-700">—</span>;
+  }
+
+  return (
+    <div className={`flex flex-col items-center justify-center h-full text-[11px] leading-tight px-0.5 ${bgCls}`}>
+      <div className="flex items-center gap-0.5">
+        {topRow}
+        {locked && <Lock className="w-2.5 h-2.5 text-slate-600 inline" />}
+      </div>
+      <div className="flex items-center gap-0.5">
+        {bottomRow}
+      </div>
+    </div>
+  );
+}
+
+// ==================== MatchRow 组件 ====================
+
+interface MatchRowProps {
+  row: any;
+  isHighlighted: boolean;
+  trackedMatchIds: string[];
+  isRealMode: boolean;
+  autoBetEnabled: boolean;
+  betAmount: number;
+  addTrackedMatch: (id: string) => void;
+  removeTrackedMatch: (id: string) => void;
+  handleViewHistory: (id: string) => void;
+  openBetPopup: (row: any) => void;
+  navigateToDashboard: (homeId: string, awayId: string, homeLeague: string, awayLeague: string) => void;
+  findTeamInfo: (name: string) => { id: string; league: string };
+}
+
+function MatchRow({
+  row,
+  isHighlighted,
+  trackedMatchIds,
+  isRealMode,
+  autoBetEnabled,
+  betAmount,
+  addTrackedMatch,
+  removeTrackedMatch,
+  handleViewHistory,
+  openBetPopup,
+  navigateToDashboard,
+  findTeamInfo,
+}: MatchRowProps) {
+  const trig = Array.isArray(row.triggeredStrategies) ? row.triggeredStrategies : [];
+  const hasSignal = trig.length > 0;
+  const hi = findTeamInfo(row.homeTeam);
+  const ai = findTeamInfo(row.awayTeam);
+
+  // 将 handicaps 映射到8列
+  const handicaps = row.handicaps || [];
+  const colData = mapHandicapsToColumns(handicaps);
+
+  const rowBgCls = isHighlighted
+    ? "ring-2 ring-emerald-500/60 bg-emerald-500/5"
+    : hasSignal
+    ? "bg-emerald-500/5 border-l-2 border-l-emerald-600/60"
+    : "hover:bg-slate-800/20";
+
+  return (
+    <div
+      className={`grid grid-cols-[minmax(80px,1fr)_minmax(80px,1fr)_40px_44px_32px_32px_repeat(8,minmax(64px,0.8fr))_44px_64px] gap-0 items-center px-2 py-1.5 text-[11px] border-b border-slate-800/40 transition-colors ${rowBgCls}`}
+    >
+      {/* 主队 */}
+      <div className="font-medium text-slate-200 truncate pr-1">
+        {isHighlighted && <span className="mr-0.5">🏆</span>}
+        {row.homeTeam || "--"}
+      </div>
+      {/* 客队 */}
+      <div className="text-slate-300 truncate pr-1">{row.awayTeam || "--"}</div>
+      {/* 时间 */}
+      <div className="text-center text-slate-400 font-mono">{row.elapsedMinutes || 0}'</div>
+      {/* 比分 */}
+      <div className="text-center text-slate-300 font-mono font-bold">
+        {row.homeScore ?? 0}-{row.awayScore ?? 0}
+      </div>
+      {/* 主角 */}
+      <div className="text-center text-emerald-400 font-mono">{row.homeCorners ?? 0}</div>
+      {/* 客角 */}
+      <div className="text-center text-emerald-400 font-mono">{row.awayCorners ?? 0}</div>
+
+      {/* 8列赔率 */}
+      {COLUMN_KEYS.map((colKey) => (
+        <OddsCell key={colKey} columnKey={colKey} handicap={colData[colKey]} />
+      ))}
+
+      {/* 策略 */}
+      <div className="text-center">
+        {hasSignal ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            {trig.join(",")}
+          </span>
+        ) : (
+          <span className="text-slate-600">—</span>
+        )}
+      </div>
+
+      {/* 操作 */}
+      <div className="text-center">
+        <div className="flex items-center gap-0.5 justify-center">
+          {trackedMatchIds.includes(String(row.matchId)) ? (
+            <button type="button"
+              onClick={() => removeTrackedMatch(String(row.matchId))}
+              className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 hover:text-rose-300 transition-all"
+              title={isRealMode && autoBetEnabled ? "取消追踪（将停止自动投注）" : "取消追踪"}
+            >
+              ×
+            </button>
+          ) : (
+            <button type="button"
+              onClick={() => addTrackedMatch(String(row.matchId))}
+              className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 hover:text-emerald-300 transition-all"
+              title={isRealMode && autoBetEnabled ? "追踪比赛（允许自动投注）" : "追踪比赛"}
+            >
+              +
+            </button>
+          )}
+          <button type="button"
+            onClick={() => handleViewHistory(String(row.matchId))}
+            className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 hover:text-indigo-300 transition-all"
+            title="查看历史"
+          >
+            <History className="w-2.5 h-2.5" />
+          </button>
+          {isRealMode && (
+            <button type="button"
+              onClick={() => openBetPopup(row)}
+              className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-400 hover:text-amber-300 transition-all"
+              title="手动投注"
+            >
+              <DollarSign className="w-2.5 h-2.5" />
+            </button>
+          )}
+          {hi.id && ai.id ? (
+            <button type="button"
+              onClick={() => navigateToDashboard(hi.id, ai.id, hi.league, ai.league)}
+              className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-white transition-all"
+              title="跳转到 Dashboard 分析该场比赛"
+            >
+              <ExternalLink className="w-2.5 h-2.5" />
+            </button>
+          ) : (
+            <span className="text-[10px] text-slate-600">—</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== LiveMonitor 主组件 ====================
 
 export default function LiveMonitor() {
   const selectedMatchId = useAppStore((s) => s.selectedMatchId);
@@ -183,156 +496,41 @@ export default function LiveMonitor() {
           <p className="text-sm text-slate-500">尝试其他搜索关键词</p>
         </div>
       ) : (
-        <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-hidden">
-          <div className="grid grid-cols-[1fr_1fr_0.3fr_0.2fr_0.2fr_0.2fr_1fr_0.2fr_0.2fr] gap-1.5 px-3 py-2.5 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
+        <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-x-auto">
+          {/* 表头 */}
+          <div className="grid grid-cols-[minmax(80px,1fr)_minmax(80px,1fr)_40px_44px_32px_32px_repeat(8,minmax(64px,0.8fr))_44px_64px] gap-0 items-center px-2 py-2 text-[10px] text-slate-500 border-b border-slate-700/60 font-medium bg-slate-900/40">
             <div>主队</div>
             <div>客队</div>
             <div className="text-center">时间</div>
             <div className="text-center">比分</div>
             <div className="text-center">主角</div>
             <div className="text-center">客角</div>
-            <div className="text-center">盘口(8项)</div>
+            {COLUMN_KEYS.map((k) => (
+              <div key={k} className="text-center">{COLUMN_HEADERS[k]}</div>
+            ))}
             <div className="text-center">策略</div>
             <div className="text-center">操作</div>
           </div>
 
+          {/* 数据行 */}
           {filteredData.map((row: any) => {
-            const trig = Array.isArray(row.triggeredStrategies) ? row.triggeredStrategies : [];
-            const hasSignal = trig.length > 0;
             const isHighlighted = selectedMatchId && String(row.matchId) === selectedMatchId;
-            const hi = findTeamInfo(row.homeTeam);
-            const ai = findTeamInfo(row.awayTeam);
-
             return (
-              <div
+              <MatchRow
                 key={row.matchId}
-                className={
-                  "grid grid-cols-[1fr_1fr_0.3fr_0.2fr_0.2fr_0.2fr_1fr_0.2fr_0.2fr] gap-1.5 px-3 py-2.5 text-xs border-b border-slate-800/40 transition-colors " +
-                  (isHighlighted
-                    ? "ring-2 ring-emerald-500/60 bg-emerald-500/5"
-                    : hasSignal
-                    ? "bg-emerald-500/5 border-l-2 border-l-emerald-600/60"
-                    : "hover:bg-slate-800/20")
-                }
-              >
-                <div className="font-medium text-slate-200 truncate">
-                  {isHighlighted && <span className="mr-0.5">🏆</span>}
-                  {row.homeTeam || "--"}
-                </div>
-                <div className="text-slate-300 truncate">{row.awayTeam || "--"}</div>
-                <div className="text-center text-slate-400 font-mono">{row.elapsedMinutes || 0}'</div>
-                <div className="text-center text-slate-300 font-mono font-bold">
-                  {row.homeScore ?? 0} - {row.awayScore ?? 0}
-                </div>
-                <div className="text-center text-emerald-400 font-mono">{row.homeCorners ?? 0}</div>
-                <div className="text-center text-emerald-400 font-mono">{row.awayCorners ?? 0}</div>
-                <div className="flex flex-wrap gap-1 items-start min-w-0">
-                  {(row.handicaps && row.handicaps.length > 0) ? (
-                    row.handicaps.map((h: HandicapEntry) => {
-                      const colors: Record<string, string> = {
-                        "O/U": h.period === "full" ? "bg-blue-600/20 text-blue-300 border-blue-500/30" : "bg-blue-400/10 text-blue-300/70 border-blue-400/20",
-                        "HDP": h.period === "full" ? "bg-orange-600/20 text-orange-300 border-orange-500/30" : "bg-orange-400/10 text-orange-300/70 border-orange-400/20",
-                        "1X2": h.period === "full" ? "bg-purple-600/20 text-purple-300 border-purple-500/30" : "bg-purple-400/10 text-purple-300/70 border-purple-400/20",
-                        "O/E": h.period === "full" ? "bg-green-600/20 text-green-300 border-green-500/30" : "bg-green-400/10 text-green-300/70 border-green-400/20",
-                        "NEXT": h.period === "full" ? "bg-cyan-600/20 text-cyan-300 border-cyan-500/30" : "bg-cyan-400/10 text-cyan-300/70 border-cyan-400/20",
-                      };
-                      const colorClass = colors[h.category] || "bg-slate-700/30 text-slate-400 border-slate-600/30";
-                      let shortLabel = h.categoryLabel;
-                      if (shortLabel.length > 5) shortLabel = shortLabel.replace("上半场 ", "半");
-                      
-                      let displayVal = "";
-                      if (h.category === "O/U" && h.line != null) {
-                        displayVal = h.line + (h.odds ? "|" + (h.odds.over || 0).toFixed(2) : "");
-                      } else if (h.category === "HDP" && h.line) {
-                        displayVal = String(h.line) + (h.odds ? "|" + (h.odds.home || 0).toFixed(2) : "");
-                      } else if (h.category === "1X2" && h.odds) {
-                        displayVal = (h.odds.home || 0).toFixed(2);
-                      } else if (h.category === "O/E" && h.odds) {
-                        displayVal = (h.odds.odd || 0).toFixed(2);
-                      } else if (h.category === "NEXT" && h.odds) {
-                        displayVal = (h.odds.home || 0).toFixed(2);
-                      }
-                      
-                      return (
-                        <span key={h.order} className={"inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded border " + colorClass} title={h.categoryLabel + ": " + JSON.stringify(h.odds || {})}>
-                          <span className="font-medium">{shortLabel}</span>
-                          {displayVal ? <span className="font-mono opacity-80">{displayVal}</span> : null}
-                          {h.source === "xhr" ? <span className="text-[7px] text-emerald-400">●</span> : h.source === "fallback" ? <span className="text-[7px] text-slate-500">○</span> : null}
-                        </span>
-                      );
-                    })
-                  ) : (
-                    <span className="text-slate-600 text-[10px]">N/A</span>
-                  )}
-                </div>
-                <div className="text-center">
-                  {row._cornerSource === "xhr" ? (
-                    <span className="text-emerald-400 text-[10px]" title="XHR 实时数据">●</span>
-                  ) : row._cornerSource === "dom" ? (
-                    <span className="text-amber-400 text-[10px]" title="DOM 解析数据">◐</span>
-                  ) : (
-                    <span className="text-slate-600 text-[10px]" title="回退数据">○</span>
-                  )}
-                </div>
-                <div className="text-center">
-                  {hasSignal ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      {trig.join(",")}
-                    </span>
-                  ) : (
-                    <span className="text-slate-600">—</span>
-                  )}
-                </div>
-                <div className="text-center">
-                  <div className="flex items-center gap-1 justify-center">
-                    {trackedMatchIds.includes(String(row.matchId)) ? (
-                      <button type="button"
-                        onClick={() => removeTrackedMatch(String(row.matchId))}
-                        className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 hover:text-rose-300 transition-all"
-                        title={isRealMode && settings.autoBetEnabled ? "取消追踪（将停止自动投注）" : "取消追踪"}
-                      >
-                        ×
-                      </button>
-                    ) : (
-                      <button type="button"
-                        onClick={() => addTrackedMatch(String(row.matchId))}
-                        className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 hover:text-emerald-300 transition-all"
-                        title={isRealMode && settings.autoBetEnabled ? "追踪比赛（允许自动投注）" : "追踪比赛"}
-                      >
-                        +
-                      </button>
-                    )}
-                    <button type="button"
-                      onClick={() => handleViewHistory(String(row.matchId))}
-                      className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 hover:text-indigo-300 transition-all"
-                      title="查看历史"
-                    >
-                      <History className="w-2.5 h-2.5" />
-                    </button>
-                    {isRealMode && (
-                      <button type="button"
-                        onClick={() => openBetPopup(row)}
-                        className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-400 hover:text-amber-300 transition-all"
-                        title="手动投注"
-                      >
-                        <DollarSign className="w-2.5 h-2.5" />
-                      </button>
-                    )}
-                    {hi.id && ai.id ? (
-                      <button type="button"
-                        onClick={() => navigateToDashboard(hi.id, ai.id, hi.league, ai.league)}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-white transition-all"
-                        title="跳转到 Dashboard 分析该场比赛"
-                      >
-                        <ExternalLink className="w-2.5 h-2.5" /> 分析
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-slate-600">—</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                row={row}
+                isHighlighted={isHighlighted}
+                trackedMatchIds={trackedMatchIds}
+                isRealMode={isRealMode}
+                autoBetEnabled={settings.autoBetEnabled}
+                betAmount={betAmount}
+                addTrackedMatch={addTrackedMatch}
+                removeTrackedMatch={removeTrackedMatch}
+                handleViewHistory={handleViewHistory}
+                openBetPopup={openBetPopup}
+                navigateToDashboard={navigateToDashboard}
+                findTeamInfo={findTeamInfo}
+              />
             );
           })}
         </div>

@@ -213,6 +213,8 @@ async function pollOnce() {
           }
           const genResult = await generatePendingBet(match, sid);
           if (genResult.success && !genResult.skipped) {
+            // 获取策略的 betDirection
+            const strategy = activeStrategies.find(s => s.id === sid);
             betQueue.push({
               betId: genResult.id,
               historyId: null,
@@ -221,7 +223,8 @@ async function pollOnce() {
               strategyId: sid,
               odds: match.cornerOdds || 0,
               amount: betConfig.amount,
-              handicap: match.cornerHandicap || 0
+              handicap: match.cornerHandicap || 0,
+              betDirection: strategy?.betDirection || "auto"
             });
           }
         } catch (e) {
@@ -439,9 +442,10 @@ export async function getLiveCornerData(filterMatchId) {
   // 无缓存时直接返回空（不自动触发爬虫，由轮询/即时爬取入口负责）
   // 标记 cacheEmpty 让前端知道需要启动监控
   // ★ 即使角球缓存为空，也返回 mainMarkets（让球大小数据可能有效）
+  // ★ 有 mainMarkets 数据时不标记 cacheEmpty，让前端正常展示
   if (Object.keys(cachedMainMarkets).length > 0) {
     console.log("[cornerService] 角球缓存为空，但 mainMarkets 有 " + Object.keys(cachedMainMarkets).length + " 场数据");
-    return { data: [], generatedAt, count: 0, cacheEmpty: true, mainMarkets: cachedMainMarkets };
+    return { data: [], generatedAt, count: 0, mainMarkets: cachedMainMarkets };
   }
   // 限频日志：每30秒最多打印一次"无有效数据"，避免刷屏
   const logNow = Date.now();
@@ -549,6 +553,7 @@ export async function checkDuplicateBet(matchId, strategyId) {
       "SELECT id FROM corner_history WHERE match_id = ? AND strategy_id = ? AND bet_status IN ('executed', 'failed')",
       [matchId, String(strategyId)]
     );
+    // 注意：insufficient 状态不阻止后续重试，所以不在此查询中
     return rows && rows.length > 0;
   } catch (err) {
     console.error("[cornerService] 查重失败:", err.message);
@@ -596,7 +601,8 @@ async function processBetQueue() {
       odds: task.odds,
       amount: task.amount,
       handicap: task.handicap || 0,
-      strategyId: String(task.strategyId)
+      strategyId: String(task.strategyId),
+      betDirection: task.betDirection || "auto"
     };
 
     const result = await executeBetOnHG(betData);
@@ -617,6 +623,24 @@ async function processBetQueue() {
           [task.matchId, String(task.strategyId)]
         ).catch(() => {});
       }
+    } else if (result.insufficient) {
+      // 余额不足：标记为 insufficient，不阻止后续重试
+      console.log("[cornerService] 余额不足: bet#" + task.betId + " " + task.matchName);
+      await run(
+        "UPDATE corner_bets SET status = 'insufficient', error_message = ? WHERE id = ?",
+        [result.error || "余额不足", task.betId]
+      );
+      if (task.historyId) {
+        await run(
+          "UPDATE corner_history SET bet_status = 'insufficient' WHERE id = ?",
+          [task.historyId]
+        ).catch(() => {});
+      } else {
+        await run(
+          "UPDATE corner_history SET bet_status = 'insufficient' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'pending'",
+          [task.matchId, String(task.strategyId)]
+        ).catch(() => {});
+      }
     } else {
       await run(
         "UPDATE corner_bets SET status = 'failed', error_message = ? WHERE id = ?",
@@ -624,8 +648,8 @@ async function processBetQueue() {
       );
       if (task.historyId) {
         await run(
-          "UPDATE corner_history SET bet_status = 'failed', error_message = ? WHERE id = ?",
-          [result.error || "unknown", task.historyId]
+          "UPDATE corner_history SET bet_status = 'failed' WHERE id = ?",
+          [task.historyId]
         ).catch(() => {});
       } else {
         await run(
