@@ -73,11 +73,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
     "【初始化】角球大数据实时精密监控引擎已正常载入。",
     "【监控】等待激活系统监控轮询服务，即可实时同步球迷屋盘口及爬虫特征流..."
   ]);
-  const [placedBets, setPlacedBets] = useState<any[]>([
-    { id: 'b1', league: 'EPL', homeName: '利物浦', awayName: '切尔西', strategyName: '全场追大角策略', minute: 79, odds: 1.88, amount: 100, prediction: '大 11.5', status: 'won', profit: 88, time: '10:14:15' },
-    { id: 'b2', league: 'LaLiga', homeName: '塞维利亚', awayName: '马德里竞技', strategyName: '强龙压境攻坚策略', minute: 36, odds: 1.95, amount: 100, prediction: '半场大 4.5', status: 'lost', profit: -100, time: '09:42:01' },
-    { id: 'b3', league: 'SerieA', homeName: '拉齐奥', awayName: '尤文图斯', strategyName: '小角防守战略堡垒', minute: 64, odds: 1.72, amount: 100, prediction: '小 8.5', status: 'won', profit: 72, time: '08:11:32' }
-  ]);
+  const [placedBets, setPlacedBets] = useState<any[]>([]);
 
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [inputUser, setInputUser] = useState<string>('');
@@ -147,6 +143,64 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
     minHandicap: 0.0,
     maxHandicap: 3.5
   });
+
+  // ======================== 策略配置后端同步 ========================
+
+  // System A → 后端字段映射
+  const mapStrategiesToBackend = (strats: any[], p1: any, p2: any, p3: any, p4: any, p5: any): any[] => {
+    const planMap: Record<string, any> = { strat_1: p1, strat_2: p2, strat_3: p3, strat_4: p4, strat_5: p5 };
+    return strats.map(s => {
+      const plan = planMap[s.id] || {};
+      return {
+        id: s.id === 'strat_1' ? 1 : s.id === 'strat_2' ? 2 : s.id === 'strat_3' ? 3 : s.id === 'strat_4' ? 4 : 5,
+        enabled: s.isActive ?? false,
+        name: s.name,
+        playTimeStart: plan.minMin ?? s.minMin ?? 35,
+        playTimeEnd: plan.maxMin ?? s.maxMin ?? 55,
+        leadGoals: plan.leadGoalsOpponent ?? 99,
+        leadGoalsWeak: plan.weakLeadGoalsStrong ?? (plan.noStrengthLeadGoalsOpponent ?? 0),
+        cornerHandicapLower: plan.minHandicap ?? s.handicapLine ?? 0,
+        cornerHandicapUpper: plan.maxHandicap ?? (plan.minHandicap ?? s.handicapLine ?? 0) + 3,
+        targetOdds: plan.minOdds ?? 0.8,
+        betDirection: s.type === 'spread' ? 'home' : 'over'
+      };
+    });
+  };
+
+  // Debounce timer for strategy sync
+  const strategySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 同步策略配置到后端
+  const syncStrategiesToBackend = (strats: any[], p1: any, p2: any, p3: any, p4: any, p5: any) => {
+    const backendStrategies = mapStrategiesToBackend(strats, p1, p2, p3, p4, p5);
+    fetch('/api/corner/strategies', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategies: backendStrategies }),
+    }).catch(err => console.error('[CornerSystem] 策略同步失败:', err));
+  };
+
+  // 同步投注配置到后端
+  const syncBetConfigToBackend = (amount: number, isRealMode: boolean, autoBetEnabled: boolean) => {
+    fetch('/api/corner/bet-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount,
+        isRealMode,
+        autoBetEnabled,
+        autoBetConfirmRequired: false,
+      }),
+    }).catch(err => console.error('[CornerSystem] 投注配置同步失败:', err));
+  };
+
+  // Debounced 策略同步（300ms）
+  const syncStrategiesDebounced = (strats: any[], p1: any, p2: any, p3: any, p4: any, p5: any) => {
+    if (strategySyncTimerRef.current) clearTimeout(strategySyncTimerRef.current);
+    strategySyncTimerRef.current = setTimeout(() => {
+      syncStrategiesToBackend(strats, p1, p2, p3, p4, p5);
+    }, 300);
+  };
 
   // Strategy Configurations Card States (Authentic Corner Hitting Rules)
   const [strategies, setStrategies] = useState<any[]>([
@@ -390,73 +444,91 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
 
   // Adjust parameters slider updates simulated win rate based on real quantitative corner patterns!
   const updateStrategyParams = (id: string, field: string, val: number) => {
-    setStrategies(prev => prev.map(s => {
-      if (s.id === id) {
-        const updated = { ...s, [field]: val };
-        let score = 80; // baseline midpoint
-        if (id === 'strat_1') {
-          score += (updated.minMin - 35) * 0.2;
-        } else if (id === 'strat_2') {
-          score += (updated.minMin - 50) * 0.2;
-        } else if (id === 'strat_3') {
-          score += (updated.minMin - 70) * 0.2;
-        } else if (id === 'strat_4') {
-          score += (updated.minMin - 60) * 0.2;
-        } else if (id === 'strat_5') {
-          score += (updated.minMin - 70) * 0.2;
+    setStrategies(prev => {
+      const updated = prev.map(s => {
+        if (s.id === id) {
+          const u = { ...s, [field]: val };
+          let score = 80; // baseline midpoint
+          if (id === 'strat_1') {
+            score += (u.minMin - 35) * 0.2;
+          } else if (id === 'strat_2') {
+            score += (u.minMin - 50) * 0.2;
+          } else if (id === 'strat_3') {
+            score += (u.minMin - 70) * 0.2;
+          } else if (id === 'strat_4') {
+            score += (u.minMin - 60) * 0.2;
+          } else if (id === 'strat_5') {
+            score += (u.minMin - 70) * 0.2;
+          }
+          
+          // Boundaries restriction
+          u.simulatedWinrate = parseFloat(Math.max(50, Math.min(96.8, score)).toFixed(1));
+          return u;
         }
-        
-        // Boundaries restriction
-        updated.simulatedWinrate = parseFloat(Math.max(50, Math.min(96.8, score)).toFixed(1));
-        return updated;
-      }
-      return s;
-    }));
+        return s;
+      });
+      syncStrategiesDebounced(updated, plan1, plan2, plan3, plan4, plan5);
+      return updated;
+    });
   };
 
   // Toggle active strategy
   const toggleStrategyActive = (id: string) => {
-    setStrategies(prev => prev.map(s => {
-      if (s.id === id) {
-        const nextState = !s.isActive;
-        setSimulationLogs(logs => [
-          `【防务】策略配置变动: 【${s.name}】已被管理员设置为 [${nextState ? '🟢 开启' : '🔴 关闭'}] 状态。`,
-          ...logs
-        ]);
-        return { ...s, isActive: nextState };
-      }
-      return s;
-    }));
+    setStrategies(prev => {
+      const updated = prev.map(s => {
+        if (s.id === id) {
+          const nextState = !s.isActive;
+          setSimulationLogs(logs => [
+            `【防务】策略配置变动: 【${s.name}】已被管理员设置为 [${nextState ? '🟢 开启' : '🔴 关闭'}] 状态。`,
+            ...logs
+          ]);
+          return { ...s, isActive: nextState };
+        }
+        return s;
+      });
+      syncStrategiesDebounced(updated, plan1, plan2, plan3, plan4, plan5);
+      return updated;
+    });
   };
 
   // Toggle alarm sound
   const toggleStrategyAlarm = (id: string) => {
-    setStrategies(prev => prev.map(s => {
-      if (s.id === id) {
-        return { ...s, soundEnabled: !s.soundEnabled };
-      }
-      return s;
-    }));
+    setStrategies(prev => {
+      const updated = prev.map(s => {
+        if (s.id === id) {
+          return { ...s, soundEnabled: !s.soundEnabled };
+        }
+        return s;
+      });
+      syncStrategiesDebounced(updated, plan1, plan2, plan3, plan4, plan5);
+      return updated;
+    });
   };
 
   // Toggle automatic bet placement
   const toggleStrategyAutoBet = (id: string) => {
-    setStrategies(prev => prev.map(s => {
-      if (s.id === id) {
-        const nextSet = !s.autoBet;
-        setSimulationLogs(logs => [
-          `【防务】高级授权: 【${s.name}】自动投注功能 ${nextSet ? '⚡ 已开启' : '🚫 已关闭'}。`,
-          ...logs
-        ]);
-        return { ...s, autoBet: nextSet };
-      }
-      return s;
-    }));
+    setStrategies(prev => {
+      const updated = prev.map(s => {
+        if (s.id === id) {
+          const nextSet = !s.autoBet;
+          setSimulationLogs(logs => [
+            `【防务】高级授权: 【${s.name}】自动投注功能 ${nextSet ? '⚡ 已开启' : '🚫 已关闭'}。`,
+            ...logs
+          ]);
+          return { ...s, autoBet: nextSet };
+        }
+        return s;
+      });
+      syncStrategiesDebounced(updated, plan1, plan2, plan3, plan4, plan5);
+      const anyAutoBet = updated.some(s => s.autoBet);
+      syncBetConfigToBackend(betAmount, realEnabled, anyAutoBet);
+      return updated;
+    });
   };
 
   // Save Configs and Synchronize the 5 Plans
   const handleSaveConfigs = () => {
-    setStrategies([
+    const updatedStrategies = [
       {
         id: 'strat_1',
         name: '计划①',
@@ -527,14 +599,20 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         isActive: true,
         simulatedWinrate: 86.2
       }
-    ]);
+    ];
+    setStrategies(updatedStrategies);
+
+    // 同步策略配置到后端
+    syncStrategiesToBackend(updatedStrategies, plan1, plan2, plan3, plan4, plan5);
+    // 同步投注配置到后端
+    syncBetConfigToBackend(betAmount, realEnabled, realEnabled);
 
     setSimulationLogs(prev => [
-      `【设置】💾 挂机策略全局参数保存成功！已更新 Plans 1 至 5 至实盘控制网闸。`,
+      `【设置】💾 挂机策略全局参数保存成功！已同步至后端策略引擎。`,
       ...prev
     ]);
 
-    alert("🎉 配置文件保存成功！角球自动化挂机方案配置已即时绑定。");
+    alert("配置已保存并同步到后端策略引擎。");
   };
 
   // Data points representing cumulative profit over recommend batches
@@ -682,35 +760,6 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 刷新比赛
-              </button>
-
-              <button
-                onClick={async () => {
-                  alert(`📡 已拉取今日 ${liveMatches.length + 3} 场即将进行角球高发赛制列表！`);
-                  setSimulationLogs(prev => [
-                    "【数据】[资讯中心] 成功获取后续48小时角球赛程预警数据，共有 14 场满足高爆大角模型！",
-                    ...prev
-                  ]);
-                }}
-                className="bg-[#00F2FE]/15 hover:bg-[#00F2FE]/25 text-[#00F2FE] border border-[#00F2FE]/40 font-semibold text-xs py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5"
-              >
-                <Clock className="w-3.5 h-3.5" />
-                获取赛程
-              </button>
-
-              <button
-                disabled={placedBets.length === 0}
-                onClick={() => {
-                  alert("🎉 待跟进推荐单已触发一击即中，已提交云下单模块仿真注入！");
-                }}
-                className={`font-semibold text-xs py-2 px-3.5 rounded-xl transition-all flex items-center gap-1.5 border ${
-                  placedBets.length > 0
-                    ? 'bg-indigo-600/15 text-indigo-400 border-indigo-500/40 hover:bg-indigo-600/25 cursor-pointer'
-                    : 'bg-slate-900 text-slate-600 border-slate-800/80 cursor-not-allowed'
-                }`}
-              >
-                <CheckCircle className="w-3.5 h-3.5" />
-                执行待投注 {placedBets.filter(b => b.status === 'pending').length > 0 && `(${placedBets.filter(b => b.status === 'pending').length})`}
               </button>
             </div>
 
@@ -1881,31 +1930,51 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                 liveMatches.map((m) => {
                   const totalCorners = m.homeCorners + m.awayCorners;
                   
-                  // Check matching active strategies
+                  // Check matching active strategies (与后端 cornerEvaluator.js 保持一致)
                   const matchedStrategies = strategies.filter(strat => {
                     if (!strat.isActive) return false;
                     
-                    // Match rules
-                    const minuteMatch = m.minute >= strat.minMin && m.minute <= strat.maxMin;
-                    const dangerAttackRateHome = m.homeDangerAttacks / (m.minute || 1);
-                    const dangerAttackRateAway = m.awayDangerAttacks / (m.minute || 1);
-                    const highIntensity = Math.max(dangerAttackRateHome, dangerAttackRateAway) >= strat.minDangerAttack;
+                    const currentMinute = m.minute ?? 0;
+                    const handicap = m.cornerHandicap ?? m.handicap ?? 0;
+                    const odds = m.cornerOdds ?? m.odds?.overOdds ?? 0;
+                    const homeScore = m.homeScore ?? 0;
+                    const awayScore = m.awayScore ?? 0;
+                    const goalDiff = Math.abs(homeScore - awayScore);
                     
+                    // 比赛时间合理性校验
+                    if (currentMinute > 99) return false;
+                    if (currentMinute >= 45 && currentMinute <= 46) return false;
+                    
+                    // 时间窗口检查
+                    if (currentMinute < strat.minMin || currentMinute > strat.maxMin) return false;
+                    
+                    // 盘口范围检查（使用绝对值比较，与后端 betDirection=auto 一致）
+                    const absHcp = Math.abs(handicap);
+                    if (absHcp < Math.abs(strat.handicapLine ?? 0)) return false;
+                    
+                    // 赔率条件检查（前端默认 0.8）
+                    if (odds > 0 && odds < 0.8) return false;
+                    
+                    // 比分条件检查（根据策略 ID 使用不同规则，与后端 DEFAULT_STRATEGIES 对应）
                     if (strat.id === 'strat_1') {
-                      return minuteMatch && highIntensity;
+                      // leadGoals=20(哨兵值)，不做比分限制
+                      return true;
                     }
                     if (strat.id === 'strat_2') {
-                      return minuteMatch && highIntensity;
+                      // leadGoals=3, leadGoalsWeak=0: 球差不超过3
+                      return goalDiff <= 3;
                     }
                     if (strat.id === 'strat_3') {
-                      const isDraw = m.homeScore === m.awayScore;
-                      return minuteMatch && isDraw;
+                      // leadGoals=0, leadGoalsWeak=0: 平局
+                      return goalDiff === 0;
                     }
                     if (strat.id === 'strat_4') {
-                      return minuteMatch && highIntensity;
+                      // leadGoals=2, leadGoalsWeak=0: 球差不超过2
+                      return goalDiff <= 2;
                     }
                     if (strat.id === 'strat_5') {
-                      return minuteMatch && (m.homeScore !== m.awayScore);
+                      // leadGoals=1, leadGoalsWeak=0: 球差不超过1
+                      return goalDiff <= 1;
                     }
                     return false;
                   });
@@ -2079,6 +2148,30 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       {/* SUB-TAB 3: 策略配置 ADVANCED CARD DECK */}
       {activeSubTab === 'config' && (
         <div className="space-y-6 animate-fadeIn">
+          {/* 执行待投注按钮区域 */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/corner/bets/execute", { method: "POST" });
+                  const data = await res.json();
+                  if (data.success) {
+                    alert(`投注执行完成：${data.executed || 0} 成功, ${data.failed || 0} 失败`);
+                  } else {
+                    alert("执行失败: " + (data.error || "未知错误"));
+                  }
+                } catch (err) {
+                  alert("执行失败，请检查网络连接");
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-lg transition-colors font-semibold shadow-md shadow-amber-900/20"
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              执行待投注
+            </button>
+            <span className="text-[10px] text-slate-500">执行所有状态为 pending 的待投注记录</span>
+          </div>
+
           <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800/80 flex items-start gap-3.5 max-w-4xl">
             <div className="p-2 bg-pink-950/50 border border-pink-900/30 text-pink-400 rounded-xl mt-1">
               <Sparkles className="w-5 h-5 animate-pulse" />

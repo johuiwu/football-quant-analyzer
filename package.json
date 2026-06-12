@@ -66,7 +66,7 @@
     "@vitest/coverage-v8": "^4.1.7",
     "autoprefixer": "^10.4.21",
     "concurrently": "^10.0.0",
-    "electron": "^42.3.0",
+    "electron": "^42.4.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.25.0",
     "jsdom": "^29.1.1",
@@ -88,10 +88,22 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "backend/**/*",
+      "database/**/*",
+      "config/**/*",
+      "migrations/**/*",
+      "knexfile.cjs",
       "package.json",
       "!database/*.db",
       "!database/*.db-shm",
-      "!database/*.db-wal"
+      "!database/*.db-wal",
+      "!backend/debug_*",
+      "!backend/*.ps1",
+      "!backend/*.cjs",
+      "!backend/*.png",
+      "!backend/*.txt",
+      "!backend/*.json",
+      "!backend/debug_api_discovery"
     ],
     "extraResources": [
       {
@@ -102,22 +114,6 @@
           "*.db-shm",
           "*.db-wal"
         ]
-      },
-      {
-        "from": "config/",
-        "to": "config/"
-      },
-      {
-        "from": "output/",
-        "to": "output/"
-      },
-      {
-        "from": "migrations/",
-        "to": "migrations/"
-      },
-      {
-        "from": "python/",
-        "to": "python/"
       },
       {
         "from": "build_resources/chrome/",
@@ -139,7 +135,7 @@
           ]
         }
       ],
-      "sign": false
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
@@ -152,9 +148,8 @@
       "installerHeaderIcon": "public/icon.ico"
     },
     "publish": {
-      "provider": "github",
-      "releaseType": "release",
-      "private": false
+      "provider": "generic",
+      "url": "https://localhost"
     }
   }
 }

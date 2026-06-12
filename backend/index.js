@@ -7,8 +7,8 @@ import matchRoutes from './routes/matchRoutes.js';
 import featureRoutes from './routes/featureRoutes.js';
 import strengthRoutes from './routes/strength.js';
 import predictRoutes from './routes/predict.js';
-import fixtureRoutes from './routes/fixtureRoutes.js';
-import aiRoutes from './routes/aiRoutes.js';
+// import fixtureRoutes from './routes/fixtureRoutes.js'; // 需要 TypeScript 编译，暂时禁用
+// import aiRoutes from './routes/aiRoutes.js'; // 需要 TypeScript 编译，暂时禁用
 import cornerRoutes from './routes/cornerRoutes.js';
 import crawlerRoutes from './routes/crawlerRoutes.js';
 
@@ -86,8 +86,8 @@ app.use('/api/matches', matchRoutes);
 app.use('/api/features', featureRoutes);
 app.use('/api', strengthRoutes);
 app.use('/api', predictRoutes);
-app.use('/api', fixtureRoutes);
-app.use('/api', aiRoutes);
+// app.use('/api', fixtureRoutes); // 需要 TypeScript 编译，暂时禁用
+// app.use('/api', aiRoutes); // 需要 TypeScript 编译，暂时禁用
 app.use('/api', cornerRoutes);
 app.use('/api', crawlerRoutes);
 

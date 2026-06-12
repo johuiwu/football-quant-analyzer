@@ -29,14 +29,10 @@ export default function CrawlerControlPanel() {
     matchesCount: 0,
   });
   const [loading, setLoading] = useState(false);
-  const [scheduleLoading, setScheduleLoading] = useState(false);
   const autoRefresh = useCornerStore((s) => s.autoRefresh);
   const setAutoRefresh = useCornerStore((s) => s.setAutoRefresh);
-  const scheduleFreshLoaded = useCornerStore((s) => s.scheduleFreshLoaded);
-  const setScheduleFreshLoaded = useCornerStore((s) => s.setScheduleFreshLoaded);
   const [crawlerData, setCrawlerData] = [useCornerStore((s) => s.crawlerData), useCornerStore((s) => s.setCrawlerData)];
-  const [scheduleData, setScheduleData] = [useCornerStore((s) => s.scheduleData), useCornerStore((s) => s.setScheduleData)];
-  const [activeTab, setActiveTab] = useState<"matches" | "schedule" | "raw" | "settings">("matches");
+  const [activeTab, setActiveTab] = useState<"matches" | "raw" | "settings">("matches");
   const storeAccount = useCornerStore((s) => s.accountConfig);
   const storeSettings = useCornerStore((s) => s.settings);
   const [credentials, setCredentials] = useState(() => ({
@@ -503,41 +499,6 @@ export default function CrawlerControlPanel() {
     }
   };
 
-  const fetchSchedule = async (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    setScheduleLoading(true);
-    try {
-      const res = await fetch("/api/crawler/schedule");
-      const data = await res.json();
-      if (data.success) {
-        if (data.data && data.data.matches) {
-          const scheduleItems: ScheduleItem[] = data.data.matches.map((match: any, idx: number) => ({
-            id: match.matchId || match.id || `schedule-${idx}`,
-            league: typeof match.league === "string" ? match.league : "",
-            homeTeam: typeof match.homeTeam === "string" ? match.homeTeam : "",
-            awayTeam: typeof match.awayTeam === "string" ? match.awayTeam : "",
-            time: typeof match.time === "string" ? match.time : "",
-            date: new Date().toLocaleDateString(),
-            handicaps: match.handicaps || [],
-            hasCornerOdds: match.hasCornerOdds || (match.handicaps && match.handicaps.length > 0),
-          }));
-          setScheduleData(scheduleItems);
-          setScheduleFreshLoaded(true);
-        }
-        // 禁用提示: showMessage("info", `获取到 ${data.count || 0} 场比赛`);
-        setActiveTab("schedule");
-      } else {
-        showMessage("error", data.error || "获取赛程失败");
-      }
-      await fetchStatus();
-    } catch (err) {
-      console.error("获取失败:", err);
-      showMessage("error", "获取失败");
-    } finally {
-      setScheduleLoading(false);
-    }
-  };
-
   const handleClose = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     // 在关闭前停止所有可能触发后端请求的定时器
@@ -596,14 +557,6 @@ export default function CrawlerControlPanel() {
       }
     };
   }, []);
-
-  // scheduleData 有数据时自动切换到赛程子tab（仅在新加载时，组件重挂载时不触发）
-  useEffect(() => {
-    if (scheduleData && scheduleData.length > 0 && scheduleFreshLoaded && activeTab !== "schedule") {
-      setActiveTab("schedule");
-      setScheduleFreshLoaded(false);
-    }
-  }, [scheduleData, scheduleFreshLoaded]);
 
   useEffect(() => {
     let interval = null;
@@ -721,14 +674,6 @@ export default function CrawlerControlPanel() {
           刷新比赛
         </button>
 
-        <button key="btn-schedule" type="button"
-          onClick={(e) => fetchSchedule(e)}
-          disabled={loading || scheduleLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:opacity-50 text-white text-xs rounded-lg transition-colors"
-        >
-          <Calendar className="w-3.5 h-3.5" />
-          {scheduleLoading ? "获取中..." : "获取赛程"}
-        </button>
         {isBackendPolling && (
           <button key="btn-pause-resume" type="button"
             onClick={isPaused ? handleResumeMonitor : handlePauseMonitor}
@@ -771,7 +716,6 @@ export default function CrawlerControlPanel() {
       <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
         {[
           { id: "matches", icon: <Activity className="w-3.5 h-3.5" />, label: "角球" },
-          { id: "schedule", icon: <Calendar className="w-3.5 h-3.5" />, label: "赛程" },
           { id: "raw", icon: <Activity className="w-3.5 h-3.5" />, label: "原始数据" },
           { id: "settings", icon: <Settings className="w-3.5 h-3.5" />, label: "设置" },
         ].map((tab) => (
@@ -1038,169 +982,6 @@ export default function CrawlerControlPanel() {
               - CRAWLER_HEADLESS=false：显示浏览器
             </p>
           </div>
-        </div>
-      )}
-
-
-      {activeTab === "schedule" && (
-        <div className="space-y-3 max-h-[600px] overflow-y-auto">
-          {!scheduleData || !scheduleData.length ? (
-            <div className="text-center py-8 text-slate-500 text-sm">
-              暂无赛程数据，请点击获取赛程。
-            </div>
-          ) : (
-            scheduleData.map((item) => (
-              <div key={item.id} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
-                <div
-                  className="p-4 cursor-pointer flex items-center justify-between hover:bg-slate-800/50 transition-colors"
-                  onClick={() => toggleMatchExpand(item.id)}
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(item.league)}</span>
-                      <span className="text-xs text-slate-500">{item.date}</span>
-                      {item.time && (
-                        <span className="text-xs text-amber-400">{translateTime(item.time)}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-center">
-                        <div className="text-sm font-medium text-slate-200">{translateTeam(item.homeTeam)}</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs text-slate-400">VS</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-sm font-medium text-slate-200">{translateTeam(item.awayTeam)}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <button type="button" className="text-slate-400 hover:text-slate-200">
-                    {expandedMatches.has(item.id) ? (
-                      <ChevronUp className="w-5 h-5" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5" />
-                    )}
-                  </button>
-                </div>
-
-                {expandedMatches.has(item.id) && (
-                  <div className="p-4 border-t border-slate-800 bg-slate-900/30">
-                    {(() => {
-                      const handicaps = item.handicaps || [];
-
-                      if (handicaps.length === 0) {
-                        return (
-                          <div className="bg-slate-800/30 rounded-lg p-4 text-center text-slate-500 text-sm">
-                            暂无盘口数据
-                          </div>
-                        );
-                      }
-
-                      const colCount = handicaps.length;
-                      const gridCols = colCount <= 2 ? "grid-cols-2" : colCount <= 4 ? "grid-cols-4" : "grid-cols-4";
-
-                      const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
-                        "O/U":       { bg: "from-blue-900/50 to-slate-800/50",   text: "text-blue-300",   border: "border-blue-800/30" },
-                        "O/U_half":  { bg: "from-blue-800/30 to-slate-800/50",  text: "text-blue-300/70", border: "border-blue-700/20" },
-                        "HDP":       { bg: "from-orange-900/50 to-slate-800/50",text: "text-orange-300",  border: "border-orange-800/30" },
-                        "HDP_half":  { bg: "from-orange-800/30 to-slate-800/50",text: "text-orange-300/70",border: "border-orange-700/20" },
-                        "1X2":       { bg: "from-purple-900/50 to-slate-800/50",text: "text-purple-300",  border: "border-purple-800/30" },
-                        "1X2_half":  { bg: "from-purple-800/30 to-slate-800/50",text: "text-purple-300/70",border: "border-purple-700/20" },
-                        "O/E":       { bg: "from-green-900/50 to-slate-800/50", text: "text-green-300",   border: "border-green-800/30" },
-                        "O/E_half":  { bg: "from-green-800/30 to-slate-800/50", text: "text-green-300/70", border: "border-green-700/20" },
-                        "NEXT":      { bg: "from-teal-900/50 to-slate-800/50", text: "text-teal-300",     border: "border-teal-800/30" },
-                      };
-
-                      return (
-                        <div className={`grid ${gridCols} gap-3`}>
-                          {handicaps.map((h: any) => {
-                            const colorKey = h.period === "half" ? `${h.category}_half` : h.category;
-                            const colors = categoryColors[colorKey] || categoryColors["O/U"];
-                            let label = h.categoryLabel || h.category;
-                            if (label.length > 6) label = label.replace("上半场 ", "半");
-
-                            return (
-                              <div key={h.order || label} className={`bg-gradient-to-br ${colors.bg} rounded-lg p-3 border ${colors.border}`}>
-                                <div className={`text-xs ${colors.text} mb-2 font-medium text-center`}>{label}</div>
-                                {h.category === "O/U" && (
-                                  <>
-                                    <div className="text-center">
-                                      <div className="text-xs text-slate-400">大 {h.line ?? "--"}</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.over || 0).toFixed(2)}</div>
-                                    </div>
-                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                      <div className="text-xs text-slate-400">小 {h.line ?? "--"}</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.under || 0).toFixed(2)}</div>
-                                    </div>
-                                  </>
-                                )}
-                                {h.category === "HDP" && (
-                                  <>
-                                    <div className="text-center">
-                                      <div className="text-xs text-slate-400">{translateTeam(item.homeTeam)} ({h.line ?? "--"})</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                    </div>
-                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                      <div className="text-xs text-slate-400">{translateTeam(item.awayTeam)} ({h.line ?? "--"})</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                    </div>
-                                  </>
-                                )}
-                                {h.category === "1X2" && (
-                                  <div className="flex justify-around text-center">
-                                    <div>
-                                      <div className="text-xs text-slate-400">主</div>
-                                      <div className="text-sm font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-xs text-slate-400">平</div>
-                                      <div className="text-sm font-bold text-white">{(h.odds?.draw || 0).toFixed(2)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-xs text-slate-400">客</div>
-                                      <div className="text-sm font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                    </div>
-                                  </div>
-                                )}
-                                {h.category === "O/E" && (
-                                  <>
-                                    <div className="text-center">
-                                      <div className="text-xs text-slate-400">单</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.odd || 0).toFixed(2)}</div>
-                                    </div>
-                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                      <div className="text-xs text-slate-400">双</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.even || 0).toFixed(2)}</div>
-                                    </div>
-                                  </>
-                                )}
-                                {h.category === "NEXT" && (
-                                  <>
-                                    <div className="text-center">
-                                      <div className="text-xs text-slate-400">{translateTeam(item.homeTeam)}</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.home || 0).toFixed(2)}</div>
-                                    </div>
-                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                      <div className="text-xs text-slate-400">第{h.line}个角球</div>
-                                    </div>
-                                    <div className="text-center mt-2 pt-2 border-t border-slate-700">
-                                      <div className="text-xs text-slate-400">{translateTeam(item.awayTeam)}</div>
-                                      <div className="text-lg font-bold text-white">{(h.odds?.away || 0).toFixed(2)}</div>
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
         </div>
       )}
 

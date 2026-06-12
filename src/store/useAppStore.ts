@@ -177,10 +177,22 @@ function liveMatchReducer(state: LiveMatchState, action: LiveMatchAction): LiveM
 // ==================== Store ====================
 
 function syncTrackedMatchesToBackend(ids: string[]) {
+  // 合并投注配置一起发送，避免覆盖后端其他配置
+  let betConfig: Record<string, any> = { trackedMatchIds: ids };
+  try {
+    const cornerModule = require('./cornerStore');
+    if (cornerModule?.useCornerStore?.getState) {
+      const s = cornerModule.useCornerStore.getState().settings;
+      betConfig.isRealMode = s.isRealMode;
+      betConfig.amount = s.betAmount;
+      betConfig.autoBetEnabled = s.autoBetEnabled;
+      betConfig.autoBetConfirmRequired = s.autoBetConfirmRequired ?? false;
+    }
+  } catch (_) {}
   fetch('/api/corner/bet-config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trackedMatchIds: ids })
+    body: JSON.stringify(betConfig)
   }).catch(() => {});
 }
 

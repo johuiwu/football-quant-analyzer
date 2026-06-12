@@ -3,6 +3,8 @@ import { ExternalLink, History, DollarSign, RefreshCw, X, Lock } from "lucide-re
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
+import { REAL_TEAMS } from "../../data/realTeamsData";
+
 /** 投注弹窗数据 */
 interface BetPopupData {
   matchId: string;
@@ -17,11 +19,23 @@ interface BetResult {
   success: boolean;
   message: string;
 }
-import { REAL_TEAMS } from "../../data/realTeamsData";
 
-// ==================== 盘口列映射 ====================
+// ==================== 盘口分组配置 ====================
 
-const columnMap: Record<string, string> = {
+type OddsGroupKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "cornerOE" | "mainHDP" | "mainOU";
+
+const ODDS_GROUPS: { key: OddsGroupKey; label: string; highlight?: boolean }[] = [
+  { key: "cornerOU", label: "大小" },
+  { key: "cornerOUHalf", label: "大小 半场" },
+  { key: "cornerHDP", label: "让球" },
+  { key: "cornerHDPHalf", label: "让球 半场" },
+  { key: "nextCorner", label: "下一个角球", highlight: true },
+  { key: "cornerOE", label: "单/双" },
+  { key: "mainHDP", label: "让球 半场" },
+  { key: "mainOU", label: "大小球" },
+];
+
+const columnMap: Record<string, OddsGroupKey> = {
   "O/U_full_corner": "cornerOU",
   "O/U_half_corner": "cornerOUHalf",
   "HDP_full_corner": "cornerHDP",
@@ -34,71 +48,57 @@ const columnMap: Record<string, string> = {
   "O/U_full_main": "mainOU",
 };
 
-type ColumnKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "cornerOE" | "mainHDP" | "mainOU";
-
-const COLUMN_KEYS: ColumnKey[] = ["cornerOU", "cornerOUHalf", "cornerHDP", "cornerHDPHalf", "nextCorner", "cornerOE", "mainHDP", "mainOU"];
-
-const COLUMN_HEADERS: Record<ColumnKey, string> = {
-  cornerOU: "角球大小",
-  cornerOUHalf: "角球大小/半",
-  cornerHDP: "角球让球",
-  cornerHDPHalf: "角球让球/半",
-  nextCorner: "下个角球",
-  cornerOE: "角球单双",
-  mainHDP: "主盘让球",
-  mainOU: "主盘大小",
-};
-
-/** 根据 category + period + marketGroup 生成 columnMap 的 key */
-function getColumnKey(h: HandicapEntry): string | null {
+function getColumnKey(h: HandicapEntry): OddsGroupKey | null {
   const key = `${h.category}_${h.period}_${h.marketGroup || ""}`;
   if (columnMap[key]) return columnMap[key];
-  // fallback: 尝试不带 marketGroup
   const key2 = `${h.category}_${h.period}`;
   if (columnMap[key2]) return columnMap[key2];
   return null;
 }
 
-/** 将 handicaps 数组映射为 { columnKey -> HandicapEntry } */
 function mapHandicapsToColumns(handicaps: HandicapEntry[]): Record<string, HandicapEntry> {
   const result: Record<string, HandicapEntry> = {};
   for (const h of handicaps) {
     const colKey = getColumnKey(h);
-    if (colKey) {
-      result[colKey] = h;
-    }
+    if (colKey) result[colKey] = h;
   }
   return result;
 }
 
-/** 格式化赔率数字 */
 function fmt(v: number | undefined | null): string {
   if (v == null || isNaN(v)) return "—";
   return v.toFixed(2);
 }
 
-/** 格式化盘口线 */
 function fmtLine(v: number | string | undefined | null): string {
   if (v == null) return "—";
   return String(v);
 }
 
-// ==================== 单列赔率渲染 ====================
+// ==================== 盘口分组卡片 ====================
 
-interface OddsCellProps {
-  columnKey: ColumnKey;
+interface OddsGroupCardProps {
+  groupKey: OddsGroupKey;
+  label: string;
   handicap?: HandicapEntry;
+  highlight?: boolean;
 }
 
-function OddsCell({ columnKey, handicap }: OddsCellProps) {
+function OddsGroupCard({ groupKey, label, handicap, highlight }: OddsGroupCardProps) {
   const locked = (handicap as any)?.locked === true;
   const selected = (handicap as any)?.isSelected === true;
 
+  const borderCls = highlight ? "border-blue-500/60 bg-blue-500/5" : "border-slate-700/60 bg-slate-800/40";
+  const headerBg = highlight ? "bg-blue-500/20 text-blue-300" : "bg-slate-700/60 text-slate-400";
+
   if (!handicap) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-[11px]">
-        <span className="text-slate-700">—</span>
-        <span className="text-slate-700">—</span>
+      <div className={`rounded-lg border ${borderCls} overflow-hidden`}>
+        <div className={`px-2 py-1 text-center text-[10px] font-medium ${headerBg}`}>{label}</div>
+        <div className="grid grid-cols-2 divide-x divide-slate-700/40">
+          <div className="px-2 py-1.5 text-center text-[11px] text-slate-600">—</div>
+          <div className="px-2 py-1.5 text-center text-[11px] text-slate-600">—</div>
+        </div>
       </div>
     );
   }
@@ -108,93 +108,75 @@ function OddsCell({ columnKey, handicap }: OddsCellProps) {
   const textCls = locked ? "text-slate-600" : "";
   const oddsCls = locked ? "text-slate-600" : "text-red-400";
   const lineCls = locked ? "text-slate-600" : "text-slate-400";
-  const bgCls = selected ? "bg-orange-100/20" : "";
+  const cellBg = selected ? "bg-orange-100/20" : "";
 
-  let topRow: React.ReactNode;
-  let bottomRow: React.ReactNode;
+  let topLabel: string;
+  let topValue: string;
+  let bottomLabel: string;
+  let bottomValue: string;
 
-  switch (columnKey) {
+  switch (groupKey) {
     case "cornerOU":
     case "cornerOUHalf":
     case "mainOU":
-      topRow = (
-        <span className={textCls}>
-          <span className={lineCls}>大 {fmtLine(line)}</span>{" "}
-          <span className={oddsCls}>{fmt(odds.over)}</span>
-        </span>
-      );
-      bottomRow = (
-        <span className={textCls}>
-          <span className={lineCls}>小 {fmtLine(line)}</span>{" "}
-          <span className={oddsCls}>{fmt(odds.under)}</span>
-        </span>
-      );
+      topLabel = `大 ${fmtLine(line)}`;
+      topValue = fmt(odds.over);
+      bottomLabel = `小 ${fmtLine(line)}`;
+      bottomValue = fmt(odds.under);
       break;
     case "cornerHDP":
     case "cornerHDPHalf":
     case "mainHDP":
-      topRow = (
-        <span className={textCls}>
-          <span className={lineCls}>主 {fmtLine(line)}</span>{" "}
-          <span className={oddsCls}>{fmt(odds.home)}</span>
-        </span>
-      );
-      bottomRow = (
-        <span className={textCls}>
-          <span className={lineCls}>客 {fmtLine(line)}</span>{" "}
-          <span className={oddsCls}>{fmt(odds.away)}</span>
-        </span>
-      );
+      topLabel = `主 ${fmtLine(line)}`;
+      topValue = fmt(odds.home);
+      bottomLabel = `客 ${fmtLine(line)}`;
+      bottomValue = fmt(odds.away);
       break;
     case "nextCorner":
-      topRow = (
-        <span className={textCls}>
-          <span className={lineCls}>主</span>{" "}
-          <span className={oddsCls}>{fmt(odds.home)}</span>
-        </span>
-      );
-      bottomRow = (
-        <span className={textCls}>
-          <span className={lineCls}>客</span>{" "}
-          <span className={oddsCls}>{fmt(odds.away)}</span>
-        </span>
-      );
+      topLabel = "主";
+      topValue = fmt(odds.home);
+      bottomLabel = "客";
+      bottomValue = fmt(odds.away);
       break;
     case "cornerOE":
-      topRow = (
-        <span className={textCls}>
-          <span className={lineCls}>单</span>{" "}
-          <span className={oddsCls}>{fmt(odds.odd)}</span>
-        </span>
-      );
-      bottomRow = (
-        <span className={textCls}>
-          <span className={lineCls}>双</span>{" "}
-          <span className={oddsCls}>{fmt(odds.even)}</span>
-        </span>
-      );
+      topLabel = "单";
+      topValue = fmt(odds.odd);
+      bottomLabel = "双";
+      bottomValue = fmt(odds.even);
       break;
     default:
-      topRow = <span className="text-slate-700">—</span>;
-      bottomRow = <span className="text-slate-700">—</span>;
+      topLabel = "—";
+      topValue = "—";
+      bottomLabel = "—";
+      bottomValue = "—";
   }
 
   return (
-    <div className={`flex flex-col items-center justify-center h-full text-[11px] leading-tight px-0.5 ${bgCls}`}>
-      <div className="flex items-center gap-0.5">
-        {topRow}
-        {locked && <Lock className="w-2.5 h-2.5 text-slate-600 inline" />}
-      </div>
-      <div className="flex items-center gap-0.5">
-        {bottomRow}
+    <div className={`rounded-lg border ${borderCls} overflow-hidden`}>
+      <div className={`px-2 py-1 text-center text-[10px] font-medium ${headerBg}`}>{label}</div>
+      <div className="grid grid-cols-2 divide-x divide-slate-700/40">
+        <div className={`px-2 py-1.5 text-center ${cellBg}`}>
+          <div className={`text-[10px] ${lineCls}`}>{topLabel}</div>
+          <div className={`text-[12px] font-semibold ${oddsCls} flex items-center justify-center gap-0.5`}>
+            {topValue}
+            {locked && <Lock className="w-2.5 h-2.5 text-slate-600" />}
+          </div>
+        </div>
+        <div className={`px-2 py-1.5 text-center ${cellBg}`}>
+          <div className={`text-[10px] ${lineCls}`}>{bottomLabel}</div>
+          <div className={`text-[12px] font-semibold ${oddsCls} flex items-center justify-center gap-0.5`}>
+            {bottomValue}
+            {locked && <Lock className="w-2.5 h-2.5 text-slate-600" />}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ==================== MatchRow 组件 ====================
+// ==================== 比赛卡片 ====================
 
-interface MatchRowProps {
+interface MatchCardProps {
   row: any;
   isHighlighted: boolean;
   trackedMatchIds: string[];
@@ -209,7 +191,7 @@ interface MatchRowProps {
   findTeamInfo: (name: string) => { id: string; league: string };
 }
 
-function MatchRow({
+function MatchCard({
   row,
   isHighlighted,
   trackedMatchIds,
@@ -222,109 +204,111 @@ function MatchRow({
   openBetPopup,
   navigateToDashboard,
   findTeamInfo,
-}: MatchRowProps) {
+}: MatchCardProps) {
   const trig = Array.isArray(row.triggeredStrategies) ? row.triggeredStrategies : [];
   const hasSignal = trig.length > 0;
   const hi = findTeamInfo(row.homeTeam);
   const ai = findTeamInfo(row.awayTeam);
 
-  // 将 handicaps 映射到8列
   const handicaps = row.handicaps || [];
   const colData = mapHandicapsToColumns(handicaps);
 
-  const rowBgCls = isHighlighted
-    ? "ring-2 ring-emerald-500/60 bg-emerald-500/5"
+  const cardBorder = isHighlighted
+    ? "border-emerald-500/60 bg-emerald-500/5"
     : hasSignal
-    ? "bg-emerald-500/5 border-l-2 border-l-emerald-600/60"
-    : "hover:bg-slate-800/20";
+    ? "border-emerald-600/40 bg-emerald-500/5"
+    : "border-slate-700/60 bg-slate-800/30 hover:bg-slate-800/50";
 
   return (
-    <div
-      className={`grid grid-cols-[minmax(80px,1fr)_minmax(80px,1fr)_40px_44px_32px_32px_repeat(8,minmax(64px,0.8fr))_44px_64px] gap-0 items-center px-2 py-1.5 text-[11px] border-b border-slate-800/40 transition-colors ${rowBgCls}`}
-    >
-      {/* 主队 */}
-      <div className="font-medium text-slate-200 truncate pr-1">
-        {isHighlighted && <span className="mr-0.5">🏆</span>}
-        {row.homeTeam || "--"}
-      </div>
-      {/* 客队 */}
-      <div className="text-slate-300 truncate pr-1">{row.awayTeam || "--"}</div>
-      {/* 时间 */}
-      <div className="text-center text-slate-400 font-mono">{row.elapsedMinutes || 0}'</div>
-      {/* 比分 */}
-      <div className="text-center text-slate-300 font-mono font-bold">
-        {row.homeScore ?? 0}-{row.awayScore ?? 0}
-      </div>
-      {/* 主角 */}
-      <div className="text-center text-emerald-400 font-mono">{row.homeCorners ?? 0}</div>
-      {/* 客角 */}
-      <div className="text-center text-emerald-400 font-mono">{row.awayCorners ?? 0}</div>
-
-      {/* 8列赔率 */}
-      {COLUMN_KEYS.map((colKey) => (
-        <OddsCell key={colKey} columnKey={colKey} handicap={colData[colKey]} />
-      ))}
-
-      {/* 策略 */}
-      <div className="text-center">
-        {hasSignal ? (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            {trig.join(",")}
-          </span>
-        ) : (
-          <span className="text-slate-600">—</span>
-        )}
-      </div>
-
-      {/* 操作 */}
-      <div className="text-center">
-        <div className="flex items-center gap-0.5 justify-center">
-          {trackedMatchIds.includes(String(row.matchId)) ? (
-            <button type="button"
-              onClick={() => removeTrackedMatch(String(row.matchId))}
-              className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 hover:text-rose-300 transition-all"
-              title={isRealMode && autoBetEnabled ? "取消追踪（将停止自动投注）" : "取消追踪"}
-            >
-              ×
-            </button>
-          ) : (
-            <button type="button"
-              onClick={() => addTrackedMatch(String(row.matchId))}
-              className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 hover:text-emerald-300 transition-all"
-              title={isRealMode && autoBetEnabled ? "追踪比赛（允许自动投注）" : "追踪比赛"}
-            >
-              +
-            </button>
-          )}
-          <button type="button"
-            onClick={() => handleViewHistory(String(row.matchId))}
-            className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 hover:text-indigo-300 transition-all"
-            title="查看历史"
-          >
-            <History className="w-2.5 h-2.5" />
-          </button>
-          {isRealMode && (
-            <button type="button"
-              onClick={() => openBetPopup(row)}
-              className="inline-flex items-center justify-center w-5 h-5 text-[10px] rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-400 hover:text-amber-300 transition-all"
-              title="手动投注"
-            >
-              <DollarSign className="w-2.5 h-2.5" />
-            </button>
-          )}
-          {hi.id && ai.id ? (
-            <button type="button"
-              onClick={() => navigateToDashboard(hi.id, ai.id, hi.league, ai.league)}
-              className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 hover:text-white transition-all"
-              title="跳转到 Dashboard 分析该场比赛"
-            >
-              <ExternalLink className="w-2.5 h-2.5" />
-            </button>
-          ) : (
-            <span className="text-[10px] text-slate-600">—</span>
-          )}
+    <div className={`rounded-xl border ${cardBorder} p-3 transition-colors`}>
+      {/* 比赛信息 */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {isHighlighted && <span className="text-sm">🏆</span>}
+          <div>
+            <div className="text-sm font-semibold text-slate-200">
+              {row.homeTeam || "--"} <span className="text-slate-500 mx-1">vs</span> {row.awayTeam || "--"}
+            </div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              {row.league || ""} {row.time ? `· ${row.time}` : ""} {row.elapsedMinutes ? `· ${row.elapsedMinutes}'` : ""}
+            </div>
+          </div>
         </div>
+        <div className="flex items-center gap-2">
+          <div className="text-center">
+            <div className="text-lg font-bold text-slate-200 font-mono">
+              {row.homeScore ?? 0} - {row.awayScore ?? 0}
+            </div>
+            <div className="text-[10px] text-emerald-400 font-mono">
+              角 {row.homeCorners ?? 0} - {row.awayCorners ?? 0}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            {trackedMatchIds.includes(String(row.matchId)) ? (
+              <button
+                onClick={() => removeTrackedMatch(String(row.matchId))}
+                className="px-2 py-1 text-[10px] rounded bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 transition-all"
+                title="取消追踪"
+              >
+                取消追踪
+              </button>
+            ) : (
+              <button
+                onClick={() => addTrackedMatch(String(row.matchId))}
+                className="px-2 py-1 text-[10px] rounded bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 transition-all"
+                title="追踪比赛"
+              >
+                追踪
+              </button>
+            )}
+            <button
+              onClick={() => handleViewHistory(String(row.matchId))}
+              className="p-1 rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-400 transition-all"
+              title="查看历史"
+            >
+              <History className="w-3 h-3" />
+            </button>
+            {isRealMode && (
+              <button
+                onClick={() => openBetPopup(row)}
+                className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-400 transition-all"
+                title="手动投注"
+              >
+                <DollarSign className="w-3 h-3" />
+              </button>
+            )}
+            {hi.id && ai.id && (
+              <button
+                onClick={() => navigateToDashboard(hi.id, ai.id, hi.league, ai.league)}
+                className="p-1 rounded bg-slate-700/50 hover:bg-slate-600 text-slate-400 transition-all"
+                title="跳转到 Dashboard"
+              >
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 策略信号 */}
+      {hasSignal && (
+        <div className="mb-2 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] text-emerald-400 font-mono">{trig.join(", ")}</span>
+        </div>
+      )}
+
+      {/* 盘口分组 */}
+      <div className="grid grid-cols-8 gap-2">
+        {ODDS_GROUPS.map((group) => (
+          <OddsGroupCard
+            key={group.key}
+            groupKey={group.key}
+            label={group.label}
+            handicap={colData[group.key]}
+            highlight={group.highlight}
+          />
+        ))}
       </div>
     </div>
   );
@@ -370,7 +354,6 @@ export default function LiveMonitor() {
     setActiveCornerTab("history");
   };
 
-  // 手动投注状态
   const [betPopup, setBetPopup] = useState<BetPopupData | null>(null);
   const [betInputAmount, setBetInputAmount] = useState(betAmount);
   const [betSubmitting, setBetSubmitting] = useState(false);
@@ -429,7 +412,6 @@ export default function LiveMonitor() {
     );
   }
 
-  // 判断数据来源
   const firstMatch = displayData.length > 0 ? displayData[0] : null;
   const dataSource = firstMatch?._dataSource || "unknown";
 
@@ -496,27 +478,11 @@ export default function LiveMonitor() {
           <p className="text-sm text-slate-500">尝试其他搜索关键词</p>
         </div>
       ) : (
-        <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-x-auto">
-          {/* 表头 */}
-          <div className="grid grid-cols-[minmax(80px,1fr)_minmax(80px,1fr)_40px_44px_32px_32px_repeat(8,minmax(64px,0.8fr))_44px_64px] gap-0 items-center px-2 py-2 text-[10px] text-slate-500 border-b border-slate-700/60 font-medium bg-slate-900/40">
-            <div>主队</div>
-            <div>客队</div>
-            <div className="text-center">时间</div>
-            <div className="text-center">比分</div>
-            <div className="text-center">主角</div>
-            <div className="text-center">客角</div>
-            {COLUMN_KEYS.map((k) => (
-              <div key={k} className="text-center">{COLUMN_HEADERS[k]}</div>
-            ))}
-            <div className="text-center">策略</div>
-            <div className="text-center">操作</div>
-          </div>
-
-          {/* 数据行 */}
+        <div className="space-y-3">
           {filteredData.map((row: any) => {
             const isHighlighted = selectedMatchId && String(row.matchId) === selectedMatchId;
             return (
-              <MatchRow
+              <MatchCard
                 key={row.matchId}
                 row={row}
                 isHighlighted={isHighlighted}
@@ -540,32 +506,32 @@ export default function LiveMonitor() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-[#1a1f36] rounded-2xl border border-slate-700 w-96 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-slate-200">{`手动投注`}</h3>
+              <h3 className="text-sm font-semibold text-slate-200">手动投注</h3>
               <button onClick={() => setBetPopup(null)} className="text-slate-500 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-3 mb-4">
               <div>
-                <label className="text-[10px] text-slate-500">{`比赛`}</label>
+                <label className="text-[10px] text-slate-500">比赛</label>
                 <p className="text-xs text-slate-200 truncate">{betPopup.matchName}</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-slate-500">{`盘口`}</label>
+                  <label className="text-[10px] text-slate-500">盘口</label>
                   <p className="text-xs text-amber-400 font-mono">{betPopup.handicap}</p>
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500">{`赔率`}</label>
+                  <label className="text-[10px] text-slate-500">赔率</label>
                   <p className="text-xs text-amber-400 font-mono">{betPopup.odds.toFixed(2)}</p>
                 </div>
               </div>
               <div>
-                <label className="text-[10px] text-slate-500">{`策略`}</label>
+                <label className="text-[10px] text-slate-500">策略</label>
                 <p className="text-xs text-emerald-400 font-mono">{betPopup.strategyId}</p>
               </div>
               <div>
-                <label className="text-[10px] text-slate-500">{`投注金额`}</label>
+                <label className="text-[10px] text-slate-500">投注金额</label>
                 <input type="number" className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500/50" value={betInputAmount} min={10} max={100000} onChange={(e) => setBetInputAmount(Number(e.target.value))} />
               </div>
             </div>
@@ -576,7 +542,7 @@ export default function LiveMonitor() {
             )}
             <div className="flex gap-2">
               <button onClick={() => setBetPopup(null)} className="flex-1 px-4 py-2 text-xs rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">
-                {`取消`}
+                取消
               </button>
               <button onClick={handleManualBet} disabled={betSubmitting || betInputAmount <= 0} className="flex-1 px-4 py-2 text-xs rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 {betSubmitting ? "提交中..." : "确认投注 ¥" + betInputAmount}

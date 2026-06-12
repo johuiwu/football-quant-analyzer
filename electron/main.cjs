@@ -164,6 +164,40 @@ ipcMain.on("check-for-updates", () => {
   autoUpdater.checkForUpdatesAndNotify();
 });
 
+// ─── HTTP API 辅助函数（替代直接 require ESM 模块） ───
+const BACKEND_PORT = 3000;
+function apiGet(apiPath) {
+  return new Promise((resolve, reject) => {
+    require("http").get(`http://localhost:${BACKEND_PORT}${apiPath}`, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error(`解析响应失败: ${e.message}`)); }
+      });
+    }).on("error", reject);
+  });
+}
+function apiPost(apiPath, body) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body || {});
+    const req = require("http").request({
+      hostname: "localhost", port: BACKEND_PORT, path: apiPath,
+      method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+    }, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error(`解析响应失败: ${e.message}`)); }
+      });
+    });
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 app.whenReady().then(async () => {
   setupAutoUpdater();
 
@@ -171,54 +205,40 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-app-version', () => app.getVersion());
   ipcMain.handle('get-is-packaged', () => app.isPackaged());
 
-  // ★ 角球系统 IPC 通道
+  // ★ 角球系统 IPC 通道 — 通过 HTTP API 调用后端
   ipcMain.handle('corner:get-status', async () => {
     try {
-      const { getBackendPollingStatus, getAlertStatus, getBetConfig } = require('../backend/services/cornerService.js');
-      const polling = getBackendPollingStatus();
-      const alert = getAlertStatus();
-      const bet = getBetConfig();
-      return { success: true, polling, alert, betConfig: bet };
+      return await apiGet('/api/corner/status');
     } catch (e) { return { success: false, error: e.message }; }
   });
 
   ipcMain.handle('corner:start-polling', async () => {
     try {
-      const { startCornerBackendPolling } = require('../backend/services/cornerService.js');
-      const result = startCornerBackendPolling();
-      return { success: true, ...result };
+      return await apiPost('/api/corner/start');
     } catch (e) { return { success: false, error: e.message }; }
   });
 
   ipcMain.handle('corner:stop-polling', async () => {
     try {
-      const { stopCornerBackendPolling } = require('../backend/services/cornerService.js');
-      const result = stopCornerBackendPolling();
-      return { success: true, ...result };
+      return await apiPost('/api/corner/stop');
     } catch (e) { return { success: false, error: e.message }; }
   });
 
   ipcMain.handle('corner:pending-confirms', async () => {
     try {
-      const { getPendingConfirms } = require('../backend/services/cornerService.js');
-      const rows = await getPendingConfirms();
-      return { success: true, data: rows, count: rows.length };
+      return await apiGet('/api/corner/pending-confirms');
     } catch (e) { return { success: false, error: e.message }; }
   });
 
   ipcMain.handle('corner:confirm-bet', async (_event, betId) => {
     try {
-      const { confirmBet } = require('../backend/services/cornerService.js');
-      const result = await confirmBet(betId);
-      return result;
+      return await apiPost(`/api/corner/confirm-bet/${betId}`);
     } catch (e) { return { success: false, error: e.message }; }
   });
 
   ipcMain.handle('corner:reject-bet', async (_event, betId) => {
     try {
-      const { rejectBet } = require('../backend/services/cornerService.js');
-      const result = await rejectBet(betId);
-      return result;
+      return await apiPost(`/api/corner/reject-bet/${betId}`);
     } catch (e) { return { success: false, error: e.message }; }
   });
 

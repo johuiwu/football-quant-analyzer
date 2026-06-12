@@ -3,7 +3,6 @@ import {
   getCrawlerStatus, 
   loginToHG, 
   fetchAllLiveMatches, 
-  fetchSchedule, 
   closeBrowser,
   startMatchPolling,
   stopMatchPolling,
@@ -45,17 +44,6 @@ router.get('/crawler/matches', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('[CrawlerRoutes] /matches error:', err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// ==================== 获取赛程 ====================
-router.get('/crawler/schedule', async (req, res) => {
-  try {
-    const result = await fetchSchedule();
-    res.json(result);
-  } catch (err) {
-    console.error('[CrawlerRoutes] /schedule error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

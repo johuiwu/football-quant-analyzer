@@ -301,13 +301,27 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     set((state) => ({
       settings: { ...state.settings, ...partial }
     }));
-    // 配置变更时同步到后端
-    if ('isRealMode' in partial || 'betAmount' in partial || 'autoBetEnabled' in partial) {
+    // 配置变更时同步到后端（合并 trackedMatchIds）
+    if ('isRealMode' in partial || 'betAmount' in partial || 'autoBetEnabled' in partial || 'autoBetConfirmRequired' in partial) {
       const s = get().settings;
+      // 尝试获取 useAppStore 的 trackedMatchIds
+      let trackedMatchIds: string[] = [];
+      try {
+        const appModule = require('./useAppStore');
+        if (appModule?.useAppStore?.getState) {
+          trackedMatchIds = appModule.useAppStore.getState().trackedMatchIds || [];
+        }
+      } catch (_) {}
       fetch('/api/corner/bet-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isRealMode: s.isRealMode, amount: s.betAmount, autoBetEnabled: s.autoBetEnabled })
+        body: JSON.stringify({
+          isRealMode: s.isRealMode,
+          amount: s.betAmount,
+          autoBetEnabled: s.autoBetEnabled,
+          autoBetConfirmRequired: s.autoBetConfirmRequired ?? false,
+          trackedMatchIds
+        })
       }).catch(() => {});
     }
   },
@@ -396,6 +410,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       const response = await fetch('/api/corner/live');
       const json = await response.json();
       const rawMatches = json?.success && Array.isArray(json.data) ? json.data : [];
+      const mainMarkets = json?.mainMarkets || {};
 
       // 映射到前端 CornerLiveMatch 格式（triggeredStrategies 由后端评估）
       const liveMatches: CornerLiveMatch[] = rawMatches.map((m: any) => ({
@@ -415,6 +430,70 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         triggeredStrategies: m.triggeredStrategies || []
       }));
 
+      // ★ 当 data 为空但 mainMarkets 有数据时，从 mainMarkets 创建比赛条目
+      if (liveMatches.length === 0 && Object.keys(mainMarkets).length > 0) {
+        const existingKeys = new Set<string>();
+        for (const [key, mmRaw] of Object.entries(mainMarkets)) {
+          const mm = mmRaw as any;
+          if (existingKeys.has(key)) continue;
+          const sepIdx = key.indexOf("|");
+          if (sepIdx < 1) continue;
+          const homeTeam = key.substring(0, sepIdx);
+          const awayTeam = key.substring(sepIdx + 1);
+          if (!homeTeam || !awayTeam) continue;
+
+          const handicaps: any[] = [];
+          let order = 1;
+          for (const h of (mm.hdp || [])) {
+            handicaps.push({
+              order: order++, category: "HDP", categoryLabel: "让球",
+              period: "full", line: h.line || 0,
+              odds: { home: h.homeOdds || 0, away: h.awayOdds || 0 },
+              source: "api", marketGroup: "hdp",
+            });
+          }
+          for (const o of (mm.ou || [])) {
+            handicaps.push({
+              order: order++, category: "O/U", categoryLabel: "大小球",
+              period: "full", line: o.line || 0,
+              odds: { over: o.overOdds || 0, under: o.underOdds || 0 },
+              source: "api", marketGroup: "ou",
+            });
+          }
+          for (const h of (mm.hdpHalf || [])) {
+            handicaps.push({
+              order: order++, category: "HDP", categoryLabel: "上半场 让球",
+              period: "half", line: h.line || 0,
+              odds: { home: h.homeOdds || 0, away: h.awayOdds || 0 },
+              source: "api", marketGroup: "hdp",
+            });
+          }
+          for (const o of (mm.ouHalf || [])) {
+            handicaps.push({
+              order: order++, category: "O/U", categoryLabel: "上半场 大小球",
+              period: "half", line: o.line || 0,
+              odds: { over: o.overOdds || 0, under: o.underOdds || 0 },
+              source: "api", marketGroup: "ou",
+            });
+          }
+
+          if (handicaps.length > 0) {
+            existingKeys.add(key);
+            liveMatches.push({
+              matchId: "mm_" + key,
+              homeTeam, awayTeam,
+              elapsedMinutes: 0,
+              homeScore: 0, awayScore: 0,
+              homeCorners: 0, awayCorners: 0,
+              cornerHandicap: 0, cornerOdds: 0,
+              handicaps,
+              _dataSource: "api",
+              _cornerSource: "none",
+              triggeredStrategies: [],
+            } as any);
+          }
+        }
+      }
 
       set({ liveMatches, isLoading: false });
       const triggeredCount = liveMatches.reduce((sum, m) => sum + m.triggeredStrategies.length, 0);

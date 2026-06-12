@@ -3,9 +3,11 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, getUid } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
+import { updateCredentials } from "./credentialManager.js";
+import { extractVerFromRequest } from "./transformSigner.js";
 import fs from "fs";
 
 // ======================== 配置常量 ========================
@@ -465,6 +467,52 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
           console.log("[HgCrawler] ✅ 登录成功！ (" + detected.detail + ", loginClicked=" + loginClicked + ")");
           if (!isolated) { mainPage = page; setSharedPage(page); }
           crawlerStatus.isLoggedIn = true;
+
+          // ★ 登录成功后提取 uid/ver 并保存到 credentialManager
+          try {
+            // 从 frame URL 提取 uid
+            const frames = page.frames();
+            for (const frame of frames) {
+              try {
+                const frameUrl = frame.url();
+                if (frameUrl.includes("transform.php") && frameUrl.includes("uid=")) {
+                  const uidMatch = frameUrl.match(/uid=([^&]+)/);
+                  if (uidMatch && uidMatch[1] && uidMatch[1].length >= 10 && !uidMatch[1].endsWith("=")) {
+                    setUid(uidMatch[1]);
+                    console.log("[HgCrawler] 从 frame 提取 uid: " + uidMatch[1].substring(0, 12) + "...");
+                    break;
+                  }
+                }
+              } catch (e) {}
+            }
+            // 从 DOM 提取 uid（备选）
+            if (!getUid()) {
+              try {
+                const domUid = await page.evaluate(() => {
+                  try { return top.uid || window.uid || ""; } catch(e) { return window.uid || ""; }
+                });
+                if (domUid && domUid !== "undefined" && domUid.length >= 10 && !domUid.endsWith("=")) {
+                  setUid(domUid);
+                  console.log("[HgCrawler] 从 DOM 提取 uid: " + domUid.substring(0, 12) + "...");
+                }
+              } catch (e) {}
+            }
+            // 从 DOM 提取 ver
+            const domVer = await page.evaluate(() => {
+              try { return top.ver || window.ver || ""; } catch(e) { return window.ver || ""; }
+            });
+            if (domVer) {
+              extractVerFromRequest(domVer);
+              console.log("[HgCrawler] 从 DOM 提取 ver: " + domVer.substring(0, 16) + "...");
+            }
+            // 保存凭证到磁盘
+            const cookies = await page.cookies();
+            updateCredentials({ uid: getUid(), ver: domVer, cookies, username: credentials?.username, password: credentials?.password });
+            console.log("[HgCrawler] 凭证已保存到 credentialManager");
+          } catch (e) {
+            console.warn("[HgCrawler] 提取 uid/ver 失败:", e.message);
+          }
+
           if (process.env.CRAWLER_DEBUG === "1") {
             await page.screenshot({ path: "debug-login-success.png" });
           }

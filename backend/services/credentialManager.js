@@ -33,15 +33,36 @@ function isValidUid(uid) {
  * @returns {{ uid: string, ver: string, cookieStr: string } | null}
  */
 export function loadCredentials() {
-  // 1. 获取 uid
-  const uid = getUid();
+  // 1. 获取 uid（优先内存，回退磁盘）
+  let uid = getUid();
+  if (!isValidUid(uid)) {
+    // 尝试从磁盘恢复 uid
+    try {
+      const credFile = JSON.parse(fs.readFileSync(CRED_PATH, "utf8"));
+      if (credFile.uid && isValidUid(credFile.uid)) {
+        setUid(credFile.uid);
+        uid = credFile.uid;
+        console.log("[credentialManager] 从磁盘恢复 uid: " + uid.substring(0, 12) + "...");
+      }
+    } catch (e) {}
+  }
   if (!isValidUid(uid)) {
     console.warn("[credentialManager] uid 无效或缺失");
     return null;
   }
 
-  // 2. 获取 ver
-  const ver = getCurrentVer();
+  // 2. 获取 ver（优先内存，回退磁盘）
+  let ver = getCurrentVer();
+  if (!ver) {
+    try {
+      const credFile = JSON.parse(fs.readFileSync(CRED_PATH, "utf8"));
+      if (credFile.ver) {
+        extractVerFromRequest("transform.php?ver=" + credFile.ver);
+        ver = getCurrentVer();
+        console.log("[credentialManager] 从磁盘恢复 ver: " + credFile.ver.substring(0, 16) + "...");
+      }
+    } catch (e) {}
+  }
   if (!ver) {
     console.warn("[credentialManager] ver 缺失");
     return null;
@@ -83,7 +104,7 @@ function _getCookieStr() {
 
 /**
  * 更新凭证
- * @param {{ uid?: string, ver?: string, cookies?: Array }} updates
+ * @param {{ uid?: string, ver?: string, cookies?: Array, username?: string, password?: string }} updates
  */
 export function updateCredentials(updates) {
   if (updates.uid && isValidUid(updates.uid)) {
@@ -107,9 +128,9 @@ export function updateCredentials(updates) {
 
   // 当 uid 和 ver 同时存在时，自动持久化完整凭证到 credentials.json
   if (updates.uid && updates.ver) {
-    saveToDisk({ uid: updates.uid, ver: updates.ver, cookies: updates.cookies || [], apiDomain: updates.apiDomain });
-  } else if (updates.apiDomain) {
-    // 单独更新 apiDomain 时，读取现有凭证后重新保存
+    saveToDisk({ uid: updates.uid, ver: updates.ver, cookies: updates.cookies || [], apiDomain: updates.apiDomain, username: updates.username, password: updates.password });
+  } else if (updates.apiDomain || updates.username) {
+    // 单独更新 apiDomain/username 时，读取现有凭证后重新保存
     const existing = loadFromDisk();
     if (existing) {
       saveToDisk({ uid: existing.uid, ver: existing.ver, cookies: [], apiDomain: updates.apiDomain });
@@ -214,12 +235,14 @@ export async function loadAndValidate() {
  * 将完整凭证保存到 credentials.json
  * @param {{ uid: string, ver: string, cookies?: Array }} param0
  */
-export function saveToDisk({ uid, ver, cookies, apiDomain }) {
+export function saveToDisk({ uid, ver, cookies, apiDomain, username, password }) {
   try {
     const data = {
       uid,
       ver,
       apiDomain: apiDomain || null,
+      username: username || null,
+      password: password || null,
       savedAt: Date.now(),
       cookieCount: cookies?.length || 0,
     };
@@ -245,7 +268,23 @@ export function loadFromDisk() {
     const raw = fs.readFileSync(CRED_PATH, "utf8");
     const data = JSON.parse(raw);
     if (!data.uid || !data.ver) return null;
-    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount };
+    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount, username: data.username, password: data.password, apiDomain: data.apiDomain };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 获取保存的用户名/密码（用于 autoLogin）
+ * @returns {{ username: string, password: string } | null}
+ */
+export function getSavedLoginCredentials() {
+  try {
+    const data = loadFromDisk();
+    if (data && data.username && data.password) {
+      return { username: data.username, password: data.password };
+    }
+    return null;
   } catch {
     return null;
   }
