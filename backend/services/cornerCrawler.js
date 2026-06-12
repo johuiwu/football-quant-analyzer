@@ -1768,6 +1768,7 @@ async function fetchCornerDataViaAPI(page) {
 
       let cornerOU = null, cornerHDP = null, nextCorner = null, cornerOE = null;
       let cornerOUHalf = null, cornerHDPHalf = null;
+      let corner1X2 = null, corner1X2Half = null, cornerOEHalf = null;
       // ★ 打印完整 game 数据用于调试（确认 rcn 实际返回哪些字段）
       console.log(`[cornerCrawler] rcn game 完整数据:`, JSON.stringify(game).substring(0, 800));
       // O/U — 先尝试角球专用字段，再回退到常规字段
@@ -1799,6 +1800,20 @@ async function fetchCornerDataViaAPI(page) {
       const ihreh = parseFloat(game.IOR_HREH || game.ior_hreh || 0);
       const ihrec = parseFloat(game.IOR_HREC || game.ior_hrec || 0);
       if (hhre || ihreh > 0) cornerHDPHalf = { line: hhre, homeOdds: ihreh, awayOdds: ihrec, locked: ihreh === 0 && ihrec === 0 };
+      // ★ 角球独赢 (Corner 1X2)
+      const irgh = parseFloat(game.IOR_RGH || game.ior_rgh || 0);
+      const irgc = parseFloat(game.IOR_RGC || game.ior_rgc || 0);
+      const irgn = parseFloat(game.IOR_RGN || game.ior_rgn || 0);
+      if (irgh > 0 || irgc > 0 || irgn > 0) corner1X2 = { homeOdds: irgh, drawOdds: irgn, awayOdds: irgc, locked: irgh === 0 && irgc === 0 && irgn === 0 };
+      // ★ 上半场角球独赢 (Half-time Corner 1X2)
+      const ihrgH = parseFloat(game.IOR_HRGH || game.ior_hrgh || 0);
+      const ihrgC = parseFloat(game.IOR_HRGC || game.ior_hrgc || 0);
+      const ihrgN = parseFloat(game.IOR_HRGN || game.ior_hrgn || 0);
+      if (ihrgH > 0 || ihrgC > 0 || ihrgN > 0) corner1X2Half = { homeOdds: ihrgH, drawOdds: ihrgN, awayOdds: ihrgC, locked: ihrgH === 0 && ihrgC === 0 && ihrgN === 0 };
+      // ★ 上半场角球单双 (Half-time Corner O/E)
+      const ihreoe = parseFloat(game.IOR_HREOE || game.ior_hreoe || 0);
+      const ihreoo = parseFloat(game.IOR_HREOO || game.ior_hreoo || 0);
+      if (ihreoe > 0 || ihreoo > 0) cornerOEHalf = { oddOdds: ihreoe, evenOdds: ihreoo, locked: ihreoe === 0 && ihreoo === 0 };
 
       // ★ 时间 — 大写优先
       const retime = game.RETIMESET || game.re_time || si.retime || "";
@@ -1817,8 +1832,8 @@ async function fetchCornerDataViaAPI(page) {
         _cornerSource: "api",
         cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
         cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,
-        cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf,
-        handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf }),
+        cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf, corner1X2, corner1X2Half, cornerOEHalf,
+        handicaps: buildHandicapsArray({ cornerOU, cornerHDP, nextCorner, cornerOE, cornerOUHalf, cornerHDPHalf, corner1X2, corner1X2Half, cornerOEHalf }),
         dataQuality: (cornerHDP || cornerOU || nextCorner) ? "full" : "partial",
         timestamp: Date.now(), triggeredStrategies: [], ecid: game.ECID || game.ecid || ""
       };
@@ -1938,10 +1953,39 @@ async function fetchCornerDataViaAPI(page) {
               m.cornerHDPHalf = { line: hline, homeOdds: hiorh, awayOdds: hiorc, locked: hiorh === 0 && hiorc === 0 };
             }
           }
+
+          // ★ 角球独赢 (Corner 1X2)
+          if (!m.corner1X2) {
+            const rgh = gvf(d, "IOR_RGH", "ior_rgh");
+            const rgc = gvf(d, "IOR_RGC", "ior_rgc");
+            const rgn = gvf(d, "IOR_RGN", "ior_rgn");
+            if (rgh > 0 || rgc > 0 || rgn > 0) {
+              m.corner1X2 = { homeOdds: rgh, drawOdds: rgn, awayOdds: rgc, locked: rgh === 0 && rgc === 0 && rgn === 0 };
+            }
+          }
+
+          // ★ 上半场角球独赢 (Half-time Corner 1X2)
+          if (!m.corner1X2Half) {
+            const hrgh = gvf(d, "IOR_HRGH", "ior_hrgh");
+            const hrgc = gvf(d, "IOR_HRGC", "ior_hrgc");
+            const hrgn = gvf(d, "IOR_HRGN", "ior_hrgn");
+            if (hrgh > 0 || hrgc > 0 || hrgn > 0) {
+              m.corner1X2Half = { homeOdds: hrgh, drawOdds: hrgn, awayOdds: hrgc, locked: hrgh === 0 && hrgc === 0 && hrgn === 0 };
+            }
+          }
+
+          // ★ 上半场角球单双 (Half-time Corner O/E)
+          if (!m.cornerOEHalf) {
+            const hreoe = gvf(d, "IOR_HREOE", "ior_hreoe");
+            const hreoo = gvf(d, "IOR_HREOO", "ior_hreoo");
+            if (hreoe > 0 || hreoo > 0) {
+              m.cornerOEHalf = { oddOdds: hreoe, evenOdds: hreoo, locked: hreoe === 0 && hreoo === 0 };
+            }
+          }
         }
 
         // 更新 handicaps 和 dataQuality
-        m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf });
+        m.handicaps = buildHandicapsArray({ cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf, corner1X2: m.corner1X2, corner1X2Half: m.corner1X2Half, cornerOEHalf: m.cornerOEHalf });
         m.dataQuality = (m.cornerHDP || m.cornerOU || m.nextCorner) ? "full" : "partial";
         console.log(`[cornerCrawler] get_game_more 结果: ${m.homeTeam} vs ${m.awayTeam}, cornerOU=${JSON.stringify(m.cornerOU)}, cornerHDP=${JSON.stringify(m.cornerHDP)}, nextCorner=${JSON.stringify(m.nextCorner)}, cornerOE=${JSON.stringify(m.cornerOE)}`);
       }
@@ -2224,6 +2268,33 @@ function buildHandicapsArray(m) {
       period: "full", odds: { odd: m.cornerOE.oddOdds || 0, even: m.cornerOE.evenOdds || 0 },
       source: "dom", marketGroup: "corner",
       locked: m.cornerOE.locked || false
+    });
+  }
+  if (m.corner1X2) {
+    result.push({
+      order: order++, category: "1X2", categoryLabel: "独赢",
+      period: "full",
+      odds: { home: m.corner1X2.homeOdds || 0, draw: m.corner1X2.drawOdds || 0, away: m.corner1X2.awayOdds || 0 },
+      source: "dom", marketGroup: "corner",
+      locked: m.corner1X2.locked || false
+    });
+  }
+  if (m.corner1X2Half) {
+    result.push({
+      order: order++, category: "1X2", categoryLabel: "上半场独赢",
+      period: "half",
+      odds: { home: m.corner1X2Half.homeOdds || 0, draw: m.corner1X2Half.drawOdds || 0, away: m.corner1X2Half.awayOdds || 0 },
+      source: "dom", marketGroup: "corner",
+      locked: m.corner1X2Half.locked || false
+    });
+  }
+  if (m.cornerOEHalf) {
+    result.push({
+      order: order++, category: "O/E", categoryLabel: "上半场单/双",
+      period: "half",
+      odds: { odd: m.cornerOEHalf.oddOdds || 0, even: m.cornerOEHalf.evenOdds || 0 },
+      source: "dom", marketGroup: "corner",
+      locked: m.cornerOEHalf.locked || false
     });
   }
   return result;
@@ -2585,7 +2656,7 @@ async function _crawlViaPureHttp() {
   // ★ 角球盘口（按 matchId 索引）
   for (const m of cornerMatches) {
     if (m.cornerOU || m.cornerHDP) {
-      mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf };
+      mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf, corner1X2: m.corner1X2, corner1X2Half: m.corner1X2Half, cornerOEHalf: m.cornerOEHalf };
     }
   }
   // ★ 让球/大小盘口（从 rrnou 数据构建，按 matchId 和 homeTeam|awayTeam 双索引）

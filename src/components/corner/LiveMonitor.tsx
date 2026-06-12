@@ -22,7 +22,7 @@ interface BetResult {
 
 // ==================== 盘口分组配置 ====================
 
-type OddsGroupKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "cornerOE" | "mainHDP" | "mainOU";
+type OddsGroupKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "corner1X2" | "corner1X2Half" | "cornerOE" | "cornerOEHalf" | "mainHDP" | "mainOU";
 
 const ODDS_GROUPS: { key: OddsGroupKey; label: string; highlight?: boolean }[] = [
   { key: "cornerOU", label: "大小" },
@@ -30,9 +30,12 @@ const ODDS_GROUPS: { key: OddsGroupKey; label: string; highlight?: boolean }[] =
   { key: "cornerHDP", label: "让球" },
   { key: "cornerHDPHalf", label: "让球 半场" },
   { key: "nextCorner", label: "下一个角球", highlight: true },
+  { key: "corner1X2", label: "独赢" },
+  { key: "corner1X2Half", label: "独赢 半场" },
   { key: "cornerOE", label: "单/双" },
-  { key: "mainHDP", label: "让球 半场" },
-  { key: "mainOU", label: "大小球" },
+  { key: "cornerOEHalf", label: "单/双 半场" },
+  { key: "mainHDP", label: "主盘让球" },
+  { key: "mainOU", label: "主盘大小" },
 ];
 
 const columnMap: Record<string, OddsGroupKey> = {
@@ -41,7 +44,10 @@ const columnMap: Record<string, OddsGroupKey> = {
   "HDP_full_corner": "cornerHDP",
   "HDP_half_corner": "cornerHDPHalf",
   "NEXT_full_corner": "nextCorner",
+  "1X2_full_corner": "corner1X2",
+  "1X2_half_corner": "corner1X2Half",
   "O/E_full_corner": "cornerOE",
+  "O/E_half_corner": "cornerOEHalf",
   "HDP_full_hdp": "mainHDP",
   "HDP_full_main": "mainHDP",
   "O/U_full_ou": "mainOU",
