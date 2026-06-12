@@ -14,6 +14,7 @@ import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDela
 import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate } from "./credentialManager.js";
 import { fetchCornerData, fetchHdpOuData, fetchGameDetail } from "./hgApiClient.js";
 import { loginToHG as hgCrawlerLogin } from "./hgCrawlerService.js";
+import { POLL_CONFIG } from "./crawlerConfig.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -23,7 +24,7 @@ const HG_PASSWORD = process.env.HG_PASSWORD || "";
 if (!process.env.HG_USERNAME || !process.env.HG_PASSWORD) {
   console.warn("[cornerCrawler] 环境变量 HG_USERNAME / HG_PASSWORD 未设置，将使用运行时凭据");
 }
-const POLL_INTERVAL = 3000 + Math.random() * 7000;
+const POLL_INTERVAL = POLL_CONFIG.interval;
 
 // 运行时凭据
 let runtimeCredentials = null;
@@ -2216,14 +2217,20 @@ async function _crawlViaPureHttp() {
       return null;
     }
     // 从页面拦截 transform.php 提取 uid/ver
-    const { getSharedPage } = await import("./browserPool.js");
-    const page = getSharedPage();
-    if (page) {
-      const credentials = await waitForTransformRequest(page);
-      if (credentials) {
-        const cookies = await page.cookies();
-        updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
-        console.log("[cornerCrawler] 纯HTTP: 凭证已从页面拦截保存");
+    // ★ 先检查：如果 HgCrawler 已经更新了凭证，跳过等待
+    creds = loadCredentials();
+    if (creds && creds.uid && creds.ver) {
+      console.log("[cornerCrawler] 纯HTTP: HgCrawler 已提供凭证，跳过 transform.php 等待");
+    } else {
+      const { getSharedPage } = await import("./browserPool.js");
+      const page = getSharedPage();
+      if (page) {
+        const credentials = await waitForTransformRequest(page);
+        if (credentials) {
+          const cookies = await page.cookies();
+          updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+          console.log("[cornerCrawler] 纯HTTP: 凭证已从页面拦截保存");
+        }
       }
     }
     creds = loadCredentials();
@@ -2260,13 +2267,19 @@ async function _crawlViaPureHttp() {
     });
     if (!loginResult.success) return null;
     // 从页面拦截 transform.php 提取 uid/ver
-    const { getSharedPage: getSharedPage2 } = await import("./browserPool.js");
-    const page2 = getSharedPage2();
-    if (page2) {
-      const credentials = await waitForTransformRequest(page2);
-      if (credentials) {
-        const cookies = await page2.cookies();
-        updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+    // ★ 先检查：如果 HgCrawler 已经更新了凭证，跳过等待
+    const intermediateCreds = loadCredentials();
+    if (intermediateCreds && intermediateCreds.uid && intermediateCreds.ver) {
+      console.log("[cornerCrawler] 纯HTTP: 重试时 HgCrawler 已提供凭证，跳过 transform.php 等待");
+    } else {
+      const { getSharedPage: getSharedPage2 } = await import("./browserPool.js");
+      const page2 = getSharedPage2();
+      if (page2) {
+        const credentials = await waitForTransformRequest(page2);
+        if (credentials) {
+          const cookies = await page2.cookies();
+          updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+        }
       }
     }
     const newCreds = loadCredentials();

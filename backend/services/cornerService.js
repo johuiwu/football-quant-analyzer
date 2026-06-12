@@ -1,6 +1,7 @@
 import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
+import { POLL_CONFIG } from "./crawlerConfig.js";
 
 
 // ======================== 数据源配置 ========================
@@ -13,8 +14,21 @@ let pollingInterval = null;
 let pollingActive = false;
 let lastFetchTime = 0;
 let lastEmptyLogTime = 0;
-const POLL_INTERVAL = parseInt(process.env.CRAWLER_POLL_INTERVAL || "3000", 10); // 3秒轮询
+const POLL_INTERVAL = POLL_CONFIG.interval;
 const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
+
+// ======================== 轮询分析统计 ========================
+const pollingAnalytics = {
+  sessionStartMs: Date.now(),
+  totalPolls: 0,
+  totalChanges: 0,
+  changeIntervals: {},       // { fieldName: [intervalMs, ...] }
+  avgChangeIntervalMs: {},   // { fieldName: avgMs }
+  minChangeIntervalMs: {},   // { fieldName: minMs }
+  maxChangeIntervalMs: {},   // { fieldName: maxMs }
+  lastChangeAt: null,
+  lastPollTimestamps: {}     // { matchId_field: timestamp } — track when each field last changed
+};
 
 // ======================== 策略配置 ========================
 export const DEFAULT_STRATEGIES = [
@@ -112,6 +126,41 @@ async function pollOnce() {
   // ★ 增量更新：计算数据变化
   const delta = computeDelta(cachedMatches, matches);
   const hasChanges = delta.length > 0;
+
+  // ★ 轮询分析统计
+  pollingAnalytics.totalPolls++;
+  if (hasChanges) {
+    const now = Date.now();
+    for (const d of delta) {
+      if (d.field === "initial" || d.field === "added") continue;
+      pollingAnalytics.totalChanges++;
+      const key = d.matchId + "_" + d.field;
+      const lastTs = pollingAnalytics.lastPollTimestamps[key];
+      if (lastTs) {
+        const intervalMs = now - lastTs;
+        // Update changeIntervals
+        if (!pollingAnalytics.changeIntervals[d.field]) {
+          pollingAnalytics.changeIntervals[d.field] = [];
+        }
+        pollingAnalytics.changeIntervals[d.field].push(intervalMs);
+        // Keep only last 100 intervals per field to bound memory
+        if (pollingAnalytics.changeIntervals[d.field].length > 100) {
+          pollingAnalytics.changeIntervals[d.field] = pollingAnalytics.changeIntervals[d.field].slice(-100);
+        }
+        // Recalculate stats
+        const intervals = pollingAnalytics.changeIntervals[d.field];
+        pollingAnalytics.avgChangeIntervalMs[d.field] = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
+        pollingAnalytics.minChangeIntervalMs[d.field] = Math.min(...intervals);
+        pollingAnalytics.maxChangeIntervalMs[d.field] = Math.max(...intervals);
+        // Log the change
+        const oldStr = typeof d.oldValue === "object" ? JSON.stringify(d.oldValue) : String(d.oldValue);
+        const newStr = typeof d.newValue === "object" ? JSON.stringify(d.newValue) : String(d.newValue);
+        console.log("[cornerService] 赔率变更: matchId=" + d.matchId + " field=" + d.field + " old=" + oldStr + " new=" + newStr + " interval=" + intervalMs + "ms");
+      }
+      pollingAnalytics.lastPollTimestamps[key] = now;
+    }
+    pollingAnalytics.lastChangeAt = new Date(now).toISOString();
+  }
 
   if (hasChanges) {
     console.log("[cornerService] 数据变化: " + delta.length + " 项, 触发策略评估");
@@ -248,6 +297,22 @@ export function getAlertStatus() {
     alertActive: consecutiveFailures >= ALERT_THRESHOLD,
     lastAlertTime,
     threshold: ALERT_THRESHOLD
+  };
+}
+
+export function getPollingAnalytics() {
+  // Calculate recommendation based on data
+  let recommendation = POLL_INTERVAL;
+  const allIntervals = Object.values(pollingAnalytics.changeIntervals).flat();
+  if (allIntervals.length >= 3) {
+    const avgAll = allIntervals.reduce((a, b) => a + b, 0) / allIntervals.length;
+    recommendation = Math.max(3000, Math.round(avgAll * 0.5 / 1000) * 1000); // round to nearest second, min 3s
+  }
+  return {
+    ...pollingAnalytics,
+    currentPollInterval: POLL_INTERVAL,
+    recommendation,
+    sessionDurationMs: Date.now() - pollingAnalytics.sessionStartMs
   };
 }
 

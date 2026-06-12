@@ -121,39 +121,106 @@ async function handlePasscodePage(page, options) {
  */
 async function handlePasscodeDialog(page) {
   console.log("[autoLogin] 检测到简易密码确认弹窗，正在关闭...");
+  let cleaned = false;
   try {
-    // 方法1：查找文本为 "NO"/"否"/"No" 的按钮并点击
-    const noButton = await page.evaluateHandle(() => {
-      const allButtons = Array.from(document.querySelectorAll("button, a, div[role='button']"));
-      return allButtons.find(el => {
-        const text = (el.textContent || "").trim();
-        return text === "NO" || text === "否" || text === "No" || text === "no";
-      }) || null;
+    // 方法1：通过 page.evaluate 在页面内直接点击（绕过 Puppeteer 元素可见性检查）
+    const clicked = await page.evaluate(() => {
+      // 尝试多种按钮：NO/否/取消/CANCEL/OK/确认
+      const cancelSelectors = [
+        ".btn_cancel", "#C_no_btn", "#no_btn", "#C_cancel_btn",
+        "[class*='popup'] [class*='close']",
+      ];
+      const cancelTexts = ["NO", "否", "No", "no", "CANCEL", "取消"];
+
+      // 1. 通过选择器找取消按钮
+      for (const sel of cancelSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const style = getComputedStyle(el);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            try { (el).click(); return true; } catch(_) {}
+          }
+        }
+      }
+      // 2. 通过文本找按钮
+      const allButtons = Array.from(document.querySelectorAll("button, a, div[role='button'], .btn"));
+      for (const btn of allButtons) {
+        const text = (btn.textContent || "").trim().toUpperCase();
+        if (cancelTexts.includes(text)) {
+          const style = getComputedStyle(btn);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            try { (btn).click(); return true; } catch(_) {}
+          }
+        }
+      }
+      // 3. 通过 OK/确认 按钮（有些弹窗只有一个确认按钮）
+      const okSelectors = [".btn_confirm", ".btn_submit", "#C_ok_btn", "#ok_btn"];
+      for (const sel of okSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const style = getComputedStyle(el);
+          if (style.display !== 'none' && style.visibility !== 'hidden') {
+            try { (el).click(); return true; } catch(_) {}
+          }
+        }
+      }
+      return false;
     });
 
-    if (noButton && noButton.asElement()) {
-      await noButton.asElement().click();
-      console.log("[autoLogin] 已点击\"NO\"按钮，弹窗已关闭");
-      await sleep(1000);
-      return { action: 'wait' };
+    if (clicked) {
+      console.log("[autoLogin] 已通过页面内点击关闭弹窗");
+      await sleep(800);
+      cleaned = true;
     }
 
-    // 方法2：通过 CSS 选择器查找取消按钮
-    const fallbackButton = await page.$(".btn_cancel, #C_no_btn, #no_btn");
-    if (fallbackButton) {
-      await fallbackButton.click();
-      console.log("[autoLogin] 已通过备用选择器点击取消按钮");
-      await sleep(1000);
-      return { action: 'wait' };
+    // 方法2：强制清理兜底 — 直接移除弹窗容器的 .on 类
+    const forceCleaned = await page.evaluate(() => {
+      const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "C_alert_ok", "alert_ok", "alert_kick", "system_popup", "msg_popup"];
+      let result = false;
+      for (const id of dialogIds) {
+        const el = document.getElementById(id);
+        if (el && el.classList.contains("on")) {
+          el.classList.remove("on");
+          result = true;
+        }
+      }
+      // 解锁 body
+      if (document.body) {
+        document.body.classList.remove("scroll_lock", "locked");
+        document.body.style.overflow = "";
+      }
+      return result;
+    });
+
+    if (forceCleaned) {
+      console.log("[autoLogin] 已强制清理弹窗（移除 .on 类）");
+      cleaned = true;
     }
 
-    // 方法3：按 ESC 键兜底
-    console.log("[autoLogin] 未找到取消按钮，尝试按 ESC 键关闭弹窗");
-    await page.keyboard.press('Escape');
-    await sleep(1000);
+    // 方法3：ESC 键兜底
+    try { await page.keyboard.press('Escape'); } catch(_) {}
+    await sleep(800);
+
   } catch (e) {
     console.warn("[autoLogin] 关闭简易密码弹窗异常:", e.message);
+    // 异常时仍执行强制清理
+    try {
+      await page.evaluate(() => {
+        const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "C_alert_ok", "alert_ok", "alert_kick", "system_popup"];
+        for (const id of dialogIds) {
+          const el = document.getElementById(id);
+          if (el && el.classList.contains("on")) el.classList.remove("on");
+        }
+        if (document.body) {
+          document.body.classList.remove("scroll_lock", "locked");
+          document.body.style.overflow = "";
+        }
+      });
+      cleaned = true;
+    } catch(_) {}
   }
+
+  if (cleaned) return { action: 'wait' };
   return { action: 'wait' };
 }
 

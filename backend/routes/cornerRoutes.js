@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet } from "../services/cornerService.js";
-import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus } from "../services/cornerService.js";
+import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus, getPollingAnalytics } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
@@ -499,6 +499,17 @@ router.post("/corner/reject-bet/:id", async (req, res) => {
     }
   } catch (err) {
     console.error("[cornerRoutes] /corner/reject-bet error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/polling-analytics ========================
+router.get("/corner/polling-analytics", async (req, res) => {
+  try {
+    const analytics = getPollingAnalytics();
+    res.json({ success: true, data: analytics });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/polling-analytics error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
