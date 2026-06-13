@@ -2,7 +2,7 @@ import {
   saveSimulationRecord,
   getSimulationRecords,
   getStrategyStats
-} from './cornerService.js';
+} from './cornerBetService.js';
 import { evaluateSingleStrategy } from './cornerEvaluator.js';
 
 // ======================== 模拟比赛名称生成 ========================

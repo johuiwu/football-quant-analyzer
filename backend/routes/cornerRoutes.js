@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, clearHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet, retryBet, getBetQueueStatus } from "../services/cornerService.js";
+import { getLiveCornerData, evaluateStrategies, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus, getPollingAnalytics } from "../services/cornerService.js";
+import { getCornerHistory, saveCornerHistory, clearHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet, retryBet, getBetQueueStatus } from "../services/cornerBetService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";

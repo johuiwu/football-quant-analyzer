@@ -27,6 +27,33 @@ test-screenshot.png
 src/crawler/
 .trae/
 docs/
-"build_resources/" 
-"build_resources/" 
-"build_resources/" 
+build_resources/
+
+# 敏感文件排除
+backend/cookies.json
+backend/credentials.json
+
+# 攻击/逆向/调试脚本排除
+backend/crack_v*.ps1
+backend/decompile_*.ps1
+backend/decrypt_*.ps1
+backend/deep_analysis_v*.ps1
+backend/final_crack_v*.ps1
+backend/capture-*.ps1
+backend/probe-*.ps1
+backend/login-and-ws.ps1
+backend/login-and-ws.js
+backend/login-and-ws.cjs
+backend/login-emnu.cjs
+
+# 调试产物排除
+backend/*.png
+backend/debug-*.js
+backend/debug_api_discovery/
+backend/explore-*.js
+backend/find-hga-api.js
+backend/*.txt
+
+# 测试报告
+backend/pipeline-test-report.json
+backend/websocket_url.txt 

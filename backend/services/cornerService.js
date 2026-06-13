@@ -1,7 +1,16 @@
 import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
-import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
+import { run, query } from "../dbService.js";
+import {
+  saveCornerTrigger,
+  checkDuplicateBet,
+  ensureBetTable,
+  generatePendingBet,
+  processBetQueue,
+  betQueue,
+  getBetConfig
+} from "./cornerBetService.js";
 
 
 // ======================== 数据源配置 ========================
@@ -51,32 +60,6 @@ export function getCornerStrategies() {
   return activeStrategies;
 }
 
-// ======================== 投注配置 ========================
-let betConfig = {
-  amount: parseInt(process.env.CORNER_BET_AMOUNT || "100", 10),
-  isRealMode: process.env.CORNER_BET_REAL_MODE === "true",
-  trackedMatchIds: [],
-  autoBetEnabled: false,
-  autoBetConfirmRequired: false  // ★ 二次确认：true 时投注需用户手动确认
-};
-
-export function getAutoBetConfig() { return { ...betConfig, autoBetMasterSwitch: true }; }
-
-export function setBetConfig(config) {
-  if (config) {
-    betConfig = { ...betConfig, ...config };
-  }
-}
-
-// ======================== 自动投注配置 ========================
-const MAX_BET_AMOUNT = parseInt(process.env.MAX_BET_AMOUNT || "1000", 10);
-
-export function getMaxBetAmount() { return MAX_BET_AMOUNT; }
-
-export function getBetConfig() {
-  return betConfig;
-}
-
 // ======================== 后端轮询 ========================
 
 // ======================== 增量更新 ========================
@@ -116,47 +99,31 @@ function computeDelta(oldMatches, newMatches) {
 /**
  * 单次轮询辅助函数：爬取并映射数据
  */
-async function fetchMatchData() {
-  await new Promise(r => setTimeout(r, Math.random() * 500));
-  const result = await crawlCornerMatches();
-  const rawMatches = result.success ? (result.data?.matches || []) : [];
-  const mainMk = result.mainMarkets || {};
-  const matches = rawMatches.map(mapMatchToCornerFormat);
-  return { matches, mainMk };
-}
-
-/**
- * 单次轮询辅助函数：计算增量变化并更新分析统计
- */
 function computeChangesAndAnalytics(newMatches) {
-  const delta = computeDelta(cachedMatches, newMatches);
-  const hasChanges = delta.length > 0;
+  const changes = computeDelta(cachedMatches, newMatches);
+  const hasChanges = changes.length > 0;
 
   pollingAnalytics.totalPolls++;
   if (hasChanges) {
     const now = Date.now();
-    for (const d of delta) {
+    for (const d of changes) {
       if (d.field === "initial" || d.field === "added") continue;
       pollingAnalytics.totalChanges++;
       const key = d.matchId + "_" + d.field;
       const lastTs = pollingAnalytics.lastPollTimestamps[key];
       if (lastTs) {
         const intervalMs = now - lastTs;
-        // Update changeIntervals
         if (!pollingAnalytics.changeIntervals[d.field]) {
           pollingAnalytics.changeIntervals[d.field] = [];
         }
         pollingAnalytics.changeIntervals[d.field].push(intervalMs);
-        // Keep only last 100 intervals per field to bound memory
         if (pollingAnalytics.changeIntervals[d.field].length > 100) {
           pollingAnalytics.changeIntervals[d.field] = pollingAnalytics.changeIntervals[d.field].slice(-100);
         }
-        // Recalculate stats
         const intervals = pollingAnalytics.changeIntervals[d.field];
         pollingAnalytics.avgChangeIntervalMs[d.field] = Math.round(intervals.reduce((a, b) => a + b, 0) / intervals.length);
         pollingAnalytics.minChangeIntervalMs[d.field] = Math.min(...intervals);
         pollingAnalytics.maxChangeIntervalMs[d.field] = Math.max(...intervals);
-        // Log the change
         const oldStr = typeof d.oldValue === "object" ? JSON.stringify(d.oldValue) : String(d.oldValue);
         const newStr = typeof d.newValue === "object" ? JSON.stringify(d.newValue) : String(d.newValue);
         console.log("[cornerService] 赔率变更: matchId=" + d.matchId + " field=" + d.field + " old=" + oldStr + " new=" + newStr + " interval=" + intervalMs + "ms");
@@ -166,15 +133,15 @@ function computeChangesAndAnalytics(newMatches) {
     pollingAnalytics.lastChangeAt = new Date(now).toISOString();
   }
 
-  return { delta, hasChanges };
+  return { changes, hasChanges };
 }
 
 /**
  * 单次轮询辅助函数：评估策略并保存触发记录
  */
-async function evaluateAndSaveTriggers(matches, hasChanges, delta) {
+async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
   if (hasChanges) {
-    console.log("[cornerService] 数据变化: " + delta.length + " 项, 触发策略评估");
+    console.log("[cornerService] 数据变化: " + changes.length + " 项, 触发策略评估");
     for (const match of matches) {
       const triggeredIds = evaluateStrategies(match, activeStrategies);
       match.triggeredStrategies = triggeredIds;
@@ -196,6 +163,7 @@ async function evaluateAndSaveTriggers(matches, hasChanges, delta) {
  * 单次轮询辅助函数：自动投注处理
  */
 async function processAutoBetsForMatches(matches) {
+  const betConfig = getBetConfig();
   if (!betConfig.isRealMode || !betConfig.autoBetEnabled) return;
   for (const match of matches) {
     if (betConfig.trackedMatchIds.length > 0 && !betConfig.trackedMatchIds.includes(match.matchId)) {
@@ -245,25 +213,37 @@ async function processAutoBetsForMatches(matches) {
 }
 
 /**
- * 单次轮询核心逻辑（内部函数，消除 start/resume 中的重复代码）
+ * 单次轮询核心逻辑
+ * ★ 修复：单次爬取失败时不暂停轮询，保留缓存数据
+ *   仅在连续失败 3 次且缓存为空时才暂停
  */
 async function pollOnce() {
-  const { matches, mainMk } = await fetchMatchData();
-  const { delta, hasChanges } = computeChangesAndAnalytics(matches);
-  await evaluateAndSaveTriggers(matches, hasChanges, delta);
+  const result = await crawlCornerMatches();
 
-  cachedMatches = matches;
-  cachedMainMarkets = mainMk || {};
-  lastFetchTime = Date.now();
-
-  if (matches.length === 0 && Object.keys(mainMk).length === 0) {
-    console.log("[cornerService] 暂无比赛，轮询已暂停");
-    pauseCornerBackendPolling();
+  if (!result.success) {
+    consecutiveFailures++;
+    console.warn("[cornerService] 单次爬取失败 (" + consecutiveFailures + "次), 错误: " + (result.error || "unknown"));
+    // 连续失败 ≥3 且缓存为空才暂停（避免频繁无意义爬取）
+    if (consecutiveFailures >= 3 && cachedMatches.length === 0) {
+      console.log("[cornerService] 连续失败且无缓存，轮询已暂停");
+      pauseCornerBackendPolling();
+    }
     return;
   }
 
+  const rawMatches = result.data?.matches || [];
+  const mainMarkets = result.mainMarkets || {};
+  const matches = rawMatches.map(mapMatchToCornerFormat);
+
+  const { changes, hasChanges } = computeChangesAndAnalytics(matches);
+  await evaluateAndSaveTriggers(matches, hasChanges, changes);
+
+  cachedMatches = matches;
+  cachedMainMarkets = mainMarkets;
+  lastFetchTime = Date.now();
   consecutiveFailures = 0;
-  console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMk).length);
+
+  console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMarkets).length);
   if (matches.length > 0 && !pollingFirstDone) {
     pollingFirstDone = true;
     console.log("[cornerService] 首次爬取完成，缓存已就绪");
@@ -272,16 +252,10 @@ async function pollOnce() {
   await processAutoBetsForMatches(matches);
 }
 
-export function startCornerBackendPolling() {
-  if (pollingActive) {
-    console.log("[cornerService] 轮询已在运行中");
-    return { success: true, message: "already polling" };
-  }
-
-  console.log("[cornerService] 启动后端轮询 (间隔=" + POLL_INTERVAL + "ms)...");
-  pollingActive = true;
-  pollingPaused = false;
-
+/**
+ * 公共轮询调度函数 — 消除 start/resume 中的重复代码
+ */
+function scheduleNextPoll() {
   const poll = async () => {
     if (!pollingActive || pollingPaused) return;
     try {
@@ -293,13 +267,31 @@ export function startCornerBackendPolling() {
         console.error("[cornerService] 告警: 连续 " + consecutiveFailures + " 次爬取失败!");
         lastAlertTime = new Date().toISOString();
       }
+      // 连续失败 ≥3 且缓存为空才暂停
+      if (consecutiveFailures >= 3 && cachedMatches.length === 0) {
+        console.log("[cornerService] 连续失败且无缓存，轮询已暂停");
+        pauseCornerBackendPolling();
+      }
     }
     if (pollingActive && !pollingPaused) {
       pollingInterval = setTimeout(poll, POLL_INTERVAL);
     }
   };
-
   poll();
+}
+
+export function startCornerBackendPolling() {
+  if (pollingActive) {
+    console.log("[cornerService] 轮询已在运行中");
+    return { success: true, message: "already polling" };
+  }
+
+  console.log("[cornerService] 启动后端轮询 (间隔=" + POLL_INTERVAL + "ms)...");
+  pollingActive = true;
+  pollingPaused = false;
+  consecutiveFailures = 0;
+
+  scheduleNextPoll();
   return { success: true, interval: POLL_INTERVAL };
 }
 
@@ -379,26 +371,11 @@ export function resumeCornerBackendPolling() {
   }
   console.log("[cornerService] 恢复后端轮询...");
   pollingPaused = false;
+  consecutiveFailures = 0;
   const pausedDuration = pauseTime ? Date.now() - pauseTime : 0;
   pauseTime = null;
 
-  const poll = async () => {
-    if (!pollingActive || pollingPaused) return;
-    try {
-      await pollOnce();
-    } catch (e) {
-      console.error("[cornerService] 轮询错误:", e.message);
-      consecutiveFailures++;
-      if (consecutiveFailures >= ALERT_THRESHOLD) {
-        console.error("[cornerService] 告警: 连续 " + consecutiveFailures + " 次爬取失败!");
-        lastAlertTime = new Date().toISOString();
-      }
-    }
-    if (pollingActive && !pollingPaused) {
-      pollingInterval = setTimeout(poll, POLL_INTERVAL);
-    }
-  };
-  poll();
+  scheduleNextPoll();
   return { success: true, paused: false, pausedDuration };
 }
 
@@ -494,562 +471,4 @@ export async function getLiveCornerData(filterMatchId) {
 // 前端统一使用后端 API 返回的 triggeredStrategies，不再本地评估
 export function evaluateStrategies(match, strategies) {
   return evaluateCornerStrategies(match, strategies);
-}
-
-// ======================== 历史记录存储 ========================
-import { run, query } from "../dbService.js";
-
-let tablePromise = null;
-
-async function ensureTable() {
-  console.warn("[cornerService] 运行时建表已弃用（corner_history/corner_bets），请通过迁移系统管理表结构。");
-  if (tablePromise) return tablePromise;
-  tablePromise = (async () => {
-    try {
-      await run("CREATE TABLE IF NOT EXISTS corner_history (id INTEGER PRIMARY KEY AUTOINCREMENT, match_id TEXT NOT NULL, match_name TEXT, strategy_id TEXT, triggered_at TEXT, bet_status TEXT DEFAULT 'pending', odds REAL, amount INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
-      await run("CREATE INDEX IF NOT EXISTS idx_corner_history_match ON corner_history(match_id)");
-      await run("CREATE INDEX IF NOT EXISTS idx_corner_history_time ON corner_history(created_at)");
-      await run("CREATE INDEX IF NOT EXISTS idx_corner_history_match_strategy ON corner_history(match_id, strategy_id)");
-    } catch (err) { console.warn("[cornerService] table error:", err.message); }
-  })();
-  return tablePromise;
-}
-
-let betTablePromise = null;
-
-async function ensureBetTable() {
-  console.warn("[cornerService] 运行时建表已弃用（corner_bets），请通过迁移系统管理表结构。");
-  if (betTablePromise) return betTablePromise;
-  betTablePromise = (async () => {
-    try {
-      await run("CREATE TABLE IF NOT EXISTS corner_bets (id INTEGER PRIMARY KEY AUTOINCREMENT, match_id TEXT NOT NULL, match_name TEXT, strategy_id TEXT, odds REAL, amount INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', error_message TEXT, executed_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
-      await run("CREATE INDEX IF NOT EXISTS idx_corner_bets_status ON corner_bets(status)");
-      await run("CREATE INDEX IF NOT EXISTS idx_corner_bets_match ON corner_bets(match_id)");
-    } catch (err) { console.warn("[cornerService] corner_bets table error:", err.message); }
-  })();
-  return betTablePromise;
-}
-
-export async function saveCornerHistory(record) {
-  await ensureTable();
-  try {
-    const result = await run(
-      "INSERT INTO corner_history (match_id, match_name, strategy_id, triggered_at, bet_status, odds, amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [record.match_id || "", record.match_name || "", record.strategy_id || "", new Date().toISOString(), record.bet_status || "pending", record.odds || 0, record.amount || 0]
-    );
-    return { success: true, id: result.lastID };
-  } catch (err) { return { success: false, error: err.message }; }
-}
-
-const TRIGGER_COOLDOWN_MINUTES = 15;
-
-export async function saveCornerTrigger(match, strategyId) {
-  await ensureTable();
-  try {
-    const matchId = match.matchId || "";
-    const sid = String(strategyId);
-    const cooldownTime = new Date(Date.now() - TRIGGER_COOLDOWN_MINUTES * 60 * 1000).toISOString();
-    const recent = await query(
-      "SELECT id FROM corner_history WHERE match_id = ? AND strategy_id = ? AND created_at > ? ORDER BY id DESC LIMIT 1",
-      [matchId, sid, cooldownTime]
-    );
-    if (recent && recent.length > 0) {
-      console.log("[cornerService] 策略" + sid + " 在 " + (match.matchName || matchId) + " 冷却期内，跳过重复记录");
-      return { success: true, skipped: true };
-    }
-    const result = await run(
-      "INSERT INTO corner_history (match_id, match_name, strategy_id, triggered_at, bet_status, odds, amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [matchId, match.matchName || "", sid, new Date().toISOString(), "pending", match.cornerOdds || 0, 0]
-    );
-    return { success: true, id: result.lastID };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-// ======================== 待执行投注 ========================
-export async function generatePendingBet(match, strategyId) {
-  await ensureBetTable();
-  try {
-    // 去重：同一 match + strategy 组合已有 pending 记录时跳过
-    const existing = await query(
-      "SELECT id FROM corner_bets WHERE match_id = ? AND strategy_id = ? AND status = 'pending'",
-      [match.matchId || "", String(strategyId)]
-    );
-    if (existing && existing.length > 0) {
-      return { success: true, skipped: true, reason: "duplicate pending" };
-    }
-
-    const result = await run(
-      "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status) VALUES (?, ?, ?, ?, ?, 'pending')",
-      [match.matchId || "", match.matchName || "", String(strategyId), match.cornerOdds || 0, betConfig.amount]
-    );
-    return { success: true, id: result.lastID };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-// ======================== 投注队列 ========================
-let betQueue = [];
-let isProcessing = false;
-
-/**
- * 检查是否已有同一比赛同一策略的成功/失败投注记录（查 corner_history 表 executed/failed 状态）
- */
-export async function checkDuplicateBet(matchId, strategyId) {
-  await ensureTable();
-  try {
-    const rows = await query(
-      "SELECT id FROM corner_history WHERE match_id = ? AND strategy_id = ? AND bet_status IN ('executed', 'failed')",
-      [matchId, String(strategyId)]
-    );
-    // 注意：insufficient 状态不阻止后续重试，所以不在此查询中
-    return rows && rows.length > 0;
-  } catch (err) {
-    console.error("[cornerService] 查重失败:", err.message);
-    return false;
-  }
-}
-
-/**
- * 处理投注队列中的任务（每次处理 1 个）
- */
-async function processBetQueue() {
-  if (isProcessing || betQueue.length === 0) return;
-  isProcessing = true;
-
-  try {
-    const task = betQueue.shift();
-
-    // ★ 二次确认：开启后投注进入 pending_confirm 状态，等待用户手动确认
-    if (betConfig.autoBetConfirmRequired) {
-      console.log("[cornerService] 二次确认模式: bet#" + task.betId + " " + task.matchName + " 等待用户确认");
-      await run(
-        "UPDATE corner_bets SET status = 'pending_confirm' WHERE id = ?",
-        [task.betId]
-      );
-      if (task.historyId) {
-        await run(
-          "UPDATE corner_history SET bet_status = 'pending_confirm' WHERE id = ?",
-          [task.historyId]
-        ).catch(() => {});
-      } else {
-        await run(
-          "UPDATE corner_history SET bet_status = 'pending_confirm' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'pending'",
-          [task.matchId, String(task.strategyId)]
-        ).catch(() => {});
-      }
-      isProcessing = false;
-      return;
-    }
-
-    console.log("[cornerService] 执行投注: bet#" + task.betId + " " + task.matchName);
-
-    const betData = {
-      matchName: task.matchName,
-      matchId: task.matchId,
-      odds: task.odds,
-      amount: task.amount,
-      handicap: task.handicap || 0,
-      strategyId: String(task.strategyId),
-      betDirection: task.betDirection || "auto"
-    };
-
-    const result = await executeBetOnHG(betData);
-
-    if (result.success) {
-      await run(
-        "UPDATE corner_bets SET status = 'executed', executed_at = ? WHERE id = ?",
-        [new Date().toISOString(), task.betId]
-      );
-      if (task.historyId) {
-        await run(
-          "UPDATE corner_history SET bet_status = 'executed' WHERE id = ?",
-          [task.historyId]
-        ).catch(() => {});
-      } else {
-        await run(
-          "UPDATE corner_history SET bet_status = 'executed' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'pending'",
-          [task.matchId, String(task.strategyId)]
-        ).catch(() => {});
-      }
-    } else if (result.insufficient) {
-      // 余额不足：标记为 insufficient，不阻止后续重试
-      console.log("[cornerService] 余额不足: bet#" + task.betId + " " + task.matchName);
-      await run(
-        "UPDATE corner_bets SET status = 'insufficient', error_message = ? WHERE id = ?",
-        [result.error || "余额不足", task.betId]
-      );
-      if (task.historyId) {
-        await run(
-          "UPDATE corner_history SET bet_status = 'insufficient' WHERE id = ?",
-          [task.historyId]
-        ).catch(() => {});
-      } else {
-        await run(
-          "UPDATE corner_history SET bet_status = 'insufficient' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'pending'",
-          [task.matchId, String(task.strategyId)]
-        ).catch(() => {});
-      }
-    } else {
-      await run(
-        "UPDATE corner_bets SET status = 'failed', error_message = ? WHERE id = ?",
-        [result.error || "unknown", task.betId]
-      );
-      if (task.historyId) {
-        await run(
-          "UPDATE corner_history SET bet_status = 'failed' WHERE id = ?",
-          [task.historyId]
-        ).catch(() => {});
-      } else {
-        await run(
-          "UPDATE corner_history SET bet_status = 'failed' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'pending'",
-          [task.matchId, String(task.strategyId)]
-        ).catch(() => {});
-      }
-    }
-  } catch (err) {
-    console.error("[cornerService] 自动投注失败:", err.message);
-  } finally {
-    isProcessing = false;
-  }
-}
-
-/**
- * 手动投注 API —— 创建投注记录并加入队列
- */
-export async function addManualBet(matchData) {
-  const { matchId, matchName, strategyId, odds, handicap, amount } = matchData;
-
-  if (amount > MAX_BET_AMOUNT) {
-    return { success: false, error: "投注金额超限 (" + MAX_BET_AMOUNT + ")" };
-  }
-
-  const isDuplicate = await checkDuplicateBet(matchId, strategyId);
-  if (isDuplicate) {
-    return { success: false, error: "该比赛/策略已有执行记录" };
-  }
-
-  await ensureBetTable();
-  const result = await run(
-    "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status) VALUES (?, ?, ?, ?, ?, 'pending')",
-    [matchId, matchName || "", String(strategyId), odds || 0, amount]
-  );
-
-  const historyResult = await saveCornerHistory({
-    match_id: matchId,
-    match_name: matchName || "",
-    strategy_id: String(strategyId),
-    odds: odds || 0,
-    amount: amount,
-    bet_status: "pending"
-  }).catch(() => ({}));
-
-  betQueue.push({
-    betId: result.lastID,
-    historyId: historyResult?.id || null,
-    matchId,
-    matchName: matchName || "",
-    strategyId,
-    odds: odds || 0,
-    amount,
-    handicap: handicap || 0
-  });
-
-  if (betConfig.isRealMode) {
-    processBetQueue().catch(e =>
-      console.error("[cornerService] 投注队列处理失败:", e.message)
-    );
-  }
-
-  return { success: true, betId: result.lastID };
-}
-
-/**
- * 调用 cornerBetExecutor 执行投注
- */
-async function placeBetOnHG(bet) {
-  if (!betConfig.isRealMode) {
-    console.log("[cornerService] 模拟模式跳过实际投注 bet#" + bet.id);
-    return { success: true };
-  }
-
-  const betData = {
-    matchName: bet.match_name,
-    matchId: bet.match_id,
-    odds: bet.odds,
-    amount: bet.amount,
-    strategyId: String(bet.strategy_id || "")
-  };
-
-  return await executeBetOnHG(betData);
-}
-
-export async function executePendingBets() {
-  await ensureBetTable();
-  let pendingBets;
-  try {
-    pendingBets = await query(
-      "SELECT * FROM corner_bets WHERE status = 'pending' ORDER BY id ASC"
-    );
-  } catch (err) {
-    console.error("[cornerService] 查询待投注失败:", err.message);
-    return { success: false, error: err.message };
-  }
-
-  if (!pendingBets || pendingBets.length === 0) {
-    return { success: true, executed: 0, queued: 0 };
-  }
-
-  console.log("[cornerService] 将 " + pendingBets.length + " 条待投注入队...");
-
-  let queued = 0;
-  for (const bet of pendingBets) {
-    // 检查是否已在队列中，避免重复
-    if (!betQueue.some(t => t.betId === bet.id)) {
-      betQueue.push({
-        betId: bet.id,
-        matchId: bet.match_id,
-        matchName: bet.match_name || "",
-        strategyId: bet.strategy_id,
-        odds: bet.odds,
-        amount: bet.amount,
-        handicap: 0
-      });
-      queued++;
-    }
-  }
-
-  // 触发一次队列处理（取 1 单执行）
-  await processBetQueue();
-
-  return { success: true, executed: 0, queued };
-}
-
-export async function getCornerBets({ status, limit = 50, matchId = null }) {
-  await ensureBetTable();
-  try {
-    let sql = "SELECT * FROM corner_bets WHERE 1=1";
-    const params = [];
-    if (status) {
-      sql += " AND status = ?";
-      params.push(status);
-    }
-    if (matchId) {
-      sql += " AND match_id = ?";
-      params.push(matchId);
-    }
-    sql += " ORDER BY id DESC LIMIT ?";
-    params.push(limit);
-    return await query(sql, params) || [];
-  } catch (err) {
-    console.error("[cornerService] 查询投注记录失败:", err.message);
-    return [];
-  }
-}
-
-let simTablePromise = null;
-
-async function ensureSimulationTable() {
-  console.warn("[cornerService] 运行时建表已弃用（corner_simulation_records），请通过迁移系统管理。");
-  if (simTablePromise) return simTablePromise;
-  simTablePromise = (async () => {
-    try {
-      await run("CREATE TABLE IF NOT EXISTS corner_simulation_records (id INTEGER PRIMARY KEY AUTOINCREMENT, strategy_id TEXT, match_id TEXT, match_name TEXT, elapsed_minutes INTEGER, trigger_odds REAL, trigger_handicap REAL, bet_direction TEXT, result TEXT DEFAULT 'pending', profit_loss REAL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
-      await run("CREATE INDEX IF NOT EXISTS idx_sim_strategy ON corner_simulation_records(strategy_id)");
-      await run("CREATE INDEX IF NOT EXISTS idx_sim_match ON corner_simulation_records(match_id)");
-      await run("CREATE INDEX IF NOT EXISTS idx_sim_time ON corner_simulation_records(created_at)");
-    } catch (err) { console.warn("[cornerService] simulation table error:", err.message); }
-  })();
-  return simTablePromise;
-}
-
-export async function saveSimulationRecord(record) {
-  await ensureSimulationTable();
-  try {
-    const result = await run(
-      "INSERT INTO corner_simulation_records (strategy_id, match_id, match_name, elapsed_minutes, trigger_odds, trigger_handicap, bet_direction, result, profit_loss) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [String(record.strategy_id || ""), record.match_id || "", record.match_name || "", record.elapsed_minutes || 0, record.trigger_odds || 0, record.trigger_handicap || 0, record.bet_direction || "", record.result || "pending", record.profit_loss || 0]
-    );
-    return { success: true, id: result.lastID };
-  } catch (err) { return { success: false, error: err.message }; }
-}
-
-export async function getCornerHistory(limit = 20) {
-  await ensureTable();
-  try { return await query("SELECT * FROM corner_history ORDER BY id DESC LIMIT ?", [limit]) || []; }
-  catch (err) { return []; }
-}
-
-// ======================== 二次确认机制 ========================
-
-/**
- * 获取待确认的投注列表
- */
-export async function getPendingConfirms() {
-  await ensureBetTable();
-  try {
-    return await query(
-      "SELECT * FROM corner_bets WHERE status = 'pending_confirm' ORDER BY id ASC"
-    ) || [];
-  } catch (err) {
-    console.error("[cornerService] 查询待确认投注失败:", err.message);
-    return [];
-  }
-}
-
-/**
- * 确认投注并执行
- */
-export async function confirmBet(betId) {
-  await ensureBetTable();
-  try {
-    const [bet] = await query("SELECT * FROM corner_bets WHERE id = ? AND status = 'pending_confirm'", [betId]) || [];
-    if (!bet) {
-      return { success: false, error: "投注不存在或状态不是待确认" };
-    }
-    // 加入队列执行
-    betQueue.push({
-      betId: bet.id,
-      matchId: bet.match_id,
-      matchName: bet.match_name || "",
-      strategyId: bet.strategy_id,
-      odds: bet.odds,
-      amount: bet.amount,
-      handicap: 0
-    });
-    processBetQueue().catch(e =>
-      console.error("[cornerService] 确认投注执行失败:", e.message)
-    );
-    return { success: true, betId: bet.id };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * 拒绝投注
- */
-export async function rejectBet(betId) {
-  await ensureBetTable();
-  try {
-    await run("UPDATE corner_bets SET status = 'rejected' WHERE id = ? AND status = 'pending_confirm'", [betId]);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * 重试余额不足的投注（将 insufficient 状态重置为 pending 并重新入队）
- */
-export async function retryBet(betId) {
-  await ensureBetTable();
-  try {
-    const [bet] = await query("SELECT * FROM corner_bets WHERE id = ? AND status = 'insufficient'", [betId]) || [];
-    if (!bet) {
-      return { success: false, error: "投注不存在或状态不是余额不足" };
-    }
-    await run("UPDATE corner_bets SET status = 'pending', error_message = NULL WHERE id = ?", [betId]);
-    await run(
-      "UPDATE corner_history SET bet_status = 'pending' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'insufficient'",
-      [bet.match_id, String(bet.strategy_id)]
-    ).catch(() => {});
-    betQueue.push({
-      betId: bet.id,
-      matchId: bet.match_id,
-      matchName: bet.match_name || "",
-      strategyId: bet.strategy_id,
-      odds: bet.odds,
-      amount: bet.amount,
-      handicap: 0
-    });
-    processBetQueue().catch(e =>
-      console.error("[cornerService] 重试投注执行失败:", e.message)
-    );
-    return { success: true, betId: bet.id };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * 获取投注队列状态
- */
-export function getBetQueueStatus() {
-  return {
-    queueLength: betQueue.length,
-    isProcessing: isProcessing
-  };
-}
-
-// ======================== 模拟记录管理（新增） ========================
-export async function getSimulationRecords({ matchId, strategyId, limit = 50 }) {
-  await ensureSimulationTable();
-  try {
-    let sql = "SELECT * FROM corner_simulation_records WHERE 1=1";
-    const params = [];
-    if (matchId) {
-      sql += " AND match_id = ?";
-      params.push(matchId);
-    }
-    if (strategyId) {
-      sql += " AND strategy_id = ?";
-      params.push(strategyId);
-    }
-    sql += " ORDER BY id DESC LIMIT ?";
-    params.push(limit);
-    return await query(sql, params) || [];
-  } catch (err) {
-    console.error("[cornerService] 获取模拟记录失败:", err.message);
-    return [];
-  }
-}
-
-export async function getStrategyStats(strategyId) {
-  await ensureTable();
-  try {
-    const total = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ?", [strategyId]);
-    const executed = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ? AND bet_status = 'executed'", [strategyId]);
-    const failed = await query("SELECT COUNT(*) as count FROM corner_history WHERE strategy_id = ? AND bet_status = 'failed'", [strategyId]);
-    const profit = await query("SELECT SUM(profit_loss) as total FROM corner_history WHERE strategy_id = ?", [strategyId]);
-    
-    const totalCount = total[0]?.count || 0;
-    const executedCount = executed[0]?.count || 0;
-    const failedCount = failed[0]?.count || 0;
-    const totalProfit = profit[0]?.total || 0;
-    
-    return {
-      triggered: totalCount,
-      executed: executedCount,
-      failed: failedCount,
-      successRate: totalCount > 0 ? (executedCount / totalCount) * 100 : 0,
-      totalProfit,
-      roi: totalCount > 0 ? (totalProfit / totalCount) * 100 : 0
-    };
-  } catch (err) {
-    console.error("[cornerService] 获取策略统计失败:", err.message);
-    return {
-      triggered: 0,
-      executed: 0,
-      failed: 0,
-      successRate: 0,
-      totalProfit: 0,
-      roi: 0
-    };
-  }
-}
-
-// ======================== 清空历史记录 ========================
-export async function clearHistory() {
-  try {
-    await ensureTable();
-    await ensureBetTable();
-    await run("DELETE FROM corner_history", []);
-    await run("DELETE FROM corner_bets", []);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
 }
