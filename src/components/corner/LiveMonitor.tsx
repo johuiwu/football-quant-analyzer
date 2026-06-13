@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { ExternalLink, History, RefreshCw, X, Lock } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
@@ -306,6 +306,13 @@ export default function LiveMonitor() {
   const settings = useCornerStore((s) => s.settings);
   const refreshData = useCornerStore((s) => s.refreshData);
   const [searchText, setSearchText] = useState("");
+
+  // 20 秒自动刷新，确保监控 tab 数据及时更新
+  useEffect(() => {
+    if (displayData.length === 0) refreshData();
+    const timer = setInterval(() => refreshData(), 20000);
+    return () => clearInterval(timer);
+  }, []);
 
   const findTeamInfo = (nameCn: string) => {
     const team = REAL_TEAMS.find((t) => t.nameCn === nameCn);

@@ -180,7 +180,16 @@ export default function DashboardPage() {
     setShowParamWarning(isAbnormal);
   };
   const handleRecalculate = useCallback(() => {
+    if (teams.length === 0) {
+      console.log('[Dashboard] teams为空，跳过计算');
+      return;
+    }
     const { home: h, away: a } = selectedTeams;
+    if (!h?.id || !h?.league || !h?.homeStats || !h?.nameCn ||
+        !a?.id || !a?.league || !a?.homeStats || !a?.nameCn) {
+      console.warn('[Dashboard] selectedTeams数据不完整，跳过计算');
+      return;
+    }
 
     // 当自定义stats开启时，将customStats合并到球队数据中
     let effectiveHome = h;
@@ -320,6 +329,13 @@ export default function DashboardPage() {
       }
     }
   }, [teams]); // 仅在teams变化时触发
+
+  // teams就绪后触发重算（当teams从空变为非空时，确保handleRecalculate被调用）
+  useEffect(() => {
+    if (teams.length > 0) {
+      handleRecalculate();
+    }
+  }, [teams.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   // ===== Dashboard JSX (migrated from AppNew.tsx L501-L1738) =====
   return (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
