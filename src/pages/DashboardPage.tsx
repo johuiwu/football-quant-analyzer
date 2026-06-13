@@ -400,7 +400,7 @@ export default function DashboardPage() {
                       value={selectedHomeLeague}
                       onChange={(e) => {
                         const list = teams.filter(t => t.league === e.target.value);
-                        const firstId = list.length > 0 ? list[0].id : '';
+                        const firstId = list.length > 0 ? list[0].id : selectedHomeId;
                         setHomeLeague(e.target.value, firstId);
                         setSelectedFixtureId('');
                         setIsStatsCustomized(false);
@@ -418,7 +418,7 @@ export default function DashboardPage() {
                       value={selectedAwayLeague}
                       onChange={(e) => {
                         const list = teams.filter(t => t.league === e.target.value);
-                        const firstId = list.length > 0 ? list[0].id : '';
+                        const firstId = list.length > 0 ? list[0].id : selectedAwayId;
                         setAwayLeague(e.target.value, firstId);
                         setSelectedFixtureId('');
                         setIsStatsCustomized(false);

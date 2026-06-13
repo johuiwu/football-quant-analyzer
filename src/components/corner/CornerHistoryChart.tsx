@@ -35,6 +35,8 @@ export default function CornerHistoryChart() {
   const [betsData, setBetsData] = useState<BetRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filterStrategy, setFilterStrategy] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("time-desc");
 
   // 清除过滤器（组件卸载时）
   useEffect(() => {
@@ -104,8 +106,19 @@ export default function CornerHistoryChart() {
   // ====== 触发历史（原有逻辑） ======
   const renderTriggerTab = () => {
     const aggregatedData = aggregateTriggers(historyData);
+    let filteredData = aggregatedData;
+    if (filterStrategy !== "all") {
+      filteredData = aggregatedData.filter(d => d.strategy_id === filterStrategy);
+    }
+    filteredData = [...filteredData].sort((a, b) => {
+      if (sortBy === "time-desc") return (b.created_at || "").localeCompare(a.created_at || "");
+      if (sortBy === "time-asc") return (a.created_at || "").localeCompare(b.created_at || "");
+      if (sortBy === "odds-desc") return (b.odds || 0) - (a.odds || 0);
+      if (sortBy === "odds-asc") return (a.odds || 0) - (b.odds || 0);
+      return 0;
+    });
     const strategyCounts: Record<string, number> = {};
-    aggregatedData.forEach((d) => {
+    filteredData.forEach((d) => {
       if (d.strategy_id) {
         d.strategy_id.split(",").forEach((sid) => {
           const s = sid.trim();
@@ -119,9 +132,9 @@ export default function CornerHistoryChart() {
       count: strategyCounts[k] || 0,
     }));
     const barColors = ["#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899"];
-    const recent = [...aggregatedData].reverse().slice(-10);
+    const recent = [...filteredData].reverse().slice(-10);
 
-    if (aggregatedData.length === 0 && !loading) {
+    if (filteredData.length === 0 && !loading) {
       return (
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-12 text-center">
           <div className="text-4xl mb-3">📊</div>
@@ -136,14 +149,14 @@ export default function CornerHistoryChart() {
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-5">
           <h4 className="text-xs font-medium text-slate-300 flex items-center gap-1.5 mb-4">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-            赔率趋势 (最近 {Math.min(aggregatedData.length, 10)} 条)
+            赔率趋势 (最近 {Math.min(filteredData.length, 10)} 条)
           </h4>
           <div className="space-y-2">
             {recent.map((row, i) => {
               const pct = Math.min(100, ((row.odds || 0) / 2) * 100);
               return (
                 <div key={row.id || i} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-14 text-slate-500 text-right shrink-0">#{aggregatedData.length - recent.length + i + 1}</span>
+                  <span className="w-14 text-slate-500 text-right shrink-0">#{filteredData.length - recent.length + i + 1}</span>
                   <div className="flex-1 h-5 bg-slate-800 rounded relative overflow-hidden">
                     <div className="absolute inset-y-0 left-0 bg-emerald-500/30 rounded transition-all" style={{ width: pct + "%" }} />
                   </div>
@@ -181,7 +194,7 @@ export default function CornerHistoryChart() {
             <div className="col-span-2 text-center">赔率</div>
             <div className="col-span-3 text-right">时间</div>
           </div>
-          {aggregatedData.map((row, i) => (
+          {filteredData.map((row, i) => (
             <div key={row.id || i} className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
               <div className="col-span-1 text-slate-500">{i + 1}</div>
               <div className="col-span-4 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
@@ -199,7 +212,18 @@ export default function CornerHistoryChart() {
 
   // ====== 投注记录表格 ======
   const renderBetsTab = () => {
-    if (betsData.length === 0 && !loading) {
+    let filteredBets = betsData;
+    if (filterStrategy !== "all") {
+      filteredBets = betsData.filter(d => String(d.strategy_id) === filterStrategy);
+    }
+    filteredBets = [...filteredBets].sort((a: BetRecord, b: BetRecord) => {
+      if (sortBy === "time-desc") return (b.created_at || "").localeCompare(a.created_at || "");
+      if (sortBy === "time-asc") return (a.created_at || "").localeCompare(b.created_at || "");
+      if (sortBy === "odds-desc") return (b.odds || 0) - (a.odds || 0);
+      if (sortBy === "odds-asc") return (a.odds || 0) - (b.odds || 0);
+      return 0;
+    });
+    if (filteredBets.length === 0 && !loading) {
       return (
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-12 text-center">
           <div className="text-4xl mb-3">💰</div>
@@ -220,7 +244,7 @@ export default function CornerHistoryChart() {
           <div className="col-span-2 text-center">执行时间</div>
           <div className="col-span-3 text-right">创建时间</div>
         </div>
-        {betsData.map((row) => (
+        {filteredBets.map((row) => (
           <div key={row.id} className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
             <div className="col-span-3 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
             <div className="col-span-1 text-center text-emerald-400 font-mono">{row.strategy_id}</div>
@@ -308,6 +332,32 @@ export default function CornerHistoryChart() {
         >
           <TrendingUp className="w-3 h-3" /> 投注记录
         </button>
+      </div>
+
+      {/* 筛选控件 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={filterStrategy}
+          onChange={(e) => setFilterStrategy(e.target.value)}
+          className="bg-[#0F1424] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+        >
+          <option value="all">全部策略</option>
+          <option value="1">策略1</option>
+          <option value="2">策略2</option>
+          <option value="3">策略3</option>
+          <option value="4">策略4</option>
+          <option value="5">策略5</option>
+        </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="bg-[#0F1424] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+        >
+          <option value="time-desc">时间（最新优先）</option>
+          <option value="time-asc">时间（最早优先）</option>
+          <option value="odds-desc">赔率（从高到低）</option>
+          <option value="odds-asc">赔率（从低到高）</option>
+        </select>
       </div>
 
       {error && <p className="text-[11px] text-rose-400">⚠️ {error}</p>}

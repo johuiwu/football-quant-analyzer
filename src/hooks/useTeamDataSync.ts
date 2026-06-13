@@ -23,10 +23,20 @@ export function useTeamDataSync() {
         : ((response as any).data && Array.isArray((response as any).data) ? (response as any).data : null);
       
       if (teamsData && teamsData.length > 0) {
-        setTeams(teamsData);
-        setSyncMessage(`✓ 已从数据库加载 ${teamsData.length} 支球队数据`);
-        setSyncSource('database');
-        console.log(`[useTeamDataSync] 从 /api/teams 加载了 ${teamsData.length} 支球队数据`);
+        // 验证 API 数据格式是否兼容 TeamStats 接口
+        const firstItem = teamsData[0];
+        const hasTeamStatsFields = firstItem && typeof firstItem.id === 'string' && typeof firstItem.league === 'string';
+        if (hasTeamStatsFields) {
+          setTeams(teamsData);
+          setSyncMessage(`✓ 已从数据库加载 ${teamsData.length} 支球队数据`);
+          setSyncSource('database');
+          console.log(`[useTeamDataSync] 从 /api/teams 加载了 ${teamsData.length} 支球队数据`);
+        } else {
+          // API 数据格式不兼容（如缺少 id/league 字段），保留 REAL_TEAMS
+          setSyncMessage('⚠️ API数据格式不兼容，已使用内置预设数据');
+          setSyncSource('preset');
+          console.warn('[useTeamDataSync] API数据格式不兼容，缺少 id/league 字段，回退到 REAL_TEAMS');
+        }
       } else {
         setSyncMessage('⚠️ 数据库为空，使用内置预设数据');
         setSyncSource('preset');
