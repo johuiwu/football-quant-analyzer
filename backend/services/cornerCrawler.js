@@ -1741,10 +1741,7 @@ async function fetchCornerDataViaAPI(page) {
       "rtype=rrnou", "ltype=3", "filter=", "cupFantasy=N", "sorttype=L",
       "specialClick=", "isFantasy=N", "ts=" + ts, "chgSortTS=" + (ts + 100)].join("&");
 
-    // ★ 反爬随机延迟：模拟用户操作间隔
-    await new Promise(r => setTimeout(r, 500 + Math.random() * 1500));
-
-    // ★ 并行请求角球列表 + HDP&O/U（浏览器页面上下文中可保持并行）
+    // ★ 并行请求角球列表 + HDP&O/U
     console.log("[cornerCrawler] API: 并行请求 rcn + rrnou...");
     const [listXml, rnouXml] = await page.evaluate(async (url, b1, b2, opts) => {
       const [r1, r2] = await Promise.all([
@@ -2454,13 +2451,11 @@ async function _crawlViaPureHttp() {
 
   const { uid, ver, cookieStr } = creds;
 
-  console.log("[cornerCrawler] 纯HTTP: 串行请求 rcn → 等待 → rrnou...");
-  const rcnResult = await fetchCornerData(uid, ver, cookieStr);
-
-  const delayMs = 200 + Math.random() * 300;
-  await new Promise(r => setTimeout(r, delayMs));
-
-  const rnouResult = await fetchHdpOuData(uid, ver, cookieStr);
+  console.log("[cornerCrawler] 纯HTTP: 并行请求 rcn + rrnou...");
+  const [rcnResult, rnouResult] = await Promise.all([
+    fetchCornerData(uid, ver, cookieStr),
+    fetchHdpOuData(uid, ver, cookieStr),
+  ]);
 
   // 检测 CheckEMNU 响应（今日数据可能需要 EMNU 验证）
   if (rcnResult.data === "CheckEMNU") {
