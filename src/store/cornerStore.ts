@@ -239,7 +239,7 @@ function syncStrategiesToBackend(strategies: CornerStrategy[]) {
 
 // ==================== 监控循环 ====================
 
-let monitorInterval: ReturnType<typeof setInterval> | null = null;
+let monitorInterval: ReturnType<typeof setTimeout> | null = null;
 
 // ==================== Store 创建 ====================
 
@@ -266,7 +266,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     handicapUpperLimit: 3.5,
     handicapLowerLimit: -1.25,
     betAmount: 100,
-    pollInterval: 5000,
+    pollInterval: 8000,
     isRealMode: false,
     isSoundEnabled: true,
     autoBetEnabled: false,
@@ -418,12 +418,17 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     fetch('/api/corner/start', { method: 'POST' }).catch(() => {});
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已启动", level: "info" });
     await get().refreshData();
-    monitorInterval = setInterval(() => { get().refreshData(); }, get().settings.pollInterval);
+    const schedulePoll = () => {
+      if (!get().isMonitoring) return;
+      const interval = 8000 + Math.random() * 2000;
+      monitorInterval = setTimeout(() => { get().refreshData(); schedulePoll(); }, interval);
+    };
+    schedulePoll();
   },
 
   stopMonitor: () => {
     fetch('/api/corner/pause', { method: 'POST' }).catch(() => {});
-    if (monitorInterval) { clearInterval(monitorInterval); monitorInterval = null; }
+    if (monitorInterval) { clearTimeout(monitorInterval); monitorInterval = null; }
     set({ isMonitoring: false, autoRefresh: false });
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已停止", level: "info" });
   },

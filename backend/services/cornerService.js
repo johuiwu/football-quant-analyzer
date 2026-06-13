@@ -28,7 +28,7 @@ let cachedMatches = [];
 let cachedMainMarkets = {};
 let pollingInterval = null;
 let pollingActive = false;
-let stableCounter = 0;
+let consecutiveNoChanges = 0;
 let immediatePollLock = false;
 let lastFetchTime = 0;
 let lastEmptyLogTime = 0;
@@ -269,11 +269,11 @@ async function pollOnce() {
  */
 function adaptPollingInterval(hasChanges) {
   if (hasChanges) {
-    stableCounter = 0;
+    consecutiveNoChanges = 0;
     return POLL_FAST_MIN + Math.random() * (POLL_FAST_MAX - POLL_FAST_MIN);
   }
-  stableCounter++;
-  if (stableCounter >= STABLE_THRESHOLD) {
+  consecutiveNoChanges++;
+  if (consecutiveNoChanges >= STABLE_THRESHOLD) {
     return POLL_SLOW_MIN + Math.random() * (POLL_SLOW_MAX - POLL_SLOW_MIN);
   }
   return POLL_FAST_MIN + Math.random() * (POLL_FAST_MAX - POLL_FAST_MIN);
