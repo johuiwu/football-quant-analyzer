@@ -149,20 +149,28 @@ function computeChangesAndAnalytics(newMatches) {
  * 单次轮询辅助函数：评估策略并保存触发记录
  */
 async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
+  const oldMatchMap = new Map(cachedMatches.map(om => [om.matchId, om]));
+
   if (hasChanges) {
-    console.log("[cornerService] 数据变化: " + changes.length + " 项, 触发策略评估");
+    const changedMatchIds = [...new Set(changes.map(c => c.matchId))];
+    console.log("[cornerService] 数据变化: " + changes.length + " 项, 涉及 " + changedMatchIds.length + " 场比赛, 触发策略评估");
     for (const match of matches) {
-      const triggeredIds = evaluateStrategies(match, activeStrategies);
-      match.triggeredStrategies = triggeredIds;
-      for (const sid of triggeredIds) {
-        saveCornerTrigger(match, sid).catch(e =>
-          console.error("[cornerService] 保存触发记录失败:", e.message)
-        );
+      if (changedMatchIds.includes(match.matchId)) {
+        const triggeredIds = evaluateStrategies(match, activeStrategies);
+        match.triggeredStrategies = triggeredIds;
+        for (const sid of triggeredIds) {
+          saveCornerTrigger(match, sid).catch(e =>
+            console.error("[cornerService] 保存触发记录失败:", e.message)
+          );
+        }
+      } else {
+        const oldMatch = oldMatchMap.get(match.matchId);
+        match.triggeredStrategies = oldMatch?.triggeredStrategies || [];
       }
     }
   } else {
     for (const match of matches) {
-      const oldMatch = cachedMatches.find(om => om.matchId === match.matchId);
+      const oldMatch = oldMatchMap.get(match.matchId);
       if (oldMatch) match.triggeredStrategies = oldMatch.triggeredStrategies || [];
     }
   }

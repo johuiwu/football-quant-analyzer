@@ -4,6 +4,26 @@
 // 统一后端策略评估逻辑，供 cornerService.js 和 cornerStrategyEngine.js 共用
 // 前端 cornerStore.ts 独立实现以支持实时响应，但逻辑须与此模块保持一致
 
+const evaluationCache = new Map();
+const EVALUATION_CACHE_MAX = 500;
+
+function cacheKey(match, strategies) {
+  const strategyIds = strategies.map(s => s.id + ":" + (s.enabled ? "1" : "0")).sort().join(",");
+  const fingerprint = JSON.stringify({
+    id: match.matchId,
+    m: match.elapsedMinutes ?? 0,
+    h: match.cornerHandicap ?? match.handicap ?? 0,
+    o: match.cornerOdds ?? match.odds ?? 0,
+    hs: match.homeScore ?? 0,
+    as: match.awayScore ?? 0,
+    hc: match.homeCorners ?? 0,
+    ac: match.awayCorners ?? 0,
+    ou: match.cornerOU ? { ro: match.cornerOU.overOdds, ru: match.cornerOU.underOdds } : null,
+    strats: strategyIds,
+  });
+  return fingerprint;
+}
+
 /**
  * 评估单场比赛是否触发指定策略
  * @param {Object} match - 比赛数据 { elapsedMinutes, handicap, odds, homeScore, awayScore }
@@ -77,7 +97,16 @@ export function evaluateSingleStrategy(match, strategy) {
  */
 export function evaluateStrategies(match, strategies) {
   if (!match || !strategies || !Array.isArray(strategies)) return [];
-  return strategies
+  const key = cacheKey(match, strategies);
+  const cached = evaluationCache.get(key);
+  if (cached !== undefined) return cached;
+  const result = strategies
     .filter(s => evaluateSingleStrategy(match, s))
     .map(s => s.id);
+  if (evaluationCache.size >= EVALUATION_CACHE_MAX) {
+    const firstKey = evaluationCache.keys().next().value;
+    evaluationCache.delete(firstKey);
+  }
+  evaluationCache.set(key, result);
+  return result;
 }
