@@ -240,8 +240,8 @@ async function pollOnce() {
   if (!result.success) {
     consecutiveFailures++;
     console.warn("[cornerService] 单次爬取失败 (" + consecutiveFailures + "次), 错误: " + (result.error || "unknown"));
-    // 连续失败 ≥3 且缓存为空才暂停（避免频繁无意义爬取）
-    if (consecutiveFailures >= 3 && cachedMatches.length === 0) {
+    // 连续失败 ≥2 且缓存为空才暂停（避免频繁无意义爬取）
+    if (consecutiveFailures >= 2 && cachedMatches.length === 0) {
       console.log("[cornerService] 连续失败且无缓存，轮询已暂停");
       pauseCornerBackendPolling();
     }
@@ -304,7 +304,7 @@ function scheduleNextPoll() {
         console.error("[cornerService] 告警: 连续 " + consecutiveFailures + " 次爬取失败!");
         lastAlertTime = new Date().toISOString();
       }
-      if (consecutiveFailures >= 3 && cachedMatches.length === 0) {
+      if (consecutiveFailures >= 2 && cachedMatches.length === 0) {
         console.log("[cornerService] 连续失败且无缓存，轮询已暂停");
         pauseCornerBackendPolling();
         return;

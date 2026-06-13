@@ -401,8 +401,9 @@ export async function autoLoginAndGetCredentials(options = {}) {
 
       // ======================== 状态机循环 ========================
       let state = LoginState.LOGIN_PAGE;
-      const popupCount = { passcodePage: 0, passcodeDialog: 0, kickedOut: 0 };
+      const popupCount = { passcodePage: 0, passcodeDialog: 0, kickedOut: 0, loginAttempts: 0 };
       const MAX_POPUP_COUNT = 5;
+      const MAX_LOGIN_ATTEMPTS = 3;
 
       while (Date.now() - startTime < AUTO_LOGIN_TIMEOUT) {
         const pageState = await detectPageState(page);
@@ -447,6 +448,11 @@ export async function autoLoginAndGetCredentials(options = {}) {
           }
 
           case LoginState.LOGIN_PAGE: {
+            if (popupCount.loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+              console.error("[autoLogin] 登录尝试超过 " + MAX_LOGIN_ATTEMPTS + " 次，登录失败");
+              return { success: false, error: "登录尝试次数超限（" + MAX_LOGIN_ATTEMPTS + "次）" };
+            }
+            popupCount.loginAttempts++;
             if (state !== LoginState.FILL_CREDENTIALS) {
               if (options.username && options.password) {
                 await fillCredentials(page, options);

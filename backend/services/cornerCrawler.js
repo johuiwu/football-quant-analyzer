@@ -11,7 +11,7 @@ import {
   MOBILE_UA
 } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDelay } from "./crawlerShared.js";
-import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate, getSavedLoginCredentials } from "./credentialManager.js";
+import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate, getSavedLoginCredentials, validateCredentials } from "./credentialManager.js";
 import { fetchCornerData, fetchHdpOuData, fetchGameDetail } from "./hgApiClient.js";
 import { loginToHG as hgCrawlerLogin } from "./hgCrawlerService.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
@@ -2365,6 +2365,10 @@ async function waitForTransformRequest(page) {
   });
 }
 
+// ======================== 登录冷却机制 ========================
+let lastLoginFailureTime = 0;
+const LOGIN_COOLDOWN_MS = 120000;
+
 async function _crawlViaPureHttp() {
   // 1. 先尝试从内存/磁盘加载并验证凭证（快速恢复路径，不启动浏览器）
   let creds = null;
@@ -2379,8 +2383,13 @@ async function _crawlViaPureHttp() {
   }
 
   // 2. 凭证无效或缺失时，优先尝试 autoLogin（独立浏览器，登录后关闭）
-  // ★ 限制 autoLogin 超时为 30 秒，避免阻塞整个爬取流程
+  // ★ 登录冷却：2分钟内已登录失败则直接跳过
   if (!creds) {
+    const now = Date.now();
+    if (lastLoginFailureTime > 0 && (now - lastLoginFailureTime) < LOGIN_COOLDOWN_MS) {
+      console.log("[cornerCrawler] 纯HTTP: 登录冷却中（距上次失败 " + Math.floor((now - lastLoginFailureTime) / 1000) + "s），跳过登录");
+      return null;
+    }
     console.log("[cornerCrawler] 纯HTTP: 凭证无效，尝试 autoLogin（30s超时）...");
     try {
       const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
@@ -2441,10 +2450,12 @@ async function _crawlViaPureHttp() {
       creds = loadCredentials();
       if (!creds) {
         console.warn("[cornerCrawler] 纯HTTP: 登录后凭证仍不完整");
+        lastLoginFailureTime = Date.now();
         return null;
       }
     } catch (e) {
       console.warn("[cornerCrawler] 纯HTTP: hgCrawlerLogin 失败:", e.message);
+      lastLoginFailureTime = Date.now();
       return null;
     }
   }
@@ -2750,6 +2761,11 @@ async function _crawlViaPureHttp() {
 
   console.log("[cornerCrawler] 纯HTTP: 完成，" + cornerMatches.length + " 场比赛, mainMarkets: " + Object.keys(mainMarkets).length);
   for (const m of cornerMatches) { m._dataSource = "http"; }
+
+  // ★ 异步保活：发送轻量请求维持网站会话
+  setTimeout(() => {
+    validateCredentials(uid, ver, cookieStr).catch(() => {});
+  }, 3000);
 
   return {
     success: true,
