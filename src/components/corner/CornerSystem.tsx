@@ -282,6 +282,8 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
     }
   ]);
 
+  const [strategyStats, setStrategyStats] = useState<Record<string, { triggered: number; executed: number; successRate: number; totalProfit: number }>>({});
+
   // Sync state and run simulation step
   const fetchMatchesData = async (stepMode: boolean = false) => {
     try {
@@ -414,6 +416,25 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isAutoRefresh]);
+
+  useEffect(() => {
+    if (activeSubTab !== 'config') return;
+    const fetchStats = async () => {
+      const stats: Record<string, any> = {};
+      for (const strat of strategies) {
+        const backendId = strat.id === 'strat_1' ? 1 : strat.id === 'strat_2' ? 2 : strat.id === 'strat_3' ? 3 : strat.id === 'strat_4' ? 4 : 5;
+        try {
+          const resp = await fetch(`/api/corner/strategy-stats?strategyId=${backendId}`);
+          const json = await resp.json();
+          if (json.success && json.data) {
+            stats[strat.id] = json.data;
+          }
+        } catch (_) {}
+      }
+      setStrategyStats(stats);
+    };
+    fetchStats();
+  }, [activeSubTab, strategies]);
 
   // Adjust parameters slider updates simulated win rate based on real quantitative corner patterns!
   const updateStrategyParams = (id: string, field: string, val: number) => {
@@ -2254,6 +2275,24 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                   </div>
 
                 </div>
+
+                {/* 触发统计 */}
+                {strategyStats[strat.id] && (
+                  <div className="mt-3 pt-3 border-t border-slate-700/50 flex gap-4 text-xs">
+                    <div>
+                      <span className="text-slate-400">触发</span>
+                      <span className="text-white font-bold ml-1">{strategyStats[strat.id].triggered || 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">执行</span>
+                      <span className="text-white font-bold ml-1">{strategyStats[strat.id].executed || 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">成功率</span>
+                      <span className="text-emerald-400 font-bold ml-1">{strategyStats[strat.id].successRate || 0}%</span>
+                    </div>
+                  </div>
+                )}
 
               </div>
             ))}

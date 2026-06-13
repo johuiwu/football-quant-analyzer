@@ -1,4 +1,4 @@
-﻿// ======================== 共享策略条件评估模块 ========================
+// ======================== 共享策略条件评估模块 ========================
 // 【同步提醒】前端 cornerStore.ts:export evaluateMatchForStrategies 须与此逻辑保持一致
 // 修改任一处时请同步更新另一处
 // 统一后端策略评估逻辑，供 cornerService.js 和 cornerStrategyEngine.js 共用
@@ -15,10 +15,20 @@ export function evaluateSingleStrategy(match, strategy) {
 
   const currentMinute = match.elapsedMinutes ?? match.currentMinute ?? match.elapsed_minutes ?? 0;
   const handicap = match.handicap ?? match.cornerHandicap ?? 0;
-  const odds = match.odds ?? match.cornerOdds ?? 0;
   const homeScore = match.homeScore ?? 0;
   const awayScore = match.awayScore ?? 0;
   const goalDiff = Math.abs(homeScore - awayScore);
+
+  // 方向感知赔率选择：over→overOdds, under→underOdds, auto→cornerOdds
+  let odds = match.odds ?? match.cornerOdds ?? 0;
+  const cornerOU = match.cornerOU;
+  if (cornerOU) {
+    if (strategy.betDirection === "over" && cornerOU.overOdds > 0) {
+      odds = cornerOU.overOdds;
+    } else if (strategy.betDirection === "under" && cornerOU.underOdds > 0) {
+      odds = cornerOU.underOdds;
+    }
+  }
 
   // 比赛时间合理性校验
   const HALF_TIME_START = 45;
@@ -43,6 +53,9 @@ export function evaluateSingleStrategy(match, strategy) {
   // 比分条件检查
   // leadGoals >= 20 → 哨兵值，不做比分限制（如策略一 leadGoals=99）
   if (strategy.leadGoals >= 20) return true;
+
+  // 策略三特殊条件：角球数相等也触发（不依赖足球比分）
+  if (strategy.id === 3 && match.homeCorners === match.awayCorners && match.homeCorners > 0) return true;
 
   // leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
   if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) return true;

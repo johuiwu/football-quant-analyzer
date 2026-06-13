@@ -110,7 +110,7 @@ function AppNewContent() {
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
           <Route path="/standings" element={<StandingsPage />} />
           <Route path="/teams" element={<ErrorBoundary><TeamInfoSection /></ErrorBoundary>} />
           <Route path="/worldcup" element={<WorldCupDashboard />} />

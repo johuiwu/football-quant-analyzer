@@ -16,11 +16,20 @@ import {
 // ======================== 数据源配置 ========================
 const USE_REAL_DATA = process.env.USE_REAL_DATA !== "false";
 
+// ======================== 自适应轮询常量 ========================
+const POLL_FAST_MIN = 5000;
+const POLL_FAST_MAX = 8000;
+const POLL_SLOW_MIN = 12000;
+const POLL_SLOW_MAX = 18000;
+const STABLE_THRESHOLD = 3;
+
 // ======================== 后端轮询缓存 ========================
 let cachedMatches = [];
 let cachedMainMarkets = {};
 let pollingInterval = null;
 let pollingActive = false;
+let stableCounter = 0;
+let immediatePollLock = false;
 let lastFetchTime = 0;
 let lastEmptyLogTime = 0;
 const POLL_INTERVAL = POLL_CONFIG.interval;
@@ -42,8 +51,8 @@ const pollingAnalytics = {
 // ======================== 策略配置 ========================
 export const DEFAULT_STRATEGIES = [
   { id: 1, enabled: false, name: "策略一 · 走地角球(35'-55')", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -1.25, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
-  { id: 2, enabled: false, name: "策略二 · 领先角球(50'-77')", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
-  { id: 3, enabled: false, name: "策略三 · 平局角球(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8, betDirection: "under" },
+  { id: 2, enabled: false, name: "策略二 · 领先比分(50'-77')", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
+  { id: 3, enabled: false, name: "策略三 · 比分平局(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 1.5, targetOdds: 0.8, betDirection: "under" },
   { id: 4, enabled: false, name: "策略四 · 领先追角(60'-99')", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
   { id: 5, enabled: false, name: "策略五 · 尾声角球(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, betDirection: "over" },
 ];
@@ -250,16 +259,36 @@ async function pollOnce() {
   }
 
   await processAutoBetsForMatches(matches);
+  return { hasChanges };
 }
 
 /**
- * 公共轮询调度函数 — 消除 start/resume 中的重复代码
+ * 计算自适应轮询间隔（毫秒）
+ * @param {boolean} hasChanges - 本轮是否有数据变化
+ * @returns {number} 下次轮询延迟
+ */
+function adaptPollingInterval(hasChanges) {
+  if (hasChanges) {
+    stableCounter = 0;
+    return POLL_FAST_MIN + Math.random() * (POLL_FAST_MAX - POLL_FAST_MIN);
+  }
+  stableCounter++;
+  if (stableCounter >= STABLE_THRESHOLD) {
+    return POLL_SLOW_MIN + Math.random() * (POLL_SLOW_MAX - POLL_SLOW_MIN);
+  }
+  return POLL_FAST_MIN + Math.random() * (POLL_FAST_MAX - POLL_FAST_MIN);
+}
+
+/**
+ * 公共轮询调度函数 — 自适应间隔 + start/resume 复用
  */
 function scheduleNextPoll() {
   const poll = async () => {
     if (!pollingActive || pollingPaused) return;
+    let hasChanges = false;
     try {
-      await pollOnce();
+      const result = await pollOnce();
+      hasChanges = result?.hasChanges ?? false;
     } catch (e) {
       console.error("[cornerService] 轮询错误:", e.message);
       consecutiveFailures++;
@@ -267,17 +296,52 @@ function scheduleNextPoll() {
         console.error("[cornerService] 告警: 连续 " + consecutiveFailures + " 次爬取失败!");
         lastAlertTime = new Date().toISOString();
       }
-      // 连续失败 ≥3 且缓存为空才暂停
       if (consecutiveFailures >= 3 && cachedMatches.length === 0) {
         console.log("[cornerService] 连续失败且无缓存，轮询已暂停");
         pauseCornerBackendPolling();
+        return;
       }
     }
     if (pollingActive && !pollingPaused) {
-      pollingInterval = setTimeout(poll, POLL_INTERVAL);
+      const interval = adaptPollingInterval(hasChanges);
+      pollingInterval = setTimeout(poll, interval);
     }
   };
   poll();
+}
+
+/**
+ * 即时轮询 — 供外部事件调用，取消 pending 定时器并立即执行
+ */
+async function triggerImmediatePoll() {
+  if (!pollingActive || pollingPaused) return;
+  if (immediatePollLock) return;
+  immediatePollLock = true;
+  try {
+    if (pollingInterval) {
+      clearTimeout(pollingInterval);
+      pollingInterval = null;
+    }
+    await pollOnce();
+  } catch (e) {
+    console.error("[cornerService] 即时轮询错误:", e.message);
+  } finally {
+    immediatePollLock = false;
+  }
+  if (pollingActive && !pollingPaused) {
+    scheduleNextPoll();
+  }
+}
+
+/**
+ * 实时事件钩子 — 供未来 WebSocket/Gismo 集成调用
+ * @param {Object} eventData - 实时事件数据（预留）
+ */
+export function onLiveEvent(eventData) {
+  console.log("[cornerService] 收到实时事件，触发即时轮询:", JSON.stringify(eventData).substring(0, 200));
+  triggerImmediatePoll().catch(e =>
+    console.error("[cornerService] 即时轮询失败:", e.message)
+  );
 }
 
 export function startCornerBackendPolling() {
@@ -409,6 +473,7 @@ function mapMatchToCornerFormat(match) {
     awayCorners: match.awayCorners || 0,
     cornerHandicap: match.cornerHandicap != null ? parseFloat(match.cornerHandicap) : 0,
     cornerOdds: match.cornerOdds != null ? parseFloat(match.cornerOdds) : 0,
+    cornerOU: match.cornerOU || null,
     handicaps: match.handicaps || [],
     timestamp: match.timestamp || Date.now(),
     triggeredStrategies: match.triggeredStrategies || [],
