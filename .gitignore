@@ -101,6 +101,10 @@ python/fix_*.py
 scripts/*.bat
 start.bat
 start_local.bat
+启动系统.bat
+
+# 测试报告
+backend/pipeline-test-report.json
 
 # 根目录杂文件
 analyze-hga-ver.js
