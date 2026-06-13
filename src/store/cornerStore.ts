@@ -85,6 +85,7 @@ export interface CornerSettings {
   isRealMode: boolean;
   isSoundEnabled: boolean;
   autoBetEnabled: boolean;
+  autoBetConfirmRequired: boolean;
 }
 
 /** 回测统计数据 */
@@ -269,6 +270,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     isRealMode: false,
     isSoundEnabled: true,
     autoBetEnabled: false,
+    autoBetConfirmRequired: false,
   },
   activeCornerTab: 'crawler',
   historyFilterMatchId: null,
@@ -324,6 +326,29 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         })
       }).catch(() => {});
     }
+  },
+
+  // 一次性同步所有配置到后端（用于页面初始化时确保前后端一致）
+  syncAllSettingsToBackend: () => {
+    const s = get().settings;
+    let trackedMatchIds: string[] = [];
+    try {
+      const appModule = require('./useAppStore');
+      if (appModule?.useAppStore?.getState) {
+        trackedMatchIds = appModule.useAppStore.getState().trackedMatchIds || [];
+      }
+    } catch (_) {}
+    fetch('/api/corner/bet-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isRealMode: s.isRealMode,
+        amount: s.betAmount,
+        autoBetEnabled: s.autoBetEnabled,
+        autoBetConfirmRequired: s.autoBetConfirmRequired ?? false,
+        trackedMatchIds
+      })
+    }).catch(() => {});
   },
 
   updateBalance: (balance) =>

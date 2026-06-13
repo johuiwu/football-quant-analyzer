@@ -102,7 +102,7 @@ foreach ($t in $hgTypes) {
 }
 
 Write-Host "`n=== Global Search: ws/url/network strings ==="
-$kw = "ws://|wss://|websocket|WebSocket|gismo|timelinedelta|sportradar|betradar|hga050|crw066|transform|socket|subscribe|akamaized|cdn|\.php|\.json|http://|https://|wager|bet_|get_game|get_live|corner|Corners|match_|timeline|token|uid|session"
+$kw = "ws://|wss://|websocket|WebSocket|gismo|timelinedelta|sportradar|betradar|hga038|crw066|transform|socket|subscribe|akamaized|cdn|\.php|\.json|http://|https://|wager|bet_|get_game|get_live|corner|Corners|match_|timeline|token|uid|session"
 foreach ($t in $assembly.GetTypes()) {
     foreach ($m in $t.GetMethods([System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::DeclaredOnly)) {
         try {

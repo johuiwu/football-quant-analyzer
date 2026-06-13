@@ -190,7 +190,7 @@ WL("")
 WL("--- Part 3: Retry Open with initialized Global ---")
 try {
     $ctor = $wsType.GetConstructor(@([string]))
-    $inst = $ctor.Invoke(@("https://www.hga050.com"))
+    $inst = $ctor.Invoke(@("https://www.hga038.com"))
     
     $asyncMethod = $wsType.GetMethod("HI548hsim5", $bfa)
     $taskObj = $asyncMethod.Invoke($inst, @())
@@ -233,8 +233,8 @@ WL("")
 WL("--- Part 4: Manual WebSocket URL inference ---")
 WL("")
 WL("Known facts:")
-WL("  1. HgUrl (from INI)     = https://www.hga050.com")
-WL("  2. CRy4Xi7NaT (Uri)      = https://www.hga050.com/")
+WL("  1. HgUrl (from INI)     = https://www.hga038.com")
+WL("  2. CRy4Xi7NaT (Uri)      = https://www.hga038.com/")
 WL("  3. Protocol used         = ClientWebSocket (wss://)")
 WL("  4. App name              = HgCeApp (Corner/Hg App)")
 WL("  5. Transform API endpoint= transform.php (from decrypted strings)")
@@ -242,7 +242,7 @@ WL("  6. User-Agent             = Mobile Safari (iPhone)")
 WL("  7. Has Proxy configured  = Yes (WebProxyWrapper)")
 WL("")
 WL("Likely WebSocket URL patterns:")
-$baseHost = "www.hga050.com"
+$baseHost = "www.hga038.com"
 $patterns = @(
     "wss://" + $baseHost + "/ws",
     "wss://" + $baseHost + "/websocket",

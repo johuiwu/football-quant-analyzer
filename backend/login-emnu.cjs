@@ -13,7 +13,7 @@ const CONFIG = {
     hgUid: 'q94s507em40685531l8731371b1',
     hgVer: '6f209d8aea89a7ef796ed9e7f002e7a3_1779944027525',
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Version/8.5 Mobile/12F70 Safari/600.1',
-    apiHosts: ['m510.crw066.com', 'www.hga038.com', 'www.hga050.com']
+    apiHosts: ['m510.crw066.com', 'www.hga038.com', 'www.hga038.com']
 };
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -184,7 +184,7 @@ async function main() {
     
     // Step 3: Connect WSS with full auth
     console.log('\n[3] Connecting WebSocket with auth...');
-    const wsHost = workingHost || 'www.hga050.com';
+    const wsHost = workingHost || 'www.hga038.com';
     
     const WebSocket = require('ws');
     const wsPaths = ['/ws', '/realtime', '/client', '/push', '/live', '/socket', '/api/ws', '/eventbus', '/stream'];
@@ -255,8 +255,8 @@ async function main() {
         console.log(`Working host: ${workingHost || 'none'}`);
         console.log(`UID: ${uid}`);
         console.log(`Cookies: ${sessionCookies.join('; ')}`);
-        console.log(`Best candidate: wss://www.hga050.com/ws`);
-        fs.writeFileSync(urlFile, 'wss://www.hga050.com/ws', 'utf8');
+        console.log(`Best candidate: wss://www.hga038.com/ws`);
+        fs.writeFileSync(urlFile, 'wss://www.hga038.com/ws', 'utf8');
     }
 }
 

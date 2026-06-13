@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useCornerStore } from '../../store/cornerStore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { 
   Activity, 
@@ -20,7 +22,6 @@ import {
   Cpu,
   Monitor,
   Check,
-  ChevronRight,
   Sparkles
 } from 'lucide-react';
 import { TeamStats } from '../data/realTeamsData';
@@ -182,6 +183,10 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
 
   // 同步投注配置到后端
   const syncBetConfigToBackend = (amount: number, isRealMode: boolean, autoBetEnabled: boolean) => {
+    let trackedMatchIds: string[] = [];
+    try {
+      trackedMatchIds = useAppStore.getState().trackedMatchIds || [];
+    } catch (_) {}
     fetch('/api/corner/bet-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -190,6 +195,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         isRealMode,
         autoBetEnabled,
         autoBetConfirmRequired: false,
+        trackedMatchIds,
       }),
     }).catch(err => console.error('[CornerSystem] 投注配置同步失败:', err));
   };
@@ -383,48 +389,15 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
     }
   };
 
-  // Place recommendation simulation
-  const handlePlaceBet = async (match: any, strategy: any, predictionText?: string, oddsValue?: number) => {
-    if (!isLoggedIn) {
-      alert("⚠️ 请先在【赛程数据】选项卡内登录「johui888」管理员账户（或在上方点击登录），以激活全套量化自动下单跟投链！");
-      return;
-    }
 
-    const prediction = predictionText || `大 ${match.homeCorners + match.awayCorners + 1.5}`;
-    const odds = oddsValue || match.odds.overOdds;
-
-    try {
-      const response = await fetch('/api/corner/place-bet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          league: match.league,
-          homeName: match.homeName,
-          awayName: match.awayName,
-          strategyName: strategy.name,
-          minute: match.minute,
-          odds: odds,
-          prediction: prediction
-        })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setPlacedBets(data.placedBets);
-          setSimulationLogs(prev => [
-            `【自动跟投】🎉 [${strategy.name}] 触发高胜率跟投下单！[${match.homeName} vs ${match.awayName}] 赔率: ${odds}, 推荐竞注: [${prediction}]. 已向量化微型控制网段分发底层实单！`,
-            ...prev
-          ]);
-        }
-      }
-    } catch (err) {
-      console.error("Bet placing error:", err);
-    }
-  };
 
   // On mount load data
   useEffect(() => {
     syncLoginState();
+    // 初始化时同步所有投注配置到后端，确保前后端一致
+    try {
+      useCornerStore.getState().syncAllSettingsToBackend();
+    } catch (_) {}
   }, []);
 
   // Interval timer for 5s auto-refresh polling (simulation-step)
@@ -435,7 +408,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       fetchMatchesData(true);
       intervalId = setInterval(() => {
         fetchMatchesData(true);
-      }, 5000);
+      }, 15000);
     }
     return () => {
       if (intervalId) clearInterval(intervalId);
@@ -950,9 +923,9 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
 
                       </div>
 
-                      {/* Section 3: High-Fidelity Segmented Asian Betting Grid (Immersive hga050 Layout with System Dark Accent Colors) */}
+                      {/* Section 3: High-Fidelity Segmented Asian Betting Grid (Immersive hga038 Layout with System Dark Accent Colors) */}
                       <div className="space-y-2 pt-1">
-                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">📊 亚盘即时变客盘口配比 (仿 hga050 传统卡片网格格式 - 左侧多盘口让球，右侧多盘口得分大小)</span>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">📊 亚盘即时变客盘口配比 (仿 hga038 传统卡片网格格式 - 左侧多盘口让球，右侧多盘口得分大小)</span>
                         
                         <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950 p-2 shadow-2xl">
                           <div className="flex items-stretch gap-1.5 min-w-[1040px] select-none text-slate-200">
@@ -983,25 +956,23 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                   return (
                                     <div key={colIdx} className="flex flex-col gap-1">
                                       {/* Home Card */}
-                                      <button
-                                        onClick={() => handlePlaceBet(m, { name: '手动跟单让球' }, `让球: 主队 ${formatAsianLine(lineVal, false)}`, homeO)}
-                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                      <div
+                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                       >
-                                        <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                        <span className="text-[10px] text-slate-400 font-bold block truncate">
                                           {formatAsianLine(lineVal, false)}
                                         </span>
                                         <span className="text-xs text-rose-500 font-black mt-0.5">{homeO.toFixed(2)}</span>
-                                      </button>
+                                      </div>
                                       {/* Away Card */}
-                                      <button
-                                        onClick={() => handlePlaceBet(m, { name: '手动跟单让球' }, `让球: 客队 ${formatAsianLine(-lineVal, false)}`, awayO)}
-                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                      <div
+                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                       >
-                                        <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                        <span className="text-[10px] text-slate-400 font-bold block truncate">
                                           {formatAsianLine(-lineVal, false)}
                                         </span>
                                         <span className="text-xs text-rose-500 font-black mt-0.5">{awayO.toFixed(2)}</span>
-                                      </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -1014,24 +985,22 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                 让球 半场
                               </div>
                               <div className="flex flex-col gap-1 h-[96px]">
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单让球上半场' }, `让球上半场: 主队 ${formatAsianLine(m.odds.halfHandicapLine, false)}`, m.odds.halfHandicapHomeOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">
                                     主 {formatAsianLine(m.odds.halfHandicapLine, false)}
                                   </span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.halfHandicapHomeOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单让球上半场' }, `让球上半场: 客队 ${formatAsianLine(-m.odds.halfHandicapLine, false)}`, m.odds.halfHandicapAwayOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                </div>
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">
                                     客 {formatAsianLine(-m.odds.halfHandicapLine, false)}
                                   </span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.halfHandicapAwayOdds.toFixed(2)}</span>
-                                </button>
+                                </div>
                               </div>
                             </div>
 
@@ -1061,25 +1030,23 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                   return (
                                     <div key={colIdx} className="flex flex-col gap-1">
                                       {/* Over Card */}
-                                      <button
-                                        onClick={() => handlePlaceBet(m, { name: '手动跟单大小' }, `大 ${formatAsianLine(lineVal, true)}`, baseOver)}
-                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                      <div
+                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                       >
-                                        <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                        <span className="text-[10px] text-slate-400 font-bold block truncate">
                                           大 {formatAsianLine(lineVal, true)}
                                         </span>
                                         <span className="text-xs text-rose-500 font-black mt-0.5">{baseOver.toFixed(2)}</span>
-                                      </button>
+                                      </div>
                                       {/* Under Card */}
-                                      <button
-                                        onClick={() => handlePlaceBet(m, { name: '手动跟单大小' }, `小 ${formatAsianLine(lineVal, true)}`, baseUnder)}
-                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                      <div
+                                        className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                       >
-                                        <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                        <span className="text-[10px] text-slate-400 font-bold block truncate">
                                           小 {formatAsianLine(lineVal, true)}
                                         </span>
                                         <span className="text-xs text-rose-500 font-black mt-0.5">{baseUnder.toFixed(2)}</span>
-                                      </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -1092,24 +1059,22 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                 大小 半场
                               </div>
                               <div className="flex flex-col gap-1 h-[96px]">
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单上半场大小' }, `半场大 ${formatAsianLine(m.odds.halfOver, true)}`, m.odds.halfOverOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">
                                     大 {formatAsianLine(m.odds.halfOver, true)}
                                   </span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.halfOverOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单上半场大小' }, `半场小 ${formatAsianLine(m.odds.halfUnder, true)}`, m.odds.halfUnderOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                </div>
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">
                                     小 {formatAsianLine(m.odds.halfUnder, true)}
                                   </span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.halfUnderOdds.toFixed(2)}</span>
-                                </button>
+                                </div>
                               </div>
                             </div>
 
@@ -1119,27 +1084,24 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                 独赢
                               </div>
                               <div className="flex flex-col justify-between h-[96px] gap-1">
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单独赢' }, `${m.homeName} 独赢`, m.odds.homeWinOdds)}
-                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors rounded cursor-pointer group"
+                                <div
+                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] transition-colors rounded"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold">主</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">主</span>
                                   <span className="text-xs text-rose-500 font-black">{m.odds.homeWinOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单独赢' }, `${m.awayName} 独赢`, m.odds.awayWinOdds)}
-                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors rounded cursor-pointer group"
+                                </div>
+                                <div
+                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] transition-colors rounded"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold">客</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">客</span>
                                   <span className="text-xs text-rose-500 font-black">{m.odds.awayWinOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单独赢' }, `平局 独赢`, m.odds.drawWinOdds)}
-                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors rounded cursor-pointer group"
+                                </div>
+                                <div
+                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] transition-colors rounded"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold">和</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">和</span>
                                   <span className="text-xs text-rose-500 font-black">{m.odds.drawWinOdds.toFixed(2)}</span>
-                                </button>
+                                </div>
                               </div>
                             </div>
 
@@ -1149,27 +1111,24 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                 独赢 半场
                               </div>
                               <div className="flex flex-col justify-between h-[96px] gap-1">
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单让球上半场' }, `${m.homeName} 半场独赢`, m.odds.halfHomeWinOdds)}
-                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors rounded cursor-pointer group"
+                                <div
+                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] transition-colors rounded"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold">主</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">主</span>
                                   <span className="text-xs text-rose-500 font-black">{m.odds.halfHomeWinOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单让球上半场' }, `${m.awayName} 半场独赢`, m.odds.halfAwayWinOdds)}
-                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors rounded cursor-pointer group"
+                                </div>
+                                <div
+                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] transition-colors rounded"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold">客</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">客</span>
                                   <span className="text-xs text-rose-500 font-black">{m.odds.halfAwayWinOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单让球上半场' }, `半场平局 独赢`, m.odds.halfDrawWinOdds)}
-                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors rounded cursor-pointer group"
+                                </div>
+                                <div
+                                  className="h-[28px] flex items-center justify-between px-2 bg-[#0c1322] border border-[#1b253b] transition-colors rounded"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold">和</span>
+                                  <span className="text-[10px] text-slate-400 font-bold">和</span>
                                   <span className="text-xs text-rose-500 font-black">{m.odds.halfDrawWinOdds.toFixed(2)}</span>
-                                </button>
+                                </div>
                               </div>
                             </div>
 
@@ -1179,20 +1138,18 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                 单/双
                               </div>
                               <div className="flex flex-col gap-1 h-[96px]">
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单单双' }, `单双: 单`, m.odds.oddOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">单</span>
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">单</span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.oddOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单单双' }, `单双: 双`, m.odds.evenOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                </div>
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">双</span>
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">双</span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.evenOdds.toFixed(2)}</span>
-                                </button>
+                                </div>
                               </div>
                             </div>
 
@@ -1202,20 +1159,18 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                 单/双 半场
                               </div>
                               <div className="flex flex-col gap-1 h-[96px]">
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单单双上半场' }, `半场单双: 单`, m.odds.halfOddOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">单</span>
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">单</span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.halfOddOdds.toFixed(2)}</span>
-                                </button>
-                                <button
-                                  onClick={() => handlePlaceBet(m, { name: '手动跟单单双上半场' }, `半场单双: 双`, m.odds.halfEvenOdds)}
-                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] hover:bg-[#151f35] hover:border-slate-700 transition-colors cursor-pointer group"
+                                </div>
+                                <div
+                                  className="flex-1 flex flex-col justify-center items-center py-1 rounded bg-[#0c1322] border border-[#1b253b] transition-colors"
                                 >
-                                  <span className="text-[10px] text-slate-400 group-hover:text-slate-200 font-bold block truncate">双</span>
+                                  <span className="text-[10px] text-slate-400 font-bold block truncate">双</span>
                                   <span className="text-xs text-rose-500 font-black mt-0.5">{m.odds.halfEvenOdds.toFixed(2)}</span>
-                                </button>
+                                </div>
                               </div>
                             </div>
 
@@ -2064,7 +2019,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                         <div className="w-full md:w-auto">
                           {matchedStrategies.length > 0 ? (
                             matchedStrategies.map((strat) => (
-                              <div key={strat.id} className="bg-emerald-950/70 border border-emerald-500/40 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 animate-pulse">
+                              <div key={strat.id} className="bg-emerald-950/70 border border-emerald-500/40 rounded-xl p-3 flex flex-wrap items-center gap-3 animate-pulse">
                                 <div className="flex items-center gap-2">
                                   <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#10B981] animate-ping"></div>
                                   <div className="text-xs">
@@ -2074,13 +2029,6 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                     </span>
                                   </div>
                                 </div>
-                                <button
-                                  onClick={() => handlePlaceBet(m, strat)}
-                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-1.5 px-3 rounded-lg shadow-md transition-colors flex items-center gap-1 cursor-pointer"
-                                >
-                                  <ChevronRight className="w-3.5 h-3.5" />
-                                  一键跟投
-                                </button>
                               </div>
                             ))
                           ) : (
@@ -2148,30 +2096,6 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       {/* SUB-TAB 3: 策略配置 ADVANCED CARD DECK */}
       {activeSubTab === 'config' && (
         <div className="space-y-6 animate-fadeIn">
-          {/* 执行待投注按钮区域 */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch("/api/corner/bets/execute", { method: "POST" });
-                  const data = await res.json();
-                  if (data.success) {
-                    alert(`投注执行完成：${data.executed || 0} 成功, ${data.failed || 0} 失败`);
-                  } else {
-                    alert("执行失败: " + (data.error || "未知错误"));
-                  }
-                } catch (err) {
-                  alert("执行失败，请检查网络连接");
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-lg transition-colors font-semibold shadow-md shadow-amber-900/20"
-            >
-              <TrendingUp className="w-3.5 h-3.5" />
-              执行待投注
-            </button>
-            <span className="text-[10px] text-slate-500">执行所有状态为 pending 的待投注记录</span>
-          </div>
-
           <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800/80 flex items-start gap-3.5 max-w-4xl">
             <div className="p-2 bg-pink-950/50 border border-pink-900/30 text-pink-400 rounded-xl mt-1">
               <Sparkles className="w-5 h-5 animate-pulse" />

@@ -31,7 +31,7 @@ try {
     
     # Create instance
     $ctor = $wsType.GetConstructor(@([string]))
-    $inst = $ctor.Invoke(@("https://www.hga050.com"))
+    $inst = $ctor.Invoke(@("https://www.hga038.com"))
     WL("Instance created")
     
     # Call HI548hsim5 (returns Task) 
@@ -142,7 +142,7 @@ WL("")
 WL("--- Part 2: ClientWebSocket options inspection ---")
 try {
     $ctor = $wsType.GetConstructor(@([string]))
-    $inst2 = $ctor.Invoke(@("https://www.hga050.com"))
+    $inst2 = $ctor.Invoke(@("https://www.hga038.com"))
     
     # Get the ClientWebSocket field
     $cwsField = $wsType.GetField("Dkm4ivONPd", $bfa)

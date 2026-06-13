@@ -12,7 +12,7 @@ import fs from "fs";
 
 puppeteer.use(StealthPlugin());
 
-const HG_URL = "https://www.hga050.com";
+const HG_URL = "https://www.hga038.com";
 const USERNAME = process.env.HG_USERNAME || "johui888";
 const PASSWORD = process.env.HG_PASSWORD || "aa123123";
 const HEADLESS = process.env.HEADLESS === "true";
@@ -270,7 +270,7 @@ async function main() {
           showtype: "live", rtype: "rcn", ltype: "3",
           sorttype: "L", ts: String(ts), chgSortTS: String(ts),
         });
-        const url = "https://www.hga050.com/app/member/transform.php?ver=" + encodeURIComponent(ver);
+        const url = "https://www.hga038.com/app/member/transform.php?ver=" + encodeURIComponent(ver);
         const resp = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest" },

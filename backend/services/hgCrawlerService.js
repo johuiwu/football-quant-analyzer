@@ -3,16 +3,59 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, loadCookiesFromDisk, setUid, getUid } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, FALLBACK_DOMAINS, loadCookiesFromDisk, setUid, getUid } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import { updateCredentials } from "./credentialManager.js";
 import { extractVerFromRequest } from "./transformSigner.js";
 import fs from "fs";
+import net from "net";
+import dns from "dns/promises";
 
 // ======================== 配置常量 ========================
 const HG_USERNAME = process.env.HG_USERNAME || "";
 const HG_PASSWORD = process.env.HG_PASSWORD || "";
+
+// ======================== 域名可达性检测 ========================
+/**
+ * 检测域名 443 端口是否可达
+ */
+async function checkDomainReachable(url, timeout = 5000) {
+  try {
+    const host = new URL(url).hostname;
+    await dns.resolve(host);
+    return await new Promise((resolve) => {
+      const socket = new net.Socket();
+      const timer = setTimeout(() => { socket.destroy(); resolve(false); }, timeout);
+      socket.connect(443, host, () => { clearTimeout(timer); socket.destroy(); resolve(true); });
+      socket.on("error", () => { clearTimeout(timer); socket.destroy(); resolve(false); });
+    });
+  } catch { return false; }
+}
+
+/**
+ * 检测并选择可达的域名
+ */
+async function selectReachableDomain() {
+  console.log("[HgCrawler] 检测主域名可达性:", HG_URL);
+  if (await checkDomainReachable(HG_URL)) {
+    console.log("[HgCrawler] 主域名可达:", HG_URL);
+    return { url: HG_URL, changed: false };
+  }
+  console.warn("[HgCrawler] 主域名不可达:", HG_URL);
+
+  for (const fb of FALLBACK_DOMAINS) {
+    console.log("[HgCrawler] 检测备选域名可达性:", fb);
+    if (await checkDomainReachable(fb)) {
+      console.log("[HgCrawler] 备选域名可达，切换到:", fb);
+      return { url: fb, changed: true };
+    }
+    console.warn("[HgCrawler] 备选域名不可达:", fb);
+  }
+
+  console.error("[HgCrawler] 所有域名均不可达，使用主域名:", HG_URL);
+  return { url: HG_URL, changed: false };
+}
 const NAV_WAIT_MS = 8000;
 const TAB_WAIT_MS = 4000;
 const SCROLL_WAIT_MS = 3000;
@@ -239,6 +282,12 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
   console.log("[HgCrawler] 开始登录...");
   crawlerStatus.error = null;
 
+  // ★ 域名可达性检测与回退
+  const { url: activeUrl, changed: domainChanged } = await selectReachableDomain();
+  if (domainChanged) {
+    console.log("[HgCrawler] 域名已切换:", activeUrl);
+  }
+
   // Priority: reuse shared browser session from browserPool
   if (!forceNew && !isolated) {
     const sharedPage = getSharedPage();
@@ -317,8 +366,8 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
     await cookiePage.setViewport({ width: 1920, height: 1400 });
     if (savedCookies && savedCookies.length > 0) {
       for (const ck of savedCookies) { try { await cookiePage.setCookie(ck); } catch (_) {} }
-      await cookiePage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await new Promise(r => setTimeout(r, 3000));
+      await cookiePage.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await new Promise(r => setTimeout(r, 1500));
       const isValid = await safeEvaluate(cookiePage, () => {
         const body = document.body?.textContent || "";
         return (body.includes("In-Play") && body.includes("Soccer")) || !!document.getElementById("symbol_ft");
@@ -346,9 +395,18 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
       Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
     });
 
-    await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     console.log("[HgCrawler] 等待页面完全加载...");
-    await new Promise((r) => setTimeout(r, 5000));
+    // 条件等待：检测登录表单或主页特征（替代固定 sleep 5s）
+    try {
+      await page.waitForFunction(() => {
+        const usr = document.getElementById('usr');
+        const body = document.body?.textContent || '';
+        return (usr && getComputedStyle(usr).display !== 'none') ||
+               body.includes('In-Play') || body.includes('Soccer') ||
+               body.includes('My Events') || body.includes('Balance');
+      }, { timeout: 8000 });
+    } catch (_) {}
 
     let loginClicked = false;
     const popupCount = { passcodePage: 0, passcodeDialog: 0, kickedOut: 0 };
@@ -376,7 +434,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
             const btn = document.querySelector("#back_login");
             if (btn) btn.click();
           });
-          await new Promise((r) => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 1500));
           loginClicked = false;
           console.log("[HgCrawler] 已点击普通登入，等待登录页面加载后重新登录...");
           break;
@@ -394,7 +452,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
             const btn = document.querySelector("#kick_ok_btn");
             if (btn) btn.click();
           });
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 600));
           // 2. 强制移除弹窗容器的 .on 类
           await page.evaluate(() => {
             const dialogIds = ["alert_kick", "C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "system_popup"];
@@ -418,8 +476,8 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
               console.warn("[HgCrawler] 清除 Cookie 失败:", e.message);
             }
             try {
-              await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-              await new Promise((r) => setTimeout(r, 3000));
+              await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+              await new Promise((r) => setTimeout(r, 1500));
               console.log("[HgCrawler] 已重新导航到登录页");
             } catch (e) {
               console.warn("[HgCrawler] 重新导航失败:", e.message);
@@ -438,7 +496,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
           console.log("[HgCrawler] 检测到弹窗，尝试处理... (" + detected.detail + ", loginClicked=" + loginClicked + ")");
           const clicked = await clickNoButton(page);
           if (clicked) {
-            await new Promise((r) => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 1000));
             try { await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }); } catch (_) {}
           } else {
             await new Promise((r) => setTimeout(r, 1000));
@@ -556,7 +614,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
             popupCount.kickedOut = 0;
             console.log("[HgCrawler] ✓ 已点击登录按钮");
           }
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 500));
           break;
 
         case 'WAIT_RESPONSE':

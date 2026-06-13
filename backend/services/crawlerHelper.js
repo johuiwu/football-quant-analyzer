@@ -95,7 +95,7 @@ export function getDeepSeekClient() {
  * @param {string} [league] — 联赛名称（可选）
  * @returns {Promise<{cornerHome: number, cornerAway: number, cornerHandicap: number, cornerOdds: number} | null>}
  *
- * [Future] 替换为真实角球数据源（如 hga050.com 的页面抓取逻辑）
+ * [Future] 替换为真实角球数据源（如 hga038.com 的页面抓取逻辑）
  */
 export async function fetchCornerOdds(matchId, league) {
   if (CRAWLER_DISABLED) {

@@ -32,7 +32,7 @@ export default function CrawlerControlPanel() {
   const autoRefresh = useCornerStore((s) => s.autoRefresh);
   const setAutoRefresh = useCornerStore((s) => s.setAutoRefresh);
   const [crawlerData, setCrawlerData] = [useCornerStore((s) => s.crawlerData), useCornerStore((s) => s.setCrawlerData)];
-  const [activeTab, setActiveTab] = useState<"matches" | "raw" | "settings">("matches");
+  const [activeTab, setActiveTab] = useState<"matches" | "settings">("matches");
   const storeAccount = useCornerStore((s) => s.accountConfig);
   const storeSettings = useCornerStore((s) => s.settings);
   const [credentials, setCredentials] = useState(() => ({
@@ -450,9 +450,7 @@ export default function CrawlerControlPanel() {
           }
 
           setCrawlerData({
-            matches: mergedMatchList.map(normalizeMatchForRender),
-            allText: rawMatches.allText || [],
-            allElements: rawMatches.allElements || []
+            matches: mergedMatchList.map(normalizeMatchForRender)
           } as any);
           setStatus(prev => ({ ...prev, matchesCount: matchCount, lastUpdate: Date.now() }));
 
@@ -568,7 +566,7 @@ export default function CrawlerControlPanel() {
       if (cancelled) return;
       interval = setInterval(() => {
         fetchMatches(false);
-      }, 5000);
+      }, 15000);
     };
 
     if (autoRefresh) {
@@ -585,14 +583,14 @@ export default function CrawlerControlPanel() {
   // 定时同步后端轮询状态（检测后端自动暂停等）
   useEffect(() => {
     if (!isBackendPolling) return;
-    const timer = setInterval(() => { fetchStatus(); }, 5000);
+    const timer = setInterval(() => { fetchStatus(); }, 10000);
     return () => clearInterval(timer);
   }, [isBackendPolling]);
 
   // 登录进行中时持续轮询后端状态（Tab 切回来后检测登录完成）
   useEffect(() => {
     if (!storeLoginInProgress) return;
-    const timer = setInterval(() => { fetchStatus(); }, 3000);
+    const timer = setInterval(() => { fetchStatus(); }, 5000);
     return () => clearInterval(timer);
   }, [storeLoginInProgress]);
 
@@ -716,7 +714,6 @@ export default function CrawlerControlPanel() {
       <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
         {[
           { id: "matches", icon: <Activity className="w-3.5 h-3.5" />, label: "角球" },
-          { id: "raw", icon: <Activity className="w-3.5 h-3.5" />, label: "原始数据" },
           { id: "settings", icon: <Settings className="w-3.5 h-3.5" />, label: "设置" },
         ].map((tab) => (
           <button type="button"
@@ -828,7 +825,60 @@ export default function CrawlerControlPanel() {
                         const cornerGroups = groupByCategory(cornerHandicaps);
                         const mainGroups = groupByCategory(mainHandicaps);
 
-                        const renderGroup = (groupKey: string, items: any[]) => {
+                        const renderMainGroup = (groupKey: string, items: any[]) => {
+                          const first = items[0];
+                          const isOU = first.category === "O/U";
+                          const isHDP = first.category === "HDP";
+                          const label = first.categoryLabel || first.category;
+                          const shortLabel = label.length > 4 ? label.replace("上半场 ", "半") : label;
+
+                          // 多个盘口线时，按行分组（上行=大/主，下行=小/客）
+                          const overItems = items.filter((h: any) => (h.odds?.over ?? h.odds?.home ?? 0) >= 0);
+                          const underItems = items.filter((h: any) => (h.odds?.under ?? h.odds?.away ?? 0) >= 0);
+                          const colCount = Math.max(overItems.length, underItems.length, 2);
+
+                          return (
+                            <div className="rounded border border-slate-700/50 bg-slate-900/40">
+                              <div className="text-[11px] text-slate-300 font-medium text-center py-1 border-b border-slate-700/50">
+                                {shortLabel}
+                              </div>
+                              {isHDP && (
+                                <div className={`grid gap-0`} style={{ gridTemplateColumns: `repeat(${Math.max(colCount, 2)}, 1fr)` }}>
+                                  {overItems.map((h, i) => (
+                                    <div key={i} className="px-1.5 py-1 text-center border-b border-slate-800/50">
+                                      <div className="text-[10px] text-slate-400">{h.line ?? "--"}</div>
+                                      <div className="text-[11px] font-bold text-red-400">{(h.odds?.home || 0).toFixed(2)}</div>
+                                    </div>
+                                  ))}
+                                  {underItems.map((h, i) => (
+                                    <div key={i} className="px-1.5 py-1 text-center">
+                                      <div className="text-[10px] text-slate-400">{h.line ?? "--"}</div>
+                                      <div className="text-[11px] font-bold text-red-400">{(h.odds?.away || 0).toFixed(2)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {isOU && (
+                                <div className={`grid gap-0`} style={{ gridTemplateColumns: `repeat(${Math.max(colCount, 2)}, 1fr)` }}>
+                                  {overItems.map((h, i) => (
+                                    <div key={i} className="px-1.5 py-1 text-center border-b border-slate-800/50">
+                                      <div className="text-[10px] text-slate-400">大 {h.line ?? "--"}</div>
+                                      <div className="text-[11px] font-bold text-red-400">{(h.odds?.over || 0).toFixed(2)}</div>
+                                    </div>
+                                  ))}
+                                  {underItems.map((h, i) => (
+                                    <div key={i} className="px-1.5 py-1 text-center">
+                                      <div className="text-[10px] text-slate-400">小 {h.line ?? "--"}</div>
+                                      <div className="text-[11px] font-bold text-red-400">{(h.odds?.under || 0).toFixed(2)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        };
+
+                        const renderCornerGroup = (groupKey: string, items: any[]) => {
                           const first = items[0];
                           const isOU = first.category === "O/U";
                           const isHDP = first.category === "HDP";
@@ -837,63 +887,41 @@ export default function CrawlerControlPanel() {
                           const isOneX2 = first.category === "1X2";
                           const label = first.categoryLabel || first.category;
                           const shortLabel = label.length > 4 ? label.replace("上半场 ", "半") : label;
-                          const isCorner = first.marketGroup === "corner";
-                          const headerColor = isCorner ? "text-blue-300" : "text-amber-300";
-                          const borderColor = isCorner ? "border-blue-800/30" : "border-amber-800/30";
+
+                          // 多个盘口线时，按上下行分布
+                          const overItems = items.filter((h: any) => (h.odds?.over ?? h.odds?.home ?? h.odds?.odd ?? 0) >= 0);
+                          const underItems = items.filter((h: any) => (h.odds?.under ?? h.odds?.away ?? h.odds?.even ?? 0) >= 0);
+                          const colCount = Math.max(overItems.length, underItems.length, 2);
 
                           return (
-                            <div className={`rounded border ${borderColor} bg-slate-900/40`}>
-                              <div className={`text-[11px] ${headerColor} font-medium text-center py-1 border-b ${borderColor}`}>
+                            <div className="rounded border border-blue-800/30 bg-slate-900/40">
+                              <div className="text-[11px] text-blue-300 font-medium text-center py-1 border-b border-blue-800/30">
                                 {shortLabel}
                               </div>
-                              {isOU && items.map((h, i) => (
-                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">大{h.line ?? "--"}</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.over || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">小{h.line ?? "--"}</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.under || 0).toFixed(2)}</div>
-                                  </div>
+                              {(isOU || isHDP || isNext || isOE) && (
+                                <div className="grid gap-0" style={{ gridTemplateColumns: `repeat(${Math.max(colCount, 2)}, 1fr)` }}>
+                                  {overItems.map((h, i) => (
+                                    <div key={i} className="px-1.5 py-1 text-center border-b border-slate-800/50">
+                                      <div className="text-[10px] text-slate-400">
+                                        {isOU ? `大${h.line ?? "--"}` : isHDP ? `主${h.line ?? "--"}` : isNext ? (h.line ? `第${Math.round(h.line)}球(主)` : "主") : "单"}
+                                      </div>
+                                      <div className="text-[11px] font-bold text-red-400">
+                                        {(h.odds?.over ?? h.odds?.home ?? h.odds?.odd ?? 0).toFixed(2)}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {underItems.map((h, i) => (
+                                    <div key={i} className="px-1.5 py-1 text-center">
+                                      <div className="text-[10px] text-slate-400">
+                                        {isOU ? `小${h.line ?? "--"}` : isHDP ? `客${h.line ?? "--"}` : isNext ? (h.line ? `第${Math.round(h.line)}球(客)` : "客") : "双"}
+                                      </div>
+                                      <div className="text-[11px] font-bold text-red-400">
+                                        {(h.odds?.under ?? h.odds?.away ?? h.odds?.even ?? 0).toFixed(2)}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                              {isHDP && items.map((h, i) => (
-                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">主{h.line ?? "--"}</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.home || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">客{h.line ?? "--"}</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.away || 0).toFixed(2)}</div>
-                                  </div>
-                                </div>
-                              ))}
-                              {isOE && items.map((h, i) => (
-                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">单</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.odd || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">双</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.even || 0).toFixed(2)}</div>
-                                  </div>
-                                </div>
-                              ))}
-                              {isNext && items.map((h, i) => (
-                                <div key={i} className="grid grid-cols-2 divide-x divide-slate-800">
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">主</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.home || 0).toFixed(2)}</div>
-                                  </div>
-                                  <div className="px-1.5 py-1 text-center">
-                                    <div className="text-[10px] text-slate-400">客</div>
-                                    <div className="text-[11px] font-bold text-red-400">{(h.odds?.away || 0).toFixed(2)}</div>
-                                  </div>
-                                </div>
-                              ))}
+                              )}
                               {isOneX2 && items.map((h, i) => (
                                 <div key={i} className="grid grid-cols-3 divide-x divide-slate-800">
                                   <div className="px-1 py-1 text-center">
@@ -923,7 +951,7 @@ export default function CrawlerControlPanel() {
                                 </div>
                                 <div className="grid grid-cols-4 gap-1.5">
                                   {Object.entries(cornerGroups).map(([k, items]) => (
-                                    <div key={k}>{renderGroup(k, items)}</div>
+                                    <div key={k} className="min-w-0">{renderCornerGroup(k, items)}</div>
                                   ))}
                                 </div>
                               </div>
@@ -931,12 +959,25 @@ export default function CrawlerControlPanel() {
                             {Object.keys(mainGroups).length > 0 && (
                               <div>
                                 <div className="text-[10px] text-amber-400 mb-1 font-medium flex items-center gap-1">
-                                  <span className="w-1 h-1 rounded-full bg-amber-400" />主盘口
+                                  <span className="w-1 h-1 rounded-full bg-amber-400" />让球/大小盘口
                                 </div>
                                 <div className="grid grid-cols-4 gap-1.5">
-                                  {Object.entries(mainGroups).map(([k, items]) => (
-                                    <div key={k}>{renderGroup(k, items)}</div>
-                                  ))}
+                                  {(() => {
+                                    // 固定顺序：让球 → 半让球 → 大小球 → 半大小球
+                                    const order = ["让球", "大小球"];
+                                    const sortedEntries = Object.entries(mainGroups).sort((a, b) => {
+                                      const aIsHDP = (a[1][0]?.category || "") === "HDP";
+                                      const bIsHDP = (b[1][0]?.category || "") === "HDP";
+                                      const aIsHalf = a[1][0]?.period === "half";
+                                      const bIsHalf = b[1][0]?.period === "half";
+                                      // HDP在前，OU在后；同类型内全场在前，半场在后
+                                      if (aIsHDP !== bIsHDP) return aIsHDP ? -1 : 1;
+                                      return (aIsHalf ? 1 : 0) - (bIsHalf ? 1 : 0);
+                                    });
+                                    return sortedEntries.map(([k, items]) => (
+                                      <div key={k} className="min-w-0">{renderMainGroup(k, items)}</div>
+                                    ));
+                                  })()}
                                 </div>
                               </div>
                             )}
@@ -989,55 +1030,6 @@ export default function CrawlerControlPanel() {
         <div className="mt-4 pt-4 border-t border-slate-800 text-xs text-slate-500 flex items-center gap-2">
           <RefreshCw className="w-3 h-3" />
           更新时间：{new Date(status.lastUpdate).toLocaleTimeString()}
-        </div>
-      )}
-      {activeTab === "raw" && (
-        <div className="space-y-4 max-h-[600px] overflow-y-auto">
-          {!crawlerData ? (
-            <div className="text-center py-8 text-slate-500 text-sm">
-              暂无原始数据，请点击刷新获取数据。
-            </div>
-          ) : (
-            <>
-              <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-4">
-                <h4 className="text-sm font-medium text-slate-300 mb-3">JSON数据</h4>
-                <pre className="text-xs text-slate-300 bg-slate-800/50 p-2 rounded overflow-x-auto">
-                  {JSON.stringify(crawlerData, null, 2)}
-                </pre>
-              </div>
-
-              <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-4">
-                <h4 className="text-sm font-medium text-slate-300 mb-3">原始文本列表(前100条)</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {(crawlerData.allText || []).slice(0, 100).map((text, idx) => (
-                    <div key={idx} className="bg-slate-800/50 px-2 py-1 rounded">
-                      <span className="text-slate-500 mr-2">{idx}.</span>
-                      <span className="text-slate-300">{text}</span>
-                    </div>
-                  ))}
-                </div>
-                {(crawlerData.allText || []).length > 100 && (
-                  <p className="text-xs text-slate-500 mt-2">...还有 {(crawlerData.allText || []).length - 100} 条文本</p>
-                )}
-              </div>
-
-              <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-4">
-                <h4 className="text-sm font-medium text-slate-300 mb-3">原始元素(前50条带位置)</h4>
-                <div className="space-y-1 text-xs">
-                  {(crawlerData.allElements || []).slice(0, 50).map((elem, idx) => (
-                    <div key={idx} className="flex items-start gap-2 bg-slate-800/50 px-2 py-1 rounded">
-                      <span className="text-slate-500 w-8 flex-shrink-0">{idx}.</span>
-                      <span className="text-blue-400 w-16 flex-shrink-0">({elem.x},{elem.y})</span>
-                      <span className="text-slate-300 truncate">{elem.text}</span>
-                    </div>
-                  ))}
-                </div>
-                {(crawlerData.allElements || []).length > 50 && (
-                  <p className="text-xs text-slate-500 mt-2">...还有 {(crawlerData.allElements || []).length - 50} 个元素</p>
-                )}
-              </div>
-            </>
-          )}
         </div>
       )}
     </div>

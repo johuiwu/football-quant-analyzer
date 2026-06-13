@@ -114,20 +114,24 @@ function computeDelta(oldMatches, newMatches) {
 }
 
 /**
- * 单次轮询核心逻辑（内部函数，消除 start/resume 中的重复代码）
+ * 单次轮询辅助函数：爬取并映射数据
  */
-async function pollOnce() {
-  await new Promise(r => setTimeout(r, Math.random() * 500)); // 随机抖动 0-500ms
+async function fetchMatchData() {
+  await new Promise(r => setTimeout(r, Math.random() * 500));
   const result = await crawlCornerMatches();
   const rawMatches = result.success ? (result.data?.matches || []) : [];
   const mainMk = result.mainMarkets || {};
   const matches = rawMatches.map(mapMatchToCornerFormat);
+  return { matches, mainMk };
+}
 
-  // ★ 增量更新：计算数据变化
-  const delta = computeDelta(cachedMatches, matches);
+/**
+ * 单次轮询辅助函数：计算增量变化并更新分析统计
+ */
+function computeChangesAndAnalytics(newMatches) {
+  const delta = computeDelta(cachedMatches, newMatches);
   const hasChanges = delta.length > 0;
 
-  // ★ 轮询分析统计
   pollingAnalytics.totalPolls++;
   if (hasChanges) {
     const now = Date.now();
@@ -162,6 +166,13 @@ async function pollOnce() {
     pollingAnalytics.lastChangeAt = new Date(now).toISOString();
   }
 
+  return { delta, hasChanges };
+}
+
+/**
+ * 单次轮询辅助函数：评估策略并保存触发记录
+ */
+async function evaluateAndSaveTriggers(matches, hasChanges, delta) {
   if (hasChanges) {
     console.log("[cornerService] 数据变化: " + delta.length + " 项, 触发策略评估");
     for (const match of matches) {
@@ -179,12 +190,72 @@ async function pollOnce() {
       if (oldMatch) match.triggeredStrategies = oldMatch.triggeredStrategies || [];
     }
   }
+}
+
+/**
+ * 单次轮询辅助函数：自动投注处理
+ */
+async function processAutoBetsForMatches(matches) {
+  if (!betConfig.isRealMode || !betConfig.autoBetEnabled) return;
+  for (const match of matches) {
+    if (betConfig.trackedMatchIds.length > 0 && !betConfig.trackedMatchIds.includes(match.matchId)) {
+      console.log("[cornerService] 比赛不在追踪白名单中: matchId=" + match.matchId);
+      continue;
+    }
+    const triggeredIds = match.triggeredStrategies || [];
+    for (const sid of triggeredIds) {
+      try {
+        const isDup = await checkDuplicateBet(match.matchId, sid);
+        if (isDup) {
+          console.log("[cornerService] 跳过重复投注: " + match.matchId + " 策略" + sid);
+          continue;
+        }
+        await ensureBetTable();
+        const existingBet = await query(
+          "SELECT id FROM corner_bets WHERE match_id = ? AND strategy_id = ?",
+          [match.matchId || "", String(sid)]
+        );
+        if (existingBet && existingBet.length > 0) {
+          console.log("[cornerService] 已有投注记录，跳过入队: " + match.matchId + " 策略" + sid);
+          continue;
+        }
+        const genResult = await generatePendingBet(match, sid);
+        if (genResult.success && !genResult.skipped) {
+          const strategy = activeStrategies.find(s => s.id === sid);
+          betQueue.push({
+            betId: genResult.id,
+            historyId: null,
+            matchId: match.matchId,
+            matchName: match.matchName || "",
+            strategyId: sid,
+            odds: match.cornerOdds || 0,
+            amount: betConfig.amount,
+            handicap: match.cornerHandicap || 0,
+            betDirection: strategy?.betDirection || "auto"
+          });
+        }
+      } catch (e) {
+        console.error("[cornerService] 投注入队失败:", e.message);
+      }
+    }
+  }
+  processBetQueue().catch(e =>
+    console.error("[cornerService] 投注队列处理失败:", e.message)
+  );
+}
+
+/**
+ * 单次轮询核心逻辑（内部函数，消除 start/resume 中的重复代码）
+ */
+async function pollOnce() {
+  const { matches, mainMk } = await fetchMatchData();
+  const { delta, hasChanges } = computeChangesAndAnalytics(matches);
+  await evaluateAndSaveTriggers(matches, hasChanges, delta);
 
   cachedMatches = matches;
   cachedMainMarkets = mainMk || {};
   lastFetchTime = Date.now();
 
-  // 无比赛且无主盘口数据时自动暂停轮询，避免反复登录
   if (matches.length === 0 && Object.keys(mainMk).length === 0) {
     console.log("[cornerService] 暂无比赛，轮询已暂停");
     pauseCornerBackendPolling();
@@ -198,44 +269,7 @@ async function pollOnce() {
     console.log("[cornerService] 首次爬取完成，缓存已就绪");
   }
 
-  // 自动投注：策略触发后入队处理（需 UI开关 + 白名单非空）
-  if (betConfig.isRealMode && betConfig.autoBetEnabled) {
-    for (const match of matches) {
-      if (betConfig.trackedMatchIds.length === 0 || !betConfig.trackedMatchIds.includes(match.matchId)) continue;
-      const triggeredIds = evaluateStrategies(match, activeStrategies);
-      match.triggeredStrategies = triggeredIds;
-      for (const sid of triggeredIds) {
-        try {
-          const isDup = await checkDuplicateBet(match.matchId, sid);
-          if (isDup) {
-            console.log("[cornerService] 跳过重复投注: " + match.matchId + " 策略" + sid);
-            continue;
-          }
-          const genResult = await generatePendingBet(match, sid);
-          if (genResult.success && !genResult.skipped) {
-            // 获取策略的 betDirection
-            const strategy = activeStrategies.find(s => s.id === sid);
-            betQueue.push({
-              betId: genResult.id,
-              historyId: null,
-              matchId: match.matchId,
-              matchName: match.matchName || "",
-              strategyId: sid,
-              odds: match.cornerOdds || 0,
-              amount: betConfig.amount,
-              handicap: match.cornerHandicap || 0,
-              betDirection: strategy?.betDirection || "auto"
-            });
-          }
-        } catch (e) {
-          console.error("[cornerService] 投注入队失败:", e.message);
-        }
-      }
-    }
-    processBetQueue().catch(e =>
-      console.error("[cornerService] 投注队列处理失败:", e.message)
-    );
-  }
+  await processAutoBetsForMatches(matches);
 }
 
 export function startCornerBackendPolling() {
@@ -475,6 +509,7 @@ async function ensureTable() {
       await run("CREATE TABLE IF NOT EXISTS corner_history (id INTEGER PRIMARY KEY AUTOINCREMENT, match_id TEXT NOT NULL, match_name TEXT, strategy_id TEXT, triggered_at TEXT, bet_status TEXT DEFAULT 'pending', odds REAL, amount INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
       await run("CREATE INDEX IF NOT EXISTS idx_corner_history_match ON corner_history(match_id)");
       await run("CREATE INDEX IF NOT EXISTS idx_corner_history_time ON corner_history(created_at)");
+      await run("CREATE INDEX IF NOT EXISTS idx_corner_history_match_strategy ON corner_history(match_id, strategy_id)");
     } catch (err) { console.warn("[cornerService] table error:", err.message); }
   })();
   return tablePromise;
@@ -506,14 +541,30 @@ export async function saveCornerHistory(record) {
   } catch (err) { return { success: false, error: err.message }; }
 }
 
+const TRIGGER_COOLDOWN_MINUTES = 15;
+
 export async function saveCornerTrigger(match, strategyId) {
-  return saveCornerHistory({
-    match_id: match.matchId || "",
-    match_name: match.matchName || "",
-    strategy_id: String(strategyId),
-    odds: match.cornerOdds || 0,
-    bet_status: "pending"
-  });
+  await ensureTable();
+  try {
+    const matchId = match.matchId || "";
+    const sid = String(strategyId);
+    const cooldownTime = new Date(Date.now() - TRIGGER_COOLDOWN_MINUTES * 60 * 1000).toISOString();
+    const recent = await query(
+      "SELECT id FROM corner_history WHERE match_id = ? AND strategy_id = ? AND created_at > ? ORDER BY id DESC LIMIT 1",
+      [matchId, sid, cooldownTime]
+    );
+    if (recent && recent.length > 0) {
+      console.log("[cornerService] 策略" + sid + " 在 " + (match.matchName || matchId) + " 冷却期内，跳过重复记录");
+      return { success: true, skipped: true };
+    }
+    const result = await run(
+      "INSERT INTO corner_history (match_id, match_name, strategy_id, triggered_at, bet_status, odds, amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [matchId, match.matchName || "", sid, new Date().toISOString(), "pending", match.cornerOdds || 0, 0]
+    );
+    return { success: true, id: result.lastID };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 // ======================== 待执行投注 ========================
@@ -890,6 +941,49 @@ export async function rejectBet(betId) {
   }
 }
 
+/**
+ * 重试余额不足的投注（将 insufficient 状态重置为 pending 并重新入队）
+ */
+export async function retryBet(betId) {
+  await ensureBetTable();
+  try {
+    const [bet] = await query("SELECT * FROM corner_bets WHERE id = ? AND status = 'insufficient'", [betId]) || [];
+    if (!bet) {
+      return { success: false, error: "投注不存在或状态不是余额不足" };
+    }
+    await run("UPDATE corner_bets SET status = 'pending', error_message = NULL WHERE id = ?", [betId]);
+    await run(
+      "UPDATE corner_history SET bet_status = 'pending' WHERE match_id = ? AND strategy_id = ? AND bet_status = 'insufficient'",
+      [bet.match_id, String(bet.strategy_id)]
+    ).catch(() => {});
+    betQueue.push({
+      betId: bet.id,
+      matchId: bet.match_id,
+      matchName: bet.match_name || "",
+      strategyId: bet.strategy_id,
+      odds: bet.odds,
+      amount: bet.amount,
+      handicap: 0
+    });
+    processBetQueue().catch(e =>
+      console.error("[cornerService] 重试投注执行失败:", e.message)
+    );
+    return { success: true, betId: bet.id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 获取投注队列状态
+ */
+export function getBetQueueStatus() {
+  return {
+    queueLength: betQueue.length,
+    isProcessing: isProcessing
+  };
+}
+
 // ======================== 模拟记录管理（新增） ========================
 export async function getSimulationRecords({ matchId, strategyId, limit = 50 }) {
   await ensureSimulationTable();
@@ -944,5 +1038,18 @@ export async function getStrategyStats(strategyId) {
       totalProfit: 0,
       roi: 0
     };
+  }
+}
+
+// ======================== 清空历史记录 ========================
+export async function clearHistory() {
+  try {
+    await ensureTable();
+    await ensureBetTable();
+    await run("DELETE FROM corner_history", []);
+    await run("DELETE FROM corner_bets", []);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 }

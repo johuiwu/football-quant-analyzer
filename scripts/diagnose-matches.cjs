@@ -171,7 +171,7 @@ function printDiagnosisReport() {
   if (!diagnosis.login.success) {
     reasons.push("登录失败，无法获取任何页面内容");
     reasons.push("修复: 检查 HG_USERNAME / HG_PASSWORD 凭据是否正确");
-    reasons.push("修复: 检查 hga050.com 网站是否可正常访问");
+    reasons.push("修复: 检查 hga038.com 网站是否可正常访问");
   } else if (anyMatches) {
     reasons.push("至少一个分区有比赛数据，爬虫基本可用");
     const emptySections = Object.entries(diagnosis.sections)
@@ -230,8 +230,8 @@ function printDiagnosisReport() {
   console.log("\n[推荐方案]");
   if (!diagnosis.login.success) {
     console.log("  1. 修复登录凭据或手动登录后重试");
-    console.log("  2. 如果 hga050.com 改版，更新登录选择器");
-    console.log("  3. 检查网络是否可访问 hga050.com");
+    console.log("  2. 如果 hga038.com 改版，更新登录选择器");
+    console.log("  3. 检查网络是否可访问 hga038.com");
   } else if (!anyMatches) {
     const hasChallenge = Object.values(diagnosis.sections).some(e =>
       e.pageText.toLowerCase().includes("cloudflare") ||
@@ -300,7 +300,7 @@ async function main() {
   }
 
   if (!diagnosis.login.success) {
-    console.log("  正在登录 hga050.com...");
+    console.log("  正在登录 hga038.com...");
     try {
       const result = await cornerCrawler.loginToHG(HG_USERNAME, HG_PASSWORD);
       diagnosis.login.success = result.success;

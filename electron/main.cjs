@@ -127,20 +127,29 @@ function setupAutoUpdater() {
 
   autoUpdater.checkForUpdatesAndNotify();
 
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[autoUpdater] 正在检查更新...");
+    if (mainWindow) mainWindow.webContents.send('update-checking');
+  });
+
   autoUpdater.on("update-available", (info) => {
     console.log("[autoUpdater] 发现新版本:", info.version);
+    if (mainWindow) mainWindow.webContents.send('update-available', info);
   });
 
   autoUpdater.on("update-not-available", () => {
     console.log("[autoUpdater] 当前已是最新版本");
+    if (mainWindow) mainWindow.webContents.send('update-not-available');
   });
 
   autoUpdater.on("download-progress", (progressObj) => {
     console.log("[autoUpdater] 下载进度:", progressObj.percent.toFixed(2) + "%");
+    if (mainWindow) mainWindow.webContents.send('download-progress', progressObj);
   });
 
   autoUpdater.on("update-downloaded", (info) => {
     console.log("[autoUpdater] 新版本已下载，准备安装");
+    if (mainWindow) mainWindow.webContents.send('update-downloaded', info);
     dialog.showMessageBox({
       type: "info",
       title: "更新下载完成",
@@ -156,12 +165,23 @@ function setupAutoUpdater() {
 
   autoUpdater.on("error", (err) => {
     console.error("[autoUpdater] 更新出错:", err.message);
+    if (mainWindow) mainWindow.webContents.send('update-error', { message: err.message });
   });
 }
 
 // IPC: 前端手动触发检查更新
 ipcMain.on("check-for-updates", () => {
   autoUpdater.checkForUpdatesAndNotify();
+});
+
+// IPC: 前端手动触发下载更新
+ipcMain.on("download-update", () => {
+  autoUpdater.downloadUpdate();
+});
+
+// IPC: 前端触发安装更新
+ipcMain.on("install-update", () => {
+  autoUpdater.quitAndInstall();
 });
 
 // ─── HTTP API 辅助函数（替代直接 require ESM 模块） ───

@@ -7,13 +7,13 @@ const { URL } = require('url');
 
 // Config from INI
 const CONFIG = {
-    hgUrl: 'https://www.hga050.com',
+    hgUrl: 'https://www.hga038.com',
     hgUsername: 'liuwei1108',
     hgPassword: 'Hc6957061',
     hgUid: 'q94s507em40685531l8731371b1',
     hgVer: '6f209d8aea89a7ef796ed9e7f002e7a3_1779944027525',
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Version/8.5 Mobile/12F70 Safari/600.1',
-    apiHosts: ['m510.crw066.com', 'www.hga038.com', 'www.hga050.com']
+    apiHosts: ['m510.crw066.com', 'www.hga038.com', 'www.hga038.com']
 };
 
 // Bypass SSL
@@ -220,7 +220,7 @@ async function main() {
     // Step 4: Connect WebSocket
     console.log('\n[4] Connecting to WebSocket...\n');
     
-    const wsHost = workingHost || 'www.hga050.com';
+    const wsHost = workingHost || 'www.hga038.com';
     const wsPaths = [
         '/ws', '/realtime', '/socket', '/api/ws', '/eventbus',
         '/client', '/push', '/live', '/stream', '/feed',
@@ -285,8 +285,8 @@ async function main() {
                 fs.writeFileSync(urlFile, closed[0].url, 'utf8');
                 console.log(`\nBest candidate (server responded): ${closed[0].url}`);
             } else {
-                fs.writeFileSync(urlFile, 'wss://www.hga050.com/ws', 'utf8');
-                console.log('\nBest guess: wss://www.hga050.com/ws');
+                fs.writeFileSync(urlFile, 'wss://www.hga038.com/ws', 'utf8');
+                console.log('\nBest guess: wss://www.hga038.com/ws');
             }
         }
     }

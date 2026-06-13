@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet } from "../services/cornerService.js";
+import { getLiveCornerData, evaluateStrategies, getCornerHistory, saveCornerHistory, clearHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, DEFAULT_STRATEGIES, setCornerStrategies, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet, retryBet, getBetQueueStatus } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus, getPollingAnalytics } from "../services/cornerService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
@@ -44,9 +44,9 @@ router.post("/corner/fetch", async (req, res) => {
   try {
     resetBrowserClosedFlag();
     console.log("[cornerRoutes] /corner/fetch 即时爬取开始...");
-    const timeoutMs = 90000;
+    const timeoutMs = 60000; // 从 90s 缩短到 60s（纯HTTP模式应在30s内完成）
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("爬取超时（90s）")), timeoutMs)
+      setTimeout(() => reject(new Error("爬取超时（60s）")), timeoutMs)
     );
     const result = await Promise.race([crawlCornerMatches(), timeoutPromise]);
     if (!result || !result.success) {
@@ -146,6 +146,17 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     if (!username || !password) {
       return res.status(400).json({ success: false, error: "请提供用户名和密码" });
     }
+
+    // ★ Cookie 快速路径：先检查凭证是否有效，有效则直接返回成功
+    try {
+      const { loadAndValidate } = await import("../services/credentialManager.js");
+      const validCreds = await loadAndValidate();
+      if (validCreds && validCreds.uid && validCreds.ver) {
+        console.log("[cornerRoutes] /corner/login: 凭证有效，跳过浏览器登录");
+        resetBrowserClosedFlag();
+        return res.json({ success: true, method: "cookie_fastpath", message: "Cookie有效，已跳过浏览器登录" });
+      }
+    } catch (_) {}
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("登录超时，请重试")), 90000)
@@ -503,6 +514,35 @@ router.post("/corner/reject-bet/:id", async (req, res) => {
   }
 });
 
+// ======================== POST /api/corner/retry-bet/:id ========================
+router.post("/corner/retry-bet/:id", async (req, res) => {
+  try {
+    const betId = parseInt(req.params.id);
+    if (!betId) {
+      return res.status(400).json({ success: false, error: "无效的投注ID" });
+    }
+    const result = await retryBet(betId);
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+    res.json({ success: true, betId: result.betId, message: "投注已重新入队" });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/retry-bet error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/bet-queue-status ========================
+router.get("/corner/bet-queue-status", async (req, res) => {
+  try {
+    const status = getBetQueueStatus();
+    res.json({ success: true, data: status });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/bet-queue-status error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ======================== GET /api/corner/polling-analytics ========================
 router.get("/corner/polling-analytics", async (req, res) => {
   try {
@@ -510,6 +550,21 @@ router.get("/corner/polling-analytics", async (req, res) => {
     res.json({ success: true, data: analytics });
   } catch (err) {
     console.error("[cornerRoutes] /corner/polling-analytics error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== DELETE /api/corner/history ========================
+router.delete("/corner/history", async (req, res) => {
+  try {
+    const result = await clearHistory();
+    if (result.success) {
+      res.json({ success: true, message: "历史记录已清空" });
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/history DELETE error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

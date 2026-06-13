@@ -146,7 +146,7 @@ foreach ($t in $hgTypes) {
 # 4. 全局搜索所有类型中的 WebSocket/URL/网络相关字符串
 Append-Output ""
 Append-Output "=== 全局搜索: WebSocket/URL/网络相关字符串 ==="
-$keywords = "ws://|wss://|websocket|WebSocket|gismo|timelinedelta|sportradar|betradar|hga050|crw066|transform|socket|subscribe|akamaized|cdn|api\.|/api/|\.php|\.json|http://|https://|wager|bet_|get_game|get_live|corner|Corners|match_|timeline"
+$keywords = "ws://|wss://|websocket|WebSocket|gismo|timelinedelta|sportradar|betradar|hga038|crw066|transform|socket|subscribe|akamaized|cdn|api\.|/api/|\.php|\.json|http://|https://|wager|bet_|get_game|get_live|corner|Corners|match_|timeline"
 $allTypes = $assembly.GetTypes()
 foreach ($t in $allTypes) {
     foreach ($m in $t.GetMethods([System.Reflection.BindingFlags]::Public -bor [System.Reflection.BindingFlags]::NonPublic -bor [System.Reflection.BindingFlags]::Static -bor [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::DeclaredOnly)) {

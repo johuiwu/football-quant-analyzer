@@ -39,6 +39,11 @@ let currentUid = null; // 当前 uid 缓存
 
 const HG_URL = process.env.HG_URL || "https://www.hga050.com";
 
+const FALLBACK_DOMAINS = [
+  "https://www.hga038.com",
+  "https://m510.crw066.com",
+];
+
 /** 角球系统浏览器固定无头模式 */
 function getHeadless() {
   return true;
@@ -106,11 +111,15 @@ async function launchBrowser() {
         "--disable-dev-shm-usage",
         "--disable-gpu",
         "--disable-blink-features=AutomationControlled",
+        "--ignore-certificate-errors",
         `--window-size=${vp.width},${vp.height}`,
         "--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process,TranslateUI,IPCFloodingProtection",
         "--enable-features=NetworkService,NetworkServiceInProcess",
         "--lang=zh-CN,zh",
-        "--accept-lang=zh-CN,zh;q=0.9"
+        "--accept-lang=zh-CN,zh;q=0.9",
+        ...(process.env.PUPPETEER_PROXY
+          ? [`--proxy-server=${process.env.PUPPETEER_PROXY}`, "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"]
+          : [])
       ],
       timeout: 120000 // 启动超时 2 分钟
     });
@@ -316,6 +325,7 @@ export {
   isBrowserActive,
   closeSharedBrowser,
   HG_URL,
+  FALLBACK_DOMAINS,
   saveCookiesToDisk,
   loadCookiesFromDisk,
   MOBILE_UA,

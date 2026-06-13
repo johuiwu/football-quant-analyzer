@@ -5,11 +5,11 @@
 Write-Host "=== Deep WSS Path Probe ===" -ForegroundColor Cyan
 Write-Host ""
 
-$baseHost = "www.hga050.com"
+$baseHost = "www.hga038.com"
 $candidatePaths = @("/realtime", "/client", "/api/socket", "/eventbus", "/ws", "/websocket", "/socket")
 
 # Also try alternative domain patterns from INI (hga038, hga050 etc)
-$altHosts = @("www.hga050.com", "m510.crw066.com", "www.hga038.com")
+$altHosts = @("www.hga038.com", "m510.crw066.com", "www.hga038.com")
 
 foreach ($host2 in $altHosts) {
     Write-Host "Testing host: $host2" -ForegroundColor Yellow
@@ -101,7 +101,7 @@ foreach ($host2 in $altHosts) {
 
 # Write best result
 $urlFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "websocket_url.txt"
-Set-Content -Path $urlFile -Value "wss://www.hga050.com/realtime" -NoNewline -Encoding UTF8
-Write-Host "Best candidate: wss://www.hga050.com/realtime" -ForegroundColor Yellow
+Set-Content -Path $urlFile -Value "wss://www.hga038.com/realtime" -NoNewline -Encoding UTF8
+Write-Host "Best candidate: wss://www.hga038.com/realtime" -ForegroundColor Yellow
 Write-Host "Written to: $urlFile" -ForegroundColor Green
 Start-Process notepad.exe $urlFile

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BarChart3, TrendingUp, RefreshCw, ClipboardList } from "lucide-react";
+import { BarChart3, TrendingUp, RefreshCw } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 
 interface HistoryRow {
@@ -8,20 +8,6 @@ interface HistoryRow {
   match_name: string;
   strategy_id: string;
   odds: number;
-  created_at: string;
-}
-
-interface SimRecord {
-  id: number;
-  strategy_id: string;
-  match_id: string;
-  match_name: string;
-  elapsed_minutes: number;
-  trigger_odds: number;
-  trigger_handicap: number;
-  bet_direction: string;
-  result: string;
-  profit_loss: number;
   created_at: string;
 }
 
@@ -38,15 +24,14 @@ interface BetRecord {
   created_at: string;
 }
 
-type SubTab = "simulation" | "trigger" | "bets";
+type SubTab = "trigger" | "bets";
 
 export default function CornerHistoryChart() {
   const historyFilterMatchId = useCornerStore((s) => s.historyFilterMatchId);
   const setHistoryFilterMatchId = useCornerStore((s) => s.setHistoryFilterMatchId);
 
-  const [subTab, setSubTab] = useState<SubTab>("simulation");
+  const [subTab, setSubTab] = useState<SubTab>("trigger");
   const [historyData, setHistoryData] = useState<HistoryRow[]>([]);
-  const [simData, setSimData] = useState<SimRecord[]>([]);
   const [betsData, setBetsData] = useState<BetRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,24 +49,6 @@ export default function CornerHistoryChart() {
       const resp = await fetch("/api/corner/history?limit=50");
       const json = await resp.json();
       if (json.success) setHistoryData(json.data || []);
-      else setError(json.error || "获取失败");
-    } catch (err: any) {
-      setError(err.message || "网络错误");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 获取模拟记录
-  const fetchSimRecords = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      let url = "/api/corner/simulation-records?limit=100";
-      if (historyFilterMatchId) url += "&matchId=" + encodeURIComponent(historyFilterMatchId);
-      const resp = await fetch(url);
-      const json = await resp.json();
-      if (json.success) setSimData(json.data || []);
       else setError(json.error || "获取失败");
     } catch (err: any) {
       setError(err.message || "网络错误");
@@ -110,66 +77,35 @@ export default function CornerHistoryChart() {
 
   useEffect(() => {
     if (subTab === "trigger") fetchHistory();
-    else if (subTab === "simulation") fetchSimRecords();
     else fetchBets();
   }, [subTab, historyFilterMatchId]);
 
-  // ====== 模拟记录表格 ======
-  const renderSimulationTab = () => {
-    if (simData.length === 0 && !loading) {
-      return (
-        <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-12 text-center">
-          <div className="text-4xl mb-3">📋</div>
-          <p className="text-slate-400 text-sm">暂无模拟记录</p>
-          <p className="text-[11px] text-slate-600 mt-1">前往「策略配置」运行回测后，数据将在此展示</p>
-        </div>
-      );
+  // 按 (match_name + strategy_id) 分组聚合
+  function aggregateTriggers(rows: HistoryRow[]): (HistoryRow & { count: number })[] {
+    const grouped = new Map<string, { row: HistoryRow; count: number }>();
+    for (const item of rows) {
+      const key = (item.match_name || "") + "_" + (item.strategy_id || "");
+      if (grouped.has(key)) {
+        const existing = grouped.get(key)!;
+        existing.count += 1;
+        if (item.created_at > existing.row.created_at) {
+          existing.row.odds = item.odds;
+        }
+        if (item.created_at < existing.row.created_at) {
+          existing.row.created_at = item.created_at;
+        }
+      } else {
+        grouped.set(key, { row: { ...item }, count: 1 });
+      }
     }
-
-    return (
-      <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-hidden">
-        <div className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
-          <div className="col-span-3">比赛</div>
-          <div className="col-span-1 text-center">策略</div>
-          <div className="col-span-1 text-center">时间</div>
-          <div className="col-span-1 text-center">盘口</div>
-          <div className="col-span-1 text-center">赔率</div>
-          <div className="col-span-1 text-center">方向</div>
-          <div className="col-span-1 text-center">结果</div>
-          <div className="col-span-1 text-center">盈亏</div>
-          <div className="col-span-2 text-right">时间</div>
-        </div>
-        {simData.map((row) => (
-          <div key={row.id} className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
-            <div className="col-span-3 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
-            <div className="col-span-1 text-center text-emerald-400 font-mono">{row.strategy_id}</div>
-            <div className="col-span-1 text-center text-slate-400 font-mono">{row.elapsed_minutes}'</div>
-            <div className="col-span-1 text-center text-blue-400 font-mono">{row.trigger_handicap?.toFixed(2)}</div>
-            <div className="col-span-1 text-center text-amber-400 font-mono">{row.trigger_odds?.toFixed(2)}</div>
-            <div className="col-span-1 text-center text-slate-400">{row.bet_direction}</div>
-            <div className="col-span-1 text-center">
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                row.result === 'win' ? 'bg-emerald-500/15 text-emerald-400' :
-                row.result === 'lose' ? 'bg-rose-500/15 text-rose-400' :
-                'bg-slate-700/50 text-slate-400'
-              }`}>
-                {row.result === 'win' ? '赢' : row.result === 'lose' ? '输' : '待定'}
-              </span>
-            </div>
-            <div className={`col-span-1 text-center font-mono ${(row.profit_loss || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {(row.profit_loss || 0) > 0 ? '+' : ''}{row.profit_loss?.toFixed(1)}
-            </div>
-            <div className="col-span-2 text-right text-slate-500 text-[10px]">{row.created_at?.slice(0, 19) || "—"}</div>
-          </div>
-        ))}
-      </div>
-    );
-  };
+    return Array.from(grouped.values()).map(({ row, count }) => ({ ...row, count }));
+  }
 
   // ====== 触发历史（原有逻辑） ======
   const renderTriggerTab = () => {
+    const aggregatedData = aggregateTriggers(historyData);
     const strategyCounts: Record<string, number> = {};
-    historyData.forEach((d) => {
+    aggregatedData.forEach((d) => {
       if (d.strategy_id) {
         d.strategy_id.split(",").forEach((sid) => {
           const s = sid.trim();
@@ -183,9 +119,9 @@ export default function CornerHistoryChart() {
       count: strategyCounts[k] || 0,
     }));
     const barColors = ["#F59E0B", "#10B981", "#3B82F6", "#8B5CF6", "#EC4899"];
-    const recent = [...historyData].reverse().slice(-10);
+    const recent = [...aggregatedData].reverse().slice(-10);
 
-    if (historyData.length === 0 && !loading) {
+    if (aggregatedData.length === 0 && !loading) {
       return (
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-12 text-center">
           <div className="text-4xl mb-3">📊</div>
@@ -200,14 +136,14 @@ export default function CornerHistoryChart() {
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-5">
           <h4 className="text-xs font-medium text-slate-300 flex items-center gap-1.5 mb-4">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-            赔率趋势 (最近 {Math.min(historyData.length, 10)} 条)
+            赔率趋势 (最近 {Math.min(aggregatedData.length, 10)} 条)
           </h4>
           <div className="space-y-2">
             {recent.map((row, i) => {
               const pct = Math.min(100, ((row.odds || 0) / 2) * 100);
               return (
                 <div key={row.id || i} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-14 text-slate-500 text-right shrink-0">#{historyData.length - recent.length + i + 1}</span>
+                  <span className="w-14 text-slate-500 text-right shrink-0">#{aggregatedData.length - recent.length + i + 1}</span>
                   <div className="flex-1 h-5 bg-slate-800 rounded relative overflow-hidden">
                     <div className="absolute inset-y-0 left-0 bg-emerald-500/30 rounded transition-all" style={{ width: pct + "%" }} />
                   </div>
@@ -245,11 +181,13 @@ export default function CornerHistoryChart() {
             <div className="col-span-2 text-center">赔率</div>
             <div className="col-span-3 text-right">时间</div>
           </div>
-          {historyData.map((row, i) => (
+          {aggregatedData.map((row, i) => (
             <div key={row.id || i} className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
               <div className="col-span-1 text-slate-500">{i + 1}</div>
               <div className="col-span-4 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
-              <div className="col-span-2 text-center text-emerald-400 font-mono">{row.strategy_id || "—"}</div>
+              <div className="col-span-2 text-center text-emerald-400 font-mono">
+                {row.strategy_id || "—"}{row.count > 1 ? ` (×${row.count})` : ""}
+              </div>
               <div className="col-span-2 text-center text-amber-400 font-mono">{(row.odds ?? 0).toFixed(2)}</div>
               <div className="col-span-3 text-right text-slate-500 text-[10px]">{row.created_at?.slice(0, 19) || "—"}</div>
             </div>
@@ -321,26 +259,39 @@ export default function CornerHistoryChart() {
             </span>
           )}
         </div>
-        <button onClick={() => {
-          if (subTab === "trigger") fetchHistory();
-          else if (subTab === "simulation") fetchSimRecords();
-          else fetchBets();
-        }} disabled={loading}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700/50 transition-all disabled:opacity-50">
-          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} /> 刷新
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => {
+            if (subTab === "trigger") fetchHistory();
+            else fetchBets();
+          }} disabled={loading}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-700/50 transition-all disabled:opacity-50">
+            <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} /> 刷新
+          </button>
+          <button
+            onClick={async () => {
+              if (!window.confirm("确定清空所有触发历史和投注记录？此操作不可撤销！")) return;
+              try {
+                const resp = await fetch("/api/corner/history", { method: "DELETE" });
+                const json = await resp.json();
+                if (json.success) {
+                  if (subTab === "trigger") fetchHistory();
+                  else fetchBets();
+                } else {
+                  setError(json.error || "清空失败");
+                }
+              } catch (err: any) {
+                setError(err.message || "网络错误");
+              }
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-rose-400 hover:text-white bg-slate-800/50 hover:bg-rose-600/50 rounded-lg border border-slate-700/50 hover:border-rose-500/50 transition-all"
+          >
+            🗑️ 清空
+          </button>
+        </div>
       </div>
 
       {/* 子 Tab 切换 */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => setSubTab("simulation")}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-            subTab === "simulation" ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-          }`}
-        >
-          <ClipboardList className="w-3 h-3" /> 模拟记录
-        </button>
         <button
           onClick={() => setSubTab("trigger")}
           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -361,7 +312,7 @@ export default function CornerHistoryChart() {
 
       {error && <p className="text-[11px] text-rose-400">⚠️ {error}</p>}
 
-      {subTab === "simulation" ? renderSimulationTab() : subTab === "trigger" ? renderTriggerTab() : renderBetsTab()}
+      {subTab === "trigger" ? renderTriggerTab() : renderBetsTab()}
     </div>
   );
 }

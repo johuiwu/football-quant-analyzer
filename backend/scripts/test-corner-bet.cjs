@@ -12,7 +12,7 @@ const path = require("path");
 
 puppeteer.use(StealthPlugin());
 
-const HG_URL = process.env.HG_URL || "https://www.hga050.com";
+const HG_URL = process.env.HG_URL || "https://www.hga038.com";
 const isDebug = true;
 const DEBUG_DIR = path.resolve(__dirname, "..", "..", "debug");
 const USERNAME = "johui88";

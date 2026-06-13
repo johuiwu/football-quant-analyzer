@@ -108,7 +108,7 @@ async function handlePasscodePage(page, options) {
       const btn = document.querySelector("#back_login");
       if (btn) btn.click();
     });
-    await sleep(3000);
+    await sleep(1500);
     console.log("[autoLogin] 已点击\"普通登入\"，等待页面跳转回登录页");
   } catch (e) {
     console.warn("[autoLogin] 点击\"普通登入\"失败:", e.message);
@@ -169,7 +169,7 @@ async function handlePasscodeDialog(page) {
 
     if (clicked) {
       console.log("[autoLogin] 已通过页面内点击关闭弹窗");
-      await sleep(800);
+      await sleep(500);
       cleaned = true;
     }
 
@@ -199,7 +199,7 @@ async function handlePasscodeDialog(page) {
 
     // 方法3：ESC 键兜底
     try { await page.keyboard.press('Escape'); } catch(_) {}
-    await sleep(800);
+    await sleep(400);
 
   } catch (e) {
     console.warn("[autoLogin] 关闭简易密码弹窗异常:", e.message);
@@ -235,7 +235,7 @@ async function handleKickedOut(page) {
       const btn = document.querySelector("#kick_ok_btn");
       if (btn) btn.click();
     });
-    await sleep(1000);
+    await sleep(600);
 
     // 2. 强制移除弹窗容器的 .on 类（确保弹窗关闭）
     await page.evaluate(() => {
@@ -313,7 +313,7 @@ async function fillCredentials(page, options) {
     } catch (e) {}
   }
 
-  await sleep(3000);
+  await sleep(1500);
 }
 
 /**
@@ -397,7 +397,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
       // 4. 导航到登录页
       console.log("[autoLogin] 导航到 " + HG_URL);
       await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await sleep(2000);
+      await sleep(1000);
 
       // ======================== 状态机循环 ========================
       let state = LoginState.LOGIN_PAGE;
@@ -495,7 +495,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
                       });
                     } catch (e) {}
                   });
-                  await sleep(2000);
+                  await sleep(1000);
                   // ver 应该已经通过 page.on('response') 拦截器捕获
                 } catch (e) {
                   console.warn("[autoLogin] 主动 fetch 失败:", e.message);
@@ -554,7 +554,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
                   const btn = document.getElementById("symbol_ft");
                   if (btn) btn.click();
                 });
-                await sleep(3000);
+                await sleep(1500);
               } catch (e) {
                 console.warn("[autoLogin] 导航到 Soccer 失败:", e.message);
               }

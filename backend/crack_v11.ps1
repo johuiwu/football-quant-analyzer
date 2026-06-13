@@ -424,10 +424,10 @@ try {
     [System.Diagnostics.Trace]::Listeners.Add($listener)
     
     $ctor = $wsType.GetConstructor(@([string]))
-    $inst = $ctor.Invoke(@("https://www.hga050.com"))
+    $inst = $ctor.Invoke(@("https://www.hga038.com"))
     
     # Call mAS495kb4k which internally calls kfW0Lx5YBq then Trace.WriteLine
-    $masResult = $wsType.GetMethod("mAS495kb4k", $bfa).Invoke($inst, @("https://www.hga050.com"))
+    $masResult = $wsType.GetMethod("mAS495kb4k", $bfa).Invoke($inst, @("https://www.hga038.com"))
     
     # Get trace output
     $traceOutput = $traceSW.ToString()

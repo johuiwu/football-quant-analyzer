@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { User, Settings, DollarSign } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { ErrorBoundary } from "../ErrorBoundary";
@@ -162,6 +162,20 @@ export default function SettingsPanel() {
               className={`relative w-10 h-5 rounded-full transition-colors ${settings.autoBetEnabled ? "bg-emerald-500" : "bg-slate-700"} disabled:opacity-40 disabled:cursor-not-allowed`}
             >
               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.autoBetEnabled ? "translate-x-5" : "translate-x-0.5"}`}
+              />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col">
+              <label className="text-xs text-slate-300">二次确认</label>
+              <span className="text-[9px] text-slate-500">开启后，自动投注需手动确认才执行</span>
+            </div>
+            <button
+              onClick={() => setSettings({ autoBetConfirmRequired: !settings.autoBetConfirmRequired })}
+              title={settings.autoBetConfirmRequired ? "二次确认已开启" : "点击开启二次确认"}
+              className={`relative w-10 h-5 rounded-full transition-colors ${settings.autoBetConfirmRequired ? "bg-emerald-500" : "bg-slate-700"}`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.autoBetConfirmRequired ? "translate-x-5" : "translate-x-0.5"}`}
               />
             </button>
           </div>

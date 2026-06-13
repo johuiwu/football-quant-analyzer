@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // ================================================================
-// find-hga-api.js — 自动发现 hga050.com 上返回比赛数据的真实 API 接口
+// find-hga-api.js — 自动发现 hga038.com 上返回比赛数据的真实 API 接口
 //
-// 目标：自动访问 hga050.com，登录后进入 In-Play 页面，
+// 目标：自动访问 hga038.com，登录后进入 In-Play 页面，
 //       捕获所有网络请求，分析出哪个接口返回了实时比赛数据。
 //
 // 运行方式：node find-hga-api.js
@@ -16,7 +16,7 @@ import path from "path";
 puppeteer.use(StealthPlugin());
 
 // ======================== 配置 ========================
-const HG_URL = "https://www.hga050.com";
+const HG_URL = "https://www.hga038.com";
 const USERNAME = "johui888";
 const PASSWORD = "aa123123";
 const HEADLESS = process.env.HEADLESS === "true"; // 默认有头模式

@@ -39,8 +39,8 @@ foreach ($ev in $wsType.GetEvents($bfall)) {
 WL("")
 WL("--- Part 2: Instance creation & field dump ---")
 $ctor = $wsType.GetConstructor(@([string]))
-$instance = $ctor.Invoke(@("https://www.hga050.com"))
-WL("Instance created with: https://www.hga050.com")
+$instance = $ctor.Invoke(@("https://www.hga038.com"))
+WL("Instance created with: https://www.hga038.com")
 WL("")
 
 foreach ($f in $wsType.GetFields($bfa)) {

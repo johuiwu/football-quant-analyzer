@@ -1,11 +1,11 @@
 # probe-ws-paths-v2.ps1
-# Probe WebSocket paths on www.hga050.com - compatible with PS5.1
+# Probe WebSocket paths on www.hga038.com - compatible with PS5.1
 
 Write-Host "=== WebSocket Path Probe v2 ===" -ForegroundColor Cyan
-Write-Host "Target: www.hga050.com (112.78.104.175)" -ForegroundColor Yellow
+Write-Host "Target: www.hga038.com (112.78.104.175)" -ForegroundColor Yellow
 Write-Host ""
 
-$baseHost = "www.hga050.com"
+$baseHost = "www.hga038.com"
 $paths = @(
     "/ws", "/websocket", "/socket", "/api/ws", "/realtime",
     "/signalr/connect", "/v1/ws", "/push", "/hg/ws", "/live",
@@ -143,8 +143,8 @@ if ($openResult) {
         Write-Host "Likely WS URL: $($forbidden.Url)" -ForegroundColor Yellow
         Start-Process notepad.exe $urlFile
     } else {
-        Set-Content -Path $urlFile -Value "wss://www.hga050.com/ws" -NoNewline -Encoding UTF8
-        Write-Host "Best guess: wss://www.hga050.com/ws" -ForegroundColor Yellow
+        Set-Content -Path $urlFile -Value "wss://www.hga038.com/ws" -NoNewline -Encoding UTF8
+        Write-Host "Best guess: wss://www.hga038.com/ws" -ForegroundColor Yellow
         Start-Process notepad.exe $urlFile
     }
 }

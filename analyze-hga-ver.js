@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * analyze-hga-ver.js
- * 辅助分析 hga050.com 的 ver 签名生成算法
+ * 辅助分析 hga038.com 的 ver 签名生成算法
  *
  * 功能：
  * 1. 下载首页 HTML
@@ -80,7 +80,7 @@ function detectProxy() {
 }
 
 // ========== 配置 ==========
-const BASE_URL = process.env.HGA_URL || 'https://www.hga050.com/';
+const BASE_URL = process.env.HGA_URL || 'https://www.hga038.com/';
 const TIMEOUT = 30000;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
@@ -265,7 +265,7 @@ function analyzeJs(filename, content) {
 
 async function main() {
   console.log('═'.repeat(70));
-  console.log('  hga050.com ver 签名算法分析工具');
+  console.log('  hga038.com ver 签名算法分析工具');
   console.log('═'.repeat(70));
 
   // 显示代理配置

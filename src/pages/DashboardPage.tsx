@@ -20,6 +20,7 @@ import { useAIAnalysis } from '../hooks/useAIAnalysis';
 import { ValidationService } from '../services/ValidationService';
 import AdvancedParamsPanel from '../components/AdvancedParamsPanel';
 import ModelWeightsPanel from '../components/ModelWeightsPanel';
+import UpdateChecker from '../components/UpdateChecker';
 
 export default function DashboardPage() {
   const selectedHomeId = useAppStore((s) => s.selectedHomeId);
@@ -81,8 +82,8 @@ export default function DashboardPage() {
     form: ['W','W','W','W','D'] as ('W'|'D'|'L')[],
   });
   // ===== Computed values =====
-  const homeTeamsList = teams.filter(t => t.league === selectedHomeLeague);
-  const awayTeamsList = teams.filter(t => t.league === selectedAwayLeague);
+  const homeTeamsList = useMemo(() => teams.filter(t => t.league === selectedHomeLeague), [teams, selectedHomeLeague]);
+  const awayTeamsList = useMemo(() => teams.filter(t => t.league === selectedAwayLeague), [teams, selectedAwayLeague]);
 
   const asianFeatures = useMemo<AsianHandicapFeatures>(() => {
     return extractAsianHandicapFeatures(asianHandicap);
@@ -113,10 +114,16 @@ export default function DashboardPage() {
   const selectedTeams = useMemo((): { home: TeamStats; away: TeamStats } => {
     let originalHome = teams.find(t => t.id === selectedHomeId);
     let originalAway = teams.find(t => t.id === selectedAwayId);
-    if (!originalHome) originalHome = teams[0] || defaultTeam;
-    if (!originalAway) originalAway = teams[1] || teams[0] || originalHome || defaultTeam;
+    if (!originalHome) {
+      const homeLeagueTeams = teams.filter(t => t.league === selectedHomeLeague);
+      originalHome = homeLeagueTeams.length > 0 ? homeLeagueTeams[0] : (teams[0] || defaultTeam);
+    }
+    if (!originalAway) {
+      const awayLeagueTeams = teams.filter(t => t.league === selectedAwayLeague);
+      originalAway = awayLeagueTeams.length > 0 ? awayLeagueTeams[0] : (teams[1] || teams[0] || originalHome || defaultTeam);
+    }
     return { home: originalHome, away: originalAway };
-  }, [teams, selectedHomeId, selectedAwayId]);
+  }, [teams, selectedHomeId, selectedAwayId, selectedHomeLeague, selectedAwayLeague]);
   const home = selectedTeams.home;
   const away = selectedTeams.away;
 
@@ -223,7 +230,7 @@ export default function DashboardPage() {
       customWeights: finalWeights,
       advancedParams,
       fusionWeights: { oddsChannel: 0.7, asianChannel: 0.3 },
-      competitionType: selectedFixture?.competitionType || 'League',
+      competitionType: selectedFixture?.competitionType || (selectedHomeLeague === 'WorldCup' || selectedAwayLeague === 'WorldCup' ? 'Cup' : 'League'),
       homeTeamId: effectiveHome.teamId || 0,
       awayTeamId: effectiveAway.teamId || 0
     };
@@ -292,7 +299,28 @@ export default function DashboardPage() {
         setAwayTeam(awayTeamsList[0].id, selectedAwayLeague);
       }
     }
-  }, [selectedHomeLeague, selectedAwayLeague, activeTab, homeTeamsList, awayTeamsList]);
+  }, [selectedHomeLeague, selectedAwayLeague, homeTeamsList, awayTeamsList]);
+
+  // 当teams从空变为非空时，校正当前球队选择
+  useEffect(() => {
+    if (teams.length === 0) return;
+    // 校正主队：如果当前选中的球队不在当前联赛中，自动选择该联赛第一个球队
+    const homeTeamExists = teams.some(t => t.id === selectedHomeId);
+    if (!homeTeamExists) {
+      const homeLeagueTeams = teams.filter(t => t.league === selectedHomeLeague);
+      if (homeLeagueTeams.length > 0) {
+        setHomeTeam(homeLeagueTeams[0].id, selectedHomeLeague);
+      }
+    }
+    // 校正客队
+    const awayTeamExists = teams.some(t => t.id === selectedAwayId);
+    if (!awayTeamExists) {
+      const awayLeagueTeams = teams.filter(t => t.league === selectedAwayLeague);
+      if (awayLeagueTeams.length > 0) {
+        setAwayTeam(awayLeagueTeams[0].id, selectedAwayLeague);
+      }
+    }
+  }, [teams]); // 仅在teams变化时触发
   // ===== Dashboard JSX (migrated from AppNew.tsx L501-L1738) =====
   return (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -372,7 +400,7 @@ export default function DashboardPage() {
                       value={selectedHomeLeague}
                       onChange={(e) => {
                         const list = teams.filter(t => t.league === e.target.value);
-                        const firstId = list.length > 0 ? list[0].id : selectedHomeId;
+                        const firstId = list.length > 0 ? list[0].id : '';
                         setHomeLeague(e.target.value, firstId);
                         setSelectedFixtureId('');
                         setIsStatsCustomized(false);
@@ -390,7 +418,7 @@ export default function DashboardPage() {
                       value={selectedAwayLeague}
                       onChange={(e) => {
                         const list = teams.filter(t => t.league === e.target.value);
-                        const firstId = list.length > 0 ? list[0].id : selectedAwayId;
+                        const firstId = list.length > 0 ? list[0].id : '';
                         setAwayLeague(e.target.value, firstId);
                         setSelectedFixtureId('');
                         setIsStatsCustomized(false);
@@ -1546,6 +1574,11 @@ export default function DashboardPage() {
               )}
 
             </div>
+
+          {/* 软件更新面板 */}
+          <div className="max-w-xs">
+            <UpdateChecker />
+          </div>
 
           {/* DeepSeek API Key 配置弹窗 */}
           <DeepSeekKeyModal

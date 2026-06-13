@@ -102,10 +102,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-// Rate limiting: 500 requests per 15 min window
+// Rate limiting: 2000 requests per 15 min window
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 500,
+  max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: "Too many requests, please try again later" },

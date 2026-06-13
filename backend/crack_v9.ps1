@@ -226,7 +226,7 @@ try {
     if ($ctor -ne $null) {
         WL("Found String constructor")
         # Try creating instance with HgUrl from INI
-        $instance = $ctor.Invoke(@("https://www.hga050.com"))
+        $instance = $ctor.Invoke(@("https://www.hga038.com"))
         if ($instance -ne $null) {
             WL("Instance created successfully!")
             # List all field values
@@ -241,9 +241,9 @@ try {
             
             # Try calling mAS495kb4k with various URLs
             $testUrls = @(
-                "https://www.hga050.com",
-                "wss://www.hga050.com/ws",
-                "wss://hga050.com/socket",
+                "https://www.hga038.com",
+                "wss://www.hga038.com/ws",
+                "wss://hga038.com/socket",
                 "/ws"
             )
             foreach ($tu in $testUrls) {

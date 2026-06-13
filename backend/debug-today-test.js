@@ -5,7 +5,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 
 puppeteer.use(StealthPlugin());
 
-const HG_URL = "https://www.hga050.com";
+const HG_URL = "https://www.hga038.com";
 const USERNAME = process.env.HG_USERNAME || "johui888";
 const PASSWORD = process.env.HG_PASSWORD || "aa123123";
 

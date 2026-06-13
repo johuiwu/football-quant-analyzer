@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ================================================================
-// debug-api-response.js — 登录 hga050.com 后通过响应拦截捕获
+// debug-api-response.js — 登录 hga038.com 后通过响应拦截捕获
 //                         transform.php 的完整响应体
 //
 // 旧方案: page.evaluate + fetch() → 返回 "VariableStandard"
@@ -20,7 +20,7 @@ import path from "path";
 puppeteer.use(StealthPlugin());
 
 // ======================== 配置 ========================
-const HG_URL = "https://www.hga050.com";
+const HG_URL = "https://www.hga038.com";
 const USERNAME = process.env.HG_USERNAME || "johui888";
 const PASSWORD = process.env.HG_PASSWORD || "aa123123";
 const HEADLESS = process.env.HEADLESS === "true";

@@ -96,7 +96,7 @@ try {
     
     # Create instance
     $ctor = $wsType.GetConstructor(@([string]))
-    $inst = $ctor.Invoke(@("https://www.hga050.com"))
+    $inst = $ctor.Invoke(@("https://www.hga038.com"))
     WL("Instance created OK")
     
     # Set up event handlers

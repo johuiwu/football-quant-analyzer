@@ -85,7 +85,7 @@ if ([System.IO.File]::Exists($iniPath) -and $globalType -ne $null) {
 
 # === Step 2: Create instance + try Open ===
 Write-Host "[2] Creating WSocketClientHelp instance..." -ForegroundColor Yellow
-$hgUrl = "https://www.hga050.com"
+$hgUrl = "https://www.hga038.com"
 $ctor = $wsType.GetConstructor(@([string]))
 $inst = $ctor.Invoke(@($hgUrl))
 
@@ -253,7 +253,7 @@ if ($hgceProc) {
 Write-Host ""
 Write-Host "[5] DNS verification of candidate URLs..." -ForegroundColor Yellow
 
-$baseHost = "www.hga050.com"
+$baseHost = "www.hga038.com"
 $candidates = @(
     "wss://${baseHost}/ws",
     "wss://${baseHost}/socket",
@@ -293,14 +293,14 @@ if ($wsUrl) {
     Write-Host "[RESULT] Could not auto-extract exact URL" -ForegroundColor Red
     Write-Host ""
     Write-Host "Best guess based on reverse analysis:" -ForegroundColor Yellow
-    Write-Host "  wss://www.hga050.com/ws" -ForegroundColor White
+    Write-Host "  wss://www.hga038.com/ws" -ForegroundColor White
     Write-Host ""
     Write-Host "To confirm:" -ForegroundColor Cyan
     Write-Host "  1. Install Wireshark, run capture-hgce-websocket.ps1" -ForegroundColor Cyan
     Write-Host "  2. Use dnSpy breakpoint on ClientWebSocket.ConnectAsync" -ForegroundColor Cyan
     Write-Host "  3. Start HgCeApp.exe then re-run this script (Step 4 needs live process)" -ForegroundColor Cyan
     
-    Set-Content -Path $urlFile -Value "wss://www.hga050.com/ws" -NoNewline -Encoding UTF8
+    Set-Content -Path $urlFile -Value "wss://www.hga038.com/ws" -NoNewline -Encoding UTF8
     Write-Host ""
     Write-Host "Best guess written to: $urlFile" -ForegroundColor Yellow
     Start-Process notepad.exe $urlFile

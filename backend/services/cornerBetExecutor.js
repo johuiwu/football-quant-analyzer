@@ -78,7 +78,7 @@ async function handleBetPopups(page) {
 // ======================== 投注执行 ========================
 
 /**
- * 在 hga050.com 上执行一次真实的角球投注操作
+ * 在 hga038.com 上执行一次真实的角球投注操作
  * @param {Object} betData - 投注数据
  * @param {string} betData.matchName - 比赛名称（用于定位比赛行）
  * @param {string} betData.matchId - 比赛ID
@@ -95,7 +95,7 @@ export async function executeBet(betData) {
   // 1. 检查登录状态
   if (!isLoggedIn()) {
     console.error("[BetExecutor] 未登录，无法执行投注");
-    return { success: false, error: "未登录，请先登录 hga050.com" };
+    return { success: false, error: "未登录，请先登录 hga038.com" };
   }
 
   // 2. 获取共享页面并验证实际登录状态
@@ -120,7 +120,7 @@ export async function executeBet(betData) {
     });
     if (!loginVerified) {
       console.error("[BetExecutor] 页面未检测到已登录特征");
-      return { success: false, error: "登录会话可能已过期，请重新登录 hga050.com" };
+      return { success: false, error: "登录会话可能已过期，请重新登录 hga038.com" };
     }
   } catch (e) {
     console.warn("[BetExecutor] 登录验证检查异常:", e.message);

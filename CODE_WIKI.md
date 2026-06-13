@@ -291,7 +291,7 @@
 
 | 配置项 | 类型 | 说明 |
 |--------|------|------|
-| HgUrl | string | 博彩平台 URL（如 `https://www.hga050.com`） |
+| HgUrl | string | 博彩平台 URL（如 `https://www.hga038.com`） |
 | HgVer | string | 平台版本标识（MD5 格式） |
 | HgIovationKey | string | Iovation 安全验证密钥 |
 | HgUserName | string | 博彩平台用户名 |

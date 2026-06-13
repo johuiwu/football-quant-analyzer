@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-06-13T09:04:52.256Z",
+  "totalElapsed": 142549,
+  "phases": {
+    "server_check": {
+      "elapsed": 42,
+      "ok": true
+    },
+    "login": {
+      "elapsed": 66726,
+      "ok": false
+    },
+    "status": {
+      "elapsed": 3,
+      "ok": true,
+      "data": {
+        "success": true,
+        "data": {
+          "crawler": {
+            "isPolling": false,
+            "isLoggedIn": false,
+            "balance": 0,
+            "lastUpdate": null,
+            "loginInProgress": false
+          },
+          "backend": {
+            "isPolling": false,
+            "isPaused": false,
+            "pausedReason": null,
+            "cachedCount": 0,
+            "cachedMainMarketCount": 0,
+            "lastPollInterval": 15000,
+            "pausedAt": null
+          },
+          "balance": 0
+        }
+      }
+    },
+    "fetch_data": {
+      "elapsed": 24699,
+      "ok": true
+    },
+    "live_data": {
+      "elapsed": 3,
+      "ok": true
+    },
+    "start_polling": {
+      "elapsed": 3,
+      "ok": true
+    },
+    "poll_cycles": {
+      "successCount": 3,
+      "failCount": 0,
+      "totalDataPoints": 26,
+      "cycles": 3
+    },
+    "stop_polling": {
+      "elapsed": 1,
+      "ok": true
+    }
+  },
+  "config": {
+    "BASE_URL": "http://localhost:3000",
+    "pollCycles": 3,
+    "SKIP_LOGIN": false
+  }
+}

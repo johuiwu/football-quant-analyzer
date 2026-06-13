@@ -168,7 +168,7 @@ try {
     
     # Create instance
     $ctor = $wsType.GetConstructor(@([string]))
-    $inst = $ctor.Invoke(@("https://www.hga050.com"))
+    $inst = $ctor.Invoke(@("https://www.hga038.com"))
     WL("Instance created, State=" + $wsType.GetProperty("State").GetValue($inst))
     
     # Call PJI4DVIrcW (Open)

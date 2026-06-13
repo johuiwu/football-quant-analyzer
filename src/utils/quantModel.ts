@@ -887,16 +887,19 @@ const homeExt = extractExtendedFeatures(homeTeam, league);
 
 
   // 3. 攻防实力指数 (Attack & Defense indices relative to league baselines)
+  // 小样本 shrinkage：当 played < 10 时，攻防指数向1.0收缩，避免小样本极端偏移
+  const homeShrinkage = Math.min(1.0, homeHPlayed / 10);
+  const awayShrinkage = Math.min(1.0, awayAPlayed / 10);
 
-  const homeAttackIndex = (homeScoringRate / Math.max(0.1, leagueAvg.homeGoals)) * homeEnvFactor;
+  const rawHomeAttackIndex = (homeScoringRate / Math.max(0.1, leagueAvg.homeGoals)) * homeEnvFactor;
+  const rawHomeDefenseIndex = (homeConcedingRate / Math.max(0.1, leagueAvg.awayGoals)) / homeEnvFactor;
+  const rawAwayAttackIndex = (awayScoringRate / Math.max(0.1, leagueAvg.awayGoals)) * awayEnvFactor;
+  const rawAwayDefenseIndex = (awayConcedingRate / Math.max(0.1, leagueAvg.homeGoals)) / awayEnvFactor;
 
-  const homeDefenseIndex = (homeConcedingRate / Math.max(0.1, leagueAvg.awayGoals)) / homeEnvFactor;
-
-
-
-  const awayAttackIndex = (awayScoringRate / Math.max(0.1, leagueAvg.awayGoals)) * awayEnvFactor;
-
-  const awayDefenseIndex = (awayConcedingRate / Math.max(0.1, leagueAvg.homeGoals)) / awayEnvFactor;
+  const homeAttackIndex = rawHomeAttackIndex * homeShrinkage + 1.0 * (1 - homeShrinkage);
+  const homeDefenseIndex = rawHomeDefenseIndex * homeShrinkage + 1.0 * (1 - homeShrinkage);
+  const awayAttackIndex = rawAwayAttackIndex * awayShrinkage + 1.0 * (1 - awayShrinkage);
+  const awayDefenseIndex = rawAwayDefenseIndex * awayShrinkage + 1.0 * (1 - awayShrinkage);
 
 
 
@@ -1439,7 +1442,12 @@ const strengthDiff = homeStrength - awayStrength;
 
 
 
-    if (lowScoreProbability.totalLowScore > 0.65 && (Math.abs(expectedHomeGoals - expectedAwayGoals) < 0.35 || totalExpectedGoals < 2.0)) {
+    // UNDER 通道：基础条件 + 增强条件（避免小样本数据导致低置信度"小球"推荐）
+    const underBasicCondition = lowScoreProbability.totalLowScore > 0.65 && (Math.abs(expectedHomeGoals - expectedAwayGoals) < 0.35 || totalExpectedGoals < 2.0);
+    const underHighConfidence = lowScoreProbability.totalLowScore > 0.70;
+    const underVeryLowGoals = totalExpectedGoals < 1.8;
+    const underModelsAgree = poissonType === 'UNDER' && dixonColesType === 'UNDER';
+    if (underBasicCondition && (underHighConfidence || underVeryLowGoals || underModelsAgree)) {
 
       finalDirection = 'UNDER';
 

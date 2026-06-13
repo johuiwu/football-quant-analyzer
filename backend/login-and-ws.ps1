@@ -4,7 +4,7 @@
 Write-Host "=== HgCeApp Login + WSS v2 ===" -ForegroundColor Cyan
 Write-Host ""
 
-$hgUrl = "https://www.hga050.com"
+$hgUrl = "https://www.hga038.com"
 $hgUsername = "liuwei1108"
 $hgPassword = "Hc6957061"
 $hgUid = "q94s507em40685531l8731371b1"
@@ -34,7 +34,7 @@ $workingHost = $null
 $sessionUid = $null
 
 # Try m510.crw066.com first (it responded with doubleLogin before)
-$apiHosts = @("m510.crw066.com", "www.hga038.com", "www.hga050.com")
+$apiHosts = @("m510.crw066.com", "www.hga038.com", "www.hga038.com")
 
 foreach ($host2 in $apiHosts) {
     Write-Host "  Trying: $host2" -ForegroundColor Gray
@@ -168,7 +168,7 @@ Write-Host ""
 Write-Host "[3] Connecting to WebSocket..." -ForegroundColor Yellow
 
 $uid = if ($sessionUid) { $sessionUid } else { $hgUid }
-$wsHost = if ($workingHost) { $workingHost } else { "www.hga050.com" }
+$wsHost = if ($workingHost) { $workingHost } else { "www.hga038.com" }
 
 Write-Host "  Using host: $wsHost, UID: $uid" -ForegroundColor Gray
 
@@ -263,8 +263,8 @@ if ($wsUrl) {
     Write-Host "UID: $uid" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "The WSS path requires proper authentication token." -ForegroundColor Cyan
-    Write-Host "Best candidate: wss://www.hga050.com/ws" -ForegroundColor Cyan
-    Set-Content -Path $urlFile -Value "wss://www.hga050.com/ws" -NoNewline -Encoding UTF8
+    Write-Host "Best candidate: wss://www.hga038.com/ws" -ForegroundColor Cyan
+    Set-Content -Path $urlFile -Value "wss://www.hga038.com/ws" -NoNewline -Encoding UTF8
     Start-Process notepad.exe $urlFile
 }
 

@@ -246,7 +246,7 @@ async function ensureLogin() {
         try { await quickPage.setCookie(ck); } catch (_) {}
       }
       await quickPage.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 10000 });
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1000));
       const isValid = await quickPage.evaluate(() => {
         const body = document.body?.textContent || "";
         const hasInPlay = body.includes("In-Play") && body.includes("Soccer");
@@ -306,7 +306,18 @@ async function ensureLogin() {
     await page.setUserAgent(process.env.USE_MOBILE_UA === "true" ? MOBILE_UA : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
     await page.setViewport({ width: 1920, height: 1400 });
     await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await new Promise(r => setTimeout(r, 4000));
+    // 条件等待：检测登录表单或主页特征出现（替代固定 sleep 4s）
+    try {
+      await page.waitForFunction(() => {
+        const usr = document.getElementById('usr');
+        const body = document.body?.textContent || '';
+        return (usr && getComputedStyle(usr).display !== 'none') ||
+               body.includes('In-Play') || body.includes('Soccer') ||
+               body.includes('My Events') || body.includes('Balance');
+      }, { timeout: 8000 });
+    } catch (_) {
+      // 超时也继续，不阻塞
+    }
     // ★ 检查是否跳转到简易密码页面
     const passcodeResult = await handlePasscodePage(page);
     if (passcodeResult.detected && passcodeResult.handled) {
@@ -355,7 +366,18 @@ async function ensureLogin() {
       });
 
       await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await new Promise(r => setTimeout(r, 4000));
+      // 条件等待：检测登录表单或主页特征出现（替代固定 sleep 4s）
+      try {
+        await page.waitForFunction(() => {
+          const usr = document.getElementById('usr');
+          const body = document.body?.textContent || '';
+          return (usr && getComputedStyle(usr).display !== 'none') ||
+                 body.includes('In-Play') || body.includes('Soccer') ||
+                 body.includes('My Events') || body.includes('Balance');
+        }, { timeout: 8000 });
+      } catch (_) {
+        // 超时也继续，不阻塞
+      }
 
       const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
       const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
@@ -388,11 +410,13 @@ async function ensureLogin() {
         if (btn) btn.click();
       });
 
-      // 轮询检测登录结果（最多 80 秒）
-      console.log("[cornerCrawler] 轮询等待登录结果（最多 80s）...");
+      // 轮询检测登录结果（最多 60 秒）
+      console.log("[cornerCrawler] 轮询等待登录结果（最多 60s）...");
       let loginResult = null;
-      for (let i = 0; i < 80; i++) {
-        await new Promise(r => setTimeout(r, 1000));
+      for (let i = 0; i < 100; i++) {
+        // 自适应轮询间隔：前10次500ms快速检测，之后1秒
+        const pollDelay = i < 10 ? 500 : 1000;
+        await new Promise(r => setTimeout(r, pollDelay));
         await handlePopups(page);
 
         const status = await page.evaluate(() => {
@@ -479,8 +503,8 @@ async function ensureLogin() {
 
       // 登录超时 => 重试
       if (!loginResult) {
-        console.error("[cornerCrawler] 登录超时（80s）(attempt " + loginAttempt + "/" + MAX_LOGIN_RETRIES + ")");
-        lastLoginErrorDetail = "login_timeout:登录超时（80s）";
+        console.error("[cornerCrawler] 登录超时（60s）(attempt " + loginAttempt + "/" + MAX_LOGIN_RETRIES + ")");
+        lastLoginErrorDetail = "login_timeout:登录超时（60s）";
         await saveDebugScreenshot(page, "timeout-" + loginAttempt);
         continue;
       }
@@ -1828,7 +1852,9 @@ async function fetchCornerDataViaAPI(page) {
         time: retime, elapsedMinutes: elapsed,
         homeScore: si.homeScore || 0,
         awayScore: si.awayScore || 0,
-        totalCorners: 0, homeCorners: 0, awayCorners: 0,
+        homeCorners: parseInt(game.SCORE_H || game.score_h, 10) || 0,
+        awayCorners: parseInt(game.SCORE_C || game.score_c, 10) || 0,
+        totalCorners: (parseInt(game.SCORE_H || game.score_h, 10) || 0) + (parseInt(game.SCORE_C || game.score_c, 10) || 0),
         _cornerSource: "api",
         cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
         cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,
@@ -2353,16 +2379,21 @@ async function _crawlViaPureHttp() {
   }
 
   // 2. 凭证无效或缺失时，优先尝试 autoLogin（独立浏览器，登录后关闭）
+  // ★ 限制 autoLogin 超时为 30 秒，避免阻塞整个爬取流程
   if (!creds) {
-    console.log("[cornerCrawler] 纯HTTP: 凭证无效，尝试 autoLogin...");
+    console.log("[cornerCrawler] 纯HTTP: 凭证无效，尝试 autoLogin（30s超时）...");
     try {
       const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
       // 优先使用保存的用户名/密码，回退到环境变量
       const savedLogin = getSavedLoginCredentials();
-      const loginResult = await autoLoginAndGetCredentials({
+      const loginPromise = autoLoginAndGetCredentials({
         username: savedLogin?.username || process.env.HG_USERNAME || "",
         password: savedLogin?.password || process.env.HG_PASSWORD || "",
       });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("autoLogin 30s超时")), 30000)
+      );
+      const loginResult = await Promise.race([loginPromise, timeoutPromise]);
       if (loginResult.success && loginResult.uid && loginResult.ver) {
         updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
         creds = loadCredentials();
@@ -2374,36 +2405,46 @@ async function _crawlViaPureHttp() {
   }
 
   // 3. autoLogin 也失败时，回退到 hgCrawlerLogin（启动共享浏览器）
+  // ★ 限制 hgCrawlerLogin 超时为 30 秒
   if (!creds) {
-    console.log("[cornerCrawler] 纯HTTP: 尝试共享浏览器登录...");
-    const loginResult = await hgCrawlerLogin({
-      username: process.env.HG_USERNAME || "",
-      password: process.env.HG_PASSWORD || "",
-    });
-    if (!loginResult.success) {
-      console.warn("[cornerCrawler] 纯HTTP: hgCrawlerService 登录失败:", loginResult.error);
-      return null;
-    }
-    // 从页面拦截 transform.php 提取 uid/ver
-    // ★ 先检查：如果 HgCrawler 已经更新了凭证，跳过等待
-    creds = loadCredentials();
-    if (creds && creds.uid && creds.ver) {
-      console.log("[cornerCrawler] 纯HTTP: HgCrawler 已提供凭证，跳过 transform.php 等待");
-    } else {
-      const { getSharedPage } = await import("./browserPool.js");
-      const page = getSharedPage();
-      if (page) {
-        const credentials = await waitForTransformRequest(page);
-        if (credentials) {
-          const cookies = await page.cookies();
-          updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
-          console.log("[cornerCrawler] 纯HTTP: 凭证已从页面拦截保存");
+    console.log("[cornerCrawler] 纯HTTP: 尝试共享浏览器登录（30s超时）...");
+    try {
+      const loginPromise = hgCrawlerLogin({
+        username: process.env.HG_USERNAME || "",
+        password: process.env.HG_PASSWORD || "",
+      });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("hgCrawlerLogin 30s超时")), 30000)
+      );
+      const loginResult = await Promise.race([loginPromise, timeoutPromise]);
+      if (!loginResult.success) {
+        console.warn("[cornerCrawler] 纯HTTP: hgCrawlerService 登录失败:", loginResult.error);
+        return null;
+      }
+      // 从页面拦截 transform.php 提取 uid/ver
+      // ★ 先检查：如果 HgCrawler 已经更新了凭证，跳过等待
+      creds = loadCredentials();
+      if (creds && creds.uid && creds.ver) {
+        console.log("[cornerCrawler] 纯HTTP: HgCrawler 已提供凭证，跳过 transform.php 等待");
+      } else {
+        const { getSharedPage } = await import("./browserPool.js");
+        const page = getSharedPage();
+        if (page) {
+          const credentials = await waitForTransformRequest(page);
+          if (credentials) {
+            const cookies = await page.cookies();
+            updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+            console.log("[cornerCrawler] 纯HTTP: 凭证已从页面拦截保存");
+          }
         }
       }
-    }
-    creds = loadCredentials();
-    if (!creds) {
-      console.warn("[cornerCrawler] 纯HTTP: 登录后凭证仍不完整");
+      creds = loadCredentials();
+      if (!creds) {
+        console.warn("[cornerCrawler] 纯HTTP: 登录后凭证仍不完整");
+        return null;
+      }
+    } catch (e) {
+      console.warn("[cornerCrawler] 纯HTTP: hgCrawlerLogin 失败:", e.message);
       return null;
     }
   }
@@ -2541,7 +2582,9 @@ async function _crawlViaPureHttp() {
       matchName: homeTeam + " vs " + awayTeam, homeTeam, awayTeam, league,
       time: retime, elapsedMinutes: elapsed,
       homeScore: si.homeScore || 0, awayScore: si.awayScore || 0,
-      totalCorners: 0, homeCorners: 0, awayCorners: 0,
+      homeCorners: parseInt(game.SCORE_H || game.score_h, 10) || 0,
+      awayCorners: parseInt(game.SCORE_C || game.score_c, 10) || 0,
+      totalCorners: (parseInt(game.SCORE_H || game.score_h, 10) || 0) + (parseInt(game.SCORE_C || game.score_c, 10) || 0),
       _cornerSource: "api",
       cornerHandicap: cornerHDP ? parseAsianHandicap(cornerHDP.line) : 0,
       cornerOdds: cornerHDP ? (cornerHDP.homeOdds || 0) : 0,

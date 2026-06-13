@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ================================================================
-// explore-hga-network.js — 自动化探索 hga050.com 的网络活动
+// explore-hga-network.js — 自动化探索 hga038.com 的网络活动
 // 目标：发现潜在的 WebSocket 或实时数据接口
 //
 // 运行方式：node explore-hga-network.js
@@ -13,7 +13,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 puppeteer.use(StealthPlugin());
 
 // ======================== 配置 ========================
-const HG_URL = process.env.HG_URL || "https://www.hga050.com";
+const HG_URL = process.env.HG_URL || "https://www.hga038.com";
 const USERNAME = "johui888";
 const PASSWORD = "aa123123";
 const HEADLESS = process.env.HEADLESS === "true";

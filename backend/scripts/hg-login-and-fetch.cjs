@@ -12,7 +12,7 @@ const path = require("path");
 puppeteer.use(StealthPlugin());
 
 // ======================== 配置 ========================
-const HG_URL = process.env.HG_URL || "https://www.hga050.com";
+const HG_URL = process.env.HG_URL || "https://www.hga038.com";
 const HG_USERNAME = process.env.HG_USERNAME || "";
 const HG_PASSWORD = process.env.HG_PASSWORD || "";
 const LOGIN_TIMEOUT = 90000; // 90秒
