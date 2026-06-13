@@ -4,7 +4,7 @@ import { ModelWeights } from "../utils/quantModel";
 
 // ==================== 类型定义 ====================
 
-export type TabType = "dashboard" | "standings" | "teams" | "worldcup" | "corner";
+export type TabType = "dashboard" | "standings" | "teams" | "worldcup" | "corner" | "updates";
 
 export interface LiveMatchState {
   isLive: boolean;

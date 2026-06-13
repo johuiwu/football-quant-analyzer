@@ -20,7 +20,6 @@ import { useAIAnalysis } from '../hooks/useAIAnalysis';
 import { ValidationService } from '../services/ValidationService';
 import AdvancedParamsPanel from '../components/AdvancedParamsPanel';
 import ModelWeightsPanel from '../components/ModelWeightsPanel';
-import UpdateChecker from '../components/UpdateChecker';
 
 export default function DashboardPage() {
   const selectedHomeId = useAppStore((s) => s.selectedHomeId);
@@ -1574,11 +1573,6 @@ export default function DashboardPage() {
               )}
 
             </div>
-
-          {/* 软件更新面板 */}
-          <div className="max-w-xs">
-            <UpdateChecker />
-          </div>
 
           {/* DeepSeek API Key 配置弹窗 */}
           <DeepSeekKeyModal

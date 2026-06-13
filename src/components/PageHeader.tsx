@@ -1,4 +1,4 @@
-﻿import { AlertTriangle, Calculator } from 'lucide-react';
+import { AlertTriangle, Calculator } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function PageHeader() {
@@ -92,8 +92,12 @@ export default function PageHeader() {
             </button>
             {window.electronAPI?.isElectron && (
               <button
-                onClick={() => window.electronAPI?.checkForUpdates?.()}
-                className="px-4 py-1.5 text-xs font-medium rounded-lg transition-all bg-indigo-600 hover:bg-indigo-700 text-white shadow-md"
+                onClick={() => navigate('/updates')}
+                className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  currentPath === '/updates'
+                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
                 📦 检查更新
               </button>

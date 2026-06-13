@@ -9,6 +9,7 @@ import PageHeader from "./components/PageHeader";
 import StandingsPage from "./pages/StandingsPage";
 import CornerSystemPage from "./pages/CornerSystemPage";
 import DashboardPage from "./pages/DashboardPage";
+import UpdatesPage from "./pages/UpdatesPage";
 import { useAppStore } from "./store/useAppStore";
 
 // 路径到 activeTab 的映射
@@ -18,6 +19,7 @@ const PATH_TO_TAB: Record<string, string> = {
   "/teams": "teams",
   "/worldcup": "worldcup",
   "/corner": "corner",
+  "/updates": "updates",
 };
 
 function AppNewContent() {
@@ -115,6 +117,7 @@ function AppNewContent() {
           <Route path="/teams" element={<ErrorBoundary><TeamInfoSection /></ErrorBoundary>} />
           <Route path="/worldcup" element={<WorldCupDashboard />} />
           <Route path="/corner" element={<ErrorBoundary><CornerSystemPage /></ErrorBoundary>} />
+          <Route path="/updates" element={<ErrorBoundary><UpdatesPage /></ErrorBoundary>} />
         </Routes>
       </main>
 
