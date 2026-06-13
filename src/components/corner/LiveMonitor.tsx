@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { ExternalLink, History, RefreshCw, X, Lock } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
@@ -75,7 +75,7 @@ interface OddsGroupCardProps {
   highlight?: boolean;
 }
 
-function OddsGroupCard({ groupKey, label, handicap, highlight }: OddsGroupCardProps) {
+const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handicap, highlight }: OddsGroupCardProps) {
   const locked = (handicap as any)?.locked === true;
   const selected = (handicap as any)?.isSelected === true;
 
@@ -163,7 +163,7 @@ function OddsGroupCard({ groupKey, label, handicap, highlight }: OddsGroupCardPr
       </div>
     </div>
   );
-}
+});
 
 // ==================== 比赛卡片 ====================
 
@@ -178,7 +178,7 @@ interface MatchCardProps {
   findTeamInfo: (name: string) => { id: string; league: string };
 }
 
-function MatchCard({
+const MatchCard = React.memo(function MatchCard({
   row,
   isHighlighted,
   trackedMatchIds,
@@ -287,7 +287,7 @@ function MatchCard({
       </div>
     </div>
   );
-}
+});
 
 // ==================== LiveMonitor 主组件 ====================
 
@@ -315,17 +315,20 @@ export default function LiveMonitor() {
   const enabledCount = Array.isArray(strategies) ? strategies.filter((s: any) => s.enabled).length : 0;
 
   const searchTerm = searchText.trim().toLowerCase();
-  const filteredData = searchTerm
-    ? displayData.filter((m) =>
-        (m.homeTeam || "").toLowerCase().includes(searchTerm) ||
-        (m.awayTeam || "").toLowerCase().includes(searchTerm)
-      )
-    : displayData;
+  const filteredData = useMemo(() =>
+    searchTerm
+      ? displayData.filter((m) =>
+          (m.homeTeam || "").toLowerCase().includes(searchTerm) ||
+          (m.awayTeam || "").toLowerCase().includes(searchTerm)
+        )
+      : displayData,
+    [displayData, searchTerm]
+  );
 
-  const handleViewHistory = (matchId: string) => {
+  const handleViewHistory = useCallback((matchId: string) => {
     setHistoryFilterMatchId(matchId);
     setActiveCornerTab("history");
-  };
+  }, [setHistoryFilterMatchId, setActiveCornerTab]);
 
   if (isLoading && displayData.length === 0) {
     return (
