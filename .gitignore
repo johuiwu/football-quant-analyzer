@@ -58,6 +58,55 @@ backend/explore-*.js
 backend/find-hga-api.js
 backend/*.txt
 
-# 测试报告
-backend/pipeline-test-report.json
-backend/websocket_url.txt 
+# 临时测试文件
+tmp-*.mjs
+temp_*.mjs
+test-ff.mjs
+test-puppeteer.mjs
+test_login_monitor.py
+dev-app-update.yml
+
+# 调试/日志文件
+server_stdout.txt
+srv_err.txt
+srv_out.txt
+check_*.py
+debug_*.py
+verify_*.py
+_gen_report.py
+.git_commit_msg.txt
+
+# 后端调试文件
+backend/capture-wss-*.cjs
+backend/package-lock.json
+
+# 文档/报告（非必要）
+code_review*.md
+CODE_WIKI.md
+PROJECT_STRUCTURE.md
+TASK_STATUS.md
+WINDOWS_ENCODING_FIX.md
+CORNER_SYSTEM_README.md
+*自动投注链路分析报告.md
+*角球系统爬虫机制测试报告.md
+*角球系统_自动投注与监控功能*.md
+
+# Python 爬虫清理脚本
+python/check_*.py
+python/clean_*.py
+python/count_*.py
+python/fix_*.py
+
+# 启动脚本
+scripts/*.bat
+start.bat
+start_local.bat
+
+# 根目录杂文件
+analyze-hga-ver.js
+find-hga-api.js
+check_braces.cjs
+check_tabs.cjs
+convert-data.cjs
+package-lock.json
+.env.example 
