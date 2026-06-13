@@ -2369,6 +2369,30 @@ async function waitForTransformRequest(page) {
 let lastLoginFailureTime = 0;
 const LOGIN_COOLDOWN_MS = 120000;
 
+async function refreshCredentialsFromSharedPage(page) {
+  try {
+    console.log("[cornerCrawler] 尝试从共享页面刷新凭证...");
+    await page.evaluate(() => {
+      const el = document.getElementById("live_page");
+      if (el) el.click();
+    });
+    const credentials = await Promise.race([
+      waitForTransformRequest(page),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("wait timeout")), 10000)),
+    ]);
+    if (!credentials || !credentials.uid || !credentials.ver) {
+      console.warn("[cornerCrawler] 共享页面未拦截到 transform 请求");
+      return null;
+    }
+    const cookies = await page.cookies();
+    console.log("[cornerCrawler] 共享页面凭证刷新成功: uid=" + credentials.uid.substring(0, 10) + "...");
+    return { uid: credentials.uid, ver: credentials.ver, cookies };
+  } catch (e) {
+    console.warn("[cornerCrawler] 共享页面凭证刷新失败:", e.message);
+    return null;
+  }
+}
+
 async function _crawlViaPureHttp() {
   // 1. 先尝试从内存/磁盘加载并验证凭证（快速恢复路径，不启动浏览器）
   let creds = null;
@@ -2382,7 +2406,7 @@ async function _crawlViaPureHttp() {
     console.warn("[cornerCrawler] 纯HTTP: loadAndValidate 异常:", e.message);
   }
 
-  // 2. 凭证无效或缺失时，优先尝试 autoLogin（独立浏览器，登录后关闭）
+  // 2. 凭证无效时按优先级尝试恢复：(A) 共享页面刷新 → (B) hgCrawlerLogin → (C) autoLogin 兜底
   // ★ 登录冷却：2分钟内已登录失败则直接跳过
   if (!creds) {
     const now = Date.now();
@@ -2390,71 +2414,83 @@ async function _crawlViaPureHttp() {
       console.log("[cornerCrawler] 纯HTTP: 登录冷却中（距上次失败 " + Math.floor((now - lastLoginFailureTime) / 1000) + "s），跳过登录");
       return null;
     }
-    console.log("[cornerCrawler] 纯HTTP: 凭证无效，尝试 autoLogin（30s超时）...");
-    try {
-      const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
-      // 优先使用保存的用户名/密码，回退到环境变量
-      const savedLogin = getSavedLoginCredentials();
-      const loginPromise = autoLoginAndGetCredentials({
-        username: savedLogin?.username || process.env.HG_USERNAME || "",
-        password: savedLogin?.password || process.env.HG_PASSWORD || "",
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("autoLogin 30s超时")), 30000)
-      );
-      const loginResult = await Promise.race([loginPromise, timeoutPromise]);
-      if (loginResult.success && loginResult.uid && loginResult.ver) {
-        updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
-        creds = loadCredentials();
-        console.log("[cornerCrawler] 纯HTTP: autoLogin 成功获取凭证");
-      }
-    } catch (e) {
-      console.warn("[cornerCrawler] 纯HTTP: autoLogin 失败:", e.message);
-    }
-  }
 
-  // 3. autoLogin 也失败时，回退到 hgCrawlerLogin（启动共享浏览器）
-  // ★ 限制 hgCrawlerLogin 超时为 30 秒
-  if (!creds) {
-    console.log("[cornerCrawler] 纯HTTP: 尝试共享浏览器登录（30s超时）...");
-    try {
-      const loginPromise = hgCrawlerLogin({
-        username: process.env.HG_USERNAME || "",
-        password: process.env.HG_PASSWORD || "",
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("hgCrawlerLogin 30s超时")), 30000)
-      );
-      const loginResult = await Promise.race([loginPromise, timeoutPromise]);
-      if (!loginResult.success) {
-        console.warn("[cornerCrawler] 纯HTTP: hgCrawlerService 登录失败:", loginResult.error);
-        return null;
+    // (A) 优先：共享页面刷新凭证（最快，无需新浏览器）
+    const sharedPage = getSharedPage();
+    if (sharedPage && isBrowserActive()) {
+      try {
+        await sharedPage.url();
+      } catch (_) {
+        // 页面不可用，跳过
       }
-      // 从页面拦截 transform.php 提取 uid/ver
-      // ★ 先检查：如果 HgCrawler 已经更新了凭证，跳过等待
-      creds = loadCredentials();
-      if (creds && creds.uid && creds.ver) {
-        console.log("[cornerCrawler] 纯HTTP: HgCrawler 已提供凭证，跳过 transform.php 等待");
-      } else {
-        const { getSharedPage } = await import("./browserPool.js");
-        const page = getSharedPage();
-        if (page) {
-          const credentials = await waitForTransformRequest(page);
-          if (credentials) {
-            const cookies = await page.cookies();
-            updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
-            console.log("[cornerCrawler] 纯HTTP: 凭证已从页面拦截保存");
+      const refreshed = await refreshCredentialsFromSharedPage(sharedPage);
+      if (refreshed) {
+        updateCredentials({ uid: refreshed.uid, ver: refreshed.ver, cookies: refreshed.cookies });
+        creds = loadCredentials();
+        if (creds) console.log("[cornerCrawler] 纯HTTP: 共享页面凭证刷新成功");
+      }
+    }
+
+    // (B) 共享页面不可用或刷新失败 → hgCrawlerLogin（共享浏览器完整登录）
+    if (!creds) {
+      console.log("[cornerCrawler] 纯HTTP: 尝试共享浏览器登录（30s超时）...");
+      try {
+        const loginPromise = hgCrawlerLogin({
+          username: process.env.HG_USERNAME || "",
+          password: process.env.HG_PASSWORD || "",
+        });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("hgCrawlerLogin 30s超时")), 30000)
+        );
+        const loginResult = await Promise.race([loginPromise, timeoutPromise]);
+        if (!loginResult.success) {
+          console.warn("[cornerCrawler] 纯HTTP: hgCrawlerService 登录失败:", loginResult.error);
+        } else {
+          creds = loadCredentials();
+          if (!creds || !creds.uid || !creds.ver) {
+            const page = getSharedPage();
+            if (page) {
+              const credentials = await waitForTransformRequest(page);
+              if (credentials) {
+                const cookies = await page.cookies();
+                updateCredentials({ uid: credentials.uid, ver: credentials.ver, cookies });
+              }
+            }
           }
+          creds = loadCredentials();
+          if (!creds) console.warn("[cornerCrawler] 纯HTTP: hgCrawlerLogin 后凭证仍不完整");
         }
+      } catch (e) {
+        console.warn("[cornerCrawler] 纯HTTP: hgCrawlerLogin 失败:", e.message);
       }
-      creds = loadCredentials();
-      if (!creds) {
-        console.warn("[cornerCrawler] 纯HTTP: 登录后凭证仍不完整");
-        lastLoginFailureTime = Date.now();
-        return null;
+    }
+
+    // (C) 最后兜底：autoLogin（独立浏览器，30s超时）
+    if (!creds) {
+      console.log("[cornerCrawler] 纯HTTP: 回退到 autoLogin 兜底（30s超时）...");
+      try {
+        const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
+        const savedLogin = getSavedLoginCredentials();
+        const loginPromise = autoLoginAndGetCredentials({
+          username: savedLogin?.username || process.env.HG_USERNAME || "",
+          password: savedLogin?.password || process.env.HG_PASSWORD || "",
+        });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("autoLogin 30s超时")), 30000)
+        );
+        const loginResult = await Promise.race([loginPromise, timeoutPromise]);
+        if (loginResult.success && loginResult.uid && loginResult.ver) {
+          updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
+          creds = loadCredentials();
+          if (creds) console.log("[cornerCrawler] 纯HTTP: autoLogin 成功获取凭证");
+        }
+      } catch (e) {
+        console.warn("[cornerCrawler] 纯HTTP: autoLogin 失败:", e.message);
       }
-    } catch (e) {
-      console.warn("[cornerCrawler] 纯HTTP: hgCrawlerLogin 失败:", e.message);
+    }
+
+    // 所有登录路径均失败
+    if (!creds) {
       lastLoginFailureTime = Date.now();
       return null;
     }

@@ -6,7 +6,7 @@ import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { HG_URL, setUid, saveCookiesToDisk, loadCookiesFromDisk } from "./browserPool.js";
 import { extractVerFromRequest } from "./transformSigner.js";
-import { updateCredentials, invalidateCookieCache } from "./credentialManager.js";
+import { updateCredentials, invalidateCookieCache, loadCredentials } from "./credentialManager.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -327,6 +327,36 @@ async function fillCredentials(page, options) {
 export async function autoLoginAndGetCredentials(options = {}) {
   console.log("[autoLogin] 启动自动登录...");
   const startTime = Date.now();
+
+  // ★ 快速路径：磁盘有 uid/ver 时，先尝试纯 HTTP 保活
+  const diskCreds = loadCredentials();
+  if (diskCreds && diskCreds.uid && diskCreds.ver) {
+    console.log("[autoLogin] 磁盘存在 uid/ver，尝试纯 HTTP 保活...");
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${HG_URL}/transform.php?ver=${diskCreds.ver}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          ...(diskCreds.cookieStr ? { Cookie: diskCreds.cookieStr } : {}),
+        },
+        body: `uid=${diskCreds.uid}&ver=${diskCreds.ver}&p=get_league_count`,
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const text = await res.text();
+        if (!text.includes("<!DOCTYPE") && !text.includes("<html>")) {
+          console.log("[autoLogin] 纯 HTTP 保活成功，跳过浏览器登录");
+          return { success: true, uid: diskCreds.uid, ver: diskCreds.ver };
+        }
+      }
+      console.log("[autoLogin] 保活请求返回非预期内容，走完整浏览器登录");
+    } catch (e) {
+      console.log("[autoLogin] 纯 HTTP 保活失败: " + e.message + "，走完整浏览器登录");
+    }
+  }
 
   let browser = null;
   let page = null;
