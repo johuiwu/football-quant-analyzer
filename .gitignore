@@ -40,11 +40,13 @@ backend/decrypt_*.ps1
 backend/deep_analysis_v*.ps1
 backend/final_crack_v*.ps1
 backend/capture-*.ps1
+backend/monitor-*.ps1
 backend/probe-*.ps1
 backend/login-and-ws.ps1
 backend/login-and-ws.js
 backend/login-and-ws.cjs
 backend/login-emnu.cjs
+scripts/
 
 # 调试产物排除
 backend/*.png
