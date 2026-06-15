@@ -241,18 +241,10 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
       case 'DRAW': return '平局';
       case 'OVER': return '大球';
       case 'UNDER': return '小球';
-      default: return recommendation.direction;
+      default: return '平局';
     }
   }, [recommendation.aggregatedDirection, recommendation.direction, homeTeamDisplay, awayTeamDisplay]);
 
-  const handicapLabel = useMemo(() => {
-    if (recommendation.aggregatedDirection === 'OVER' || 
-        recommendation.aggregatedDirection === 'UNDER') return '';
-    if (handicap === undefined || handicap === null) return '';
-    if (handicap === 0) return '（平手）';
-    if (handicap < 0) return `（让${Math.abs(handicap)}球）`;
-    return `（受让${handicap}球）`;
-  }, [handicap, recommendation.aggregatedDirection]);
   const getConfidenceColor = (confidence: number) => {
     if (confidence > 0.7) return 'text-emerald-400';
     if (confidence > 0.5) return 'text-yellow-400';
@@ -270,7 +262,7 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
               <span className="text-xl font-bold text-white">终极多核推荐:</span>
             </div>
             <span className={`text-3xl font-black ${recommendation.colorClass} bg-clip-text text-transparent ${recommendation.glowClass}`}>
-              {displayDirection} {handicapLabel && <span className="text-lg text-slate-400 font-normal ml-1">{handicapLabel}</span>}
+              {displayDirection}
             </span>
           </div>
           

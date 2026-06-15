@@ -197,7 +197,7 @@ export default function StandingsTab({
                       <div className="inline-flex gap-1">
                         {formChars.map((char, cIdx) => (
                           <span
-                            key={cIdx}
+                            key={`${t.id}_form_${cIdx}`}
                             className={`inline-flex items-center justify-center w-4 h-4 rounded text-[9px] font-bold ${
                               char === 'W' 
                                 ? 'bg-emerald-500/25 text-emerald-400 border border-emerald-500/20' 

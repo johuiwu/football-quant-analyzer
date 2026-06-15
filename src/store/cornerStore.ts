@@ -44,6 +44,7 @@ export interface CornerLiveMatch {
   matchId: string;
   homeTeam: string;
   awayTeam: string;
+  time: string;
   elapsedMinutes: number;
   homeScore: number;
   awayScore: number;
@@ -447,6 +448,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         matchId: String(m.matchId || ""),
         homeTeam: m.homeTeam || "",
         awayTeam: m.awayTeam || "",
+        time: m.time || "",
         elapsedMinutes: m.elapsedMinutes || 0,
         homeScore: m.homeScore || 0,
         awayScore: m.awayScore || 0,
@@ -512,6 +514,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
             liveMatches.push({
               matchId: "mm_" + key,
               homeTeam, awayTeam,
+              time: "",
               elapsedMinutes: 0,
               homeScore: 0, awayScore: 0,
               homeCorners: 0, awayCorners: 0,

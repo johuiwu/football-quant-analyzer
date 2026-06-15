@@ -16,7 +16,7 @@ import { AggregationDecisionCenter } from '../components/AggregationDecisionCent
 import { BayesianLiveMatchMonitor } from '../components/BayesianLiveMatchMonitor';
 import { ApiKeySettings } from '../components/ApiKeySettings';
 import { DeepSeekKeyModal } from '../components/DeepSeekKeyModal';
-import { useAIAnalysis } from '../hooks/useAIAnalysis';
+import { useAIAnalysis, type AIAnalysisResult, type RiskAlertType } from '../hooks/useAIAnalysis';
 import { ValidationService } from '../services/ValidationService';
 import AdvancedParamsPanel from '../components/AdvancedParamsPanel';
 import ModelWeightsPanel from '../components/ModelWeightsPanel';
@@ -133,7 +133,7 @@ export default function DashboardPage() {
       setShowKeyModal(true);
     }
   }, [aiAnalysisHook.needsApiKey]);
-  const { analysis: aiAnalysis, isLoading: isAiLoading, validationWarning: aiValidationWarning, needsApiKey, fetchAiAnalysis: rawFetchAiAnalysis } = aiAnalysisHook;
+  const { result: aiResult, isLoading: isAiLoading, validationWarning: aiValidationWarning, needsApiKey, isFallback: aiIsFallback, fetchAiAnalysis: rawFetchAiAnalysis } = aiAnalysisHook;
 
   // ===== Live results =====
   const liveResults = useMemo(() => {
@@ -614,23 +614,6 @@ export default function DashboardPage() {
                     重新进行10维算力演算
                   </button>
                   <button
-                    onClick={() => {
-                      const h = selectedTeams.home;
-                      const a = selectedTeams.away;
-                      if (h && a) {
-                        const matchId = h.nameCn + "_vs_" + a.nameCn;
-                        useAppStore.getState().addTrackedMatch(matchId);
-                        useAppStore.getState().setSelectedMatchId(matchId);
-                        // 导航到角球系统页面，切换到爬虫控制 tab
-                        useAppStore.getState().setActiveTab("corner");
-                        useCornerStore.getState().setActiveCornerTab("crawler");
-                      }
-                    }}
-                    className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-xs font-semibold text-white py-2.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5"
-                  >
-                    📡 发送到角球系统
-                  </button>
-                  <button
                     onClick={isStatsCustomized ? () => setIsStatsCustomized(false) : enableStatsCustomizer}
                     className={`px-3 py-2 text-xs font-medium rounded-xl border transition-all ${
                       isStatsCustomized
@@ -921,6 +904,185 @@ export default function DashboardPage() {
               )}
               {results && (
                 <>
+                  {/* F. AI 专家推演模块 (DeepSeek API 量化分析) */}
+                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-indigo-500 via-purple-500 to-pink-500" />
+
+                    <div className="flex items-center justify-between flex-wrap gap-4 mb-4 pl-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1 px-2.5 bg-purple-500/10 text-purple-400 text-xs font-mono font-bold uppercase rounded-lg border border-purple-500/25">
+                          DeepSeek AI Quant Analyzer
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-100">AI 专家战术推演点评系统</h4>
+                        {/* 动态状态指示 */}
+                        {!aiResult && !isAiLoading && (
+                          <span className="text-[9px] bg-slate-700 px-2 py-0.5 rounded-full text-slate-300">
+                            待命
+                          </span>
+                        )}
+                        {isAiLoading && (
+                          <span className="text-[9px] bg-indigo-500/20 px-2 py-0.5 rounded-full text-indigo-300 animate-pulse">
+                            量化分析中...
+                          </span>
+                        )}
+                        {aiResult && !isAiLoading && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full ${aiIsFallback ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                            {aiIsFallback ? '离线模式' : 'AI 就绪'}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => { const savedKey = localStorage.getItem('deepseek_api_key'); if (!savedKey) { setShowKeyModal(true); return; } rawFetchAiAnalysis(home.id, away.id, odds, results!, { advancedParams, isStatsCustomized, customStats }); }}
+                        disabled={isAiLoading}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
+                      >
+                        <Cpu className={`w-3.5 h-3.5 ${isAiLoading ? 'animate-spin' : ''}`} />
+                        {isAiLoading ? '数智生成中...' : '生成 AI 深度战力点评'}
+                      </button>
+                    </div>
+
+                    {/* 空闲提示 */}
+                    {!aiResult && !isAiLoading && (
+                      <p className="text-xs text-slate-400 pl-2">
+                        点击上方按钮启动资深足球量化分析师，基于 10+ 维度结构化数据对该赛事进行战术克制、大小球深度原因、胜负手判断及风险预警分析。
+                      </p>
+                    )}
+
+                    {/* 加载动画 */}
+                    {isAiLoading && (
+                      <div className="pl-2 space-y-2 py-2 animate-pulse">
+                        <div className="h-3 w-5/6 bg-slate-800 rounded" />
+                        <div className="h-3 w-4/6 bg-slate-800 rounded" />
+                        <div className="h-3 w-2/3 bg-slate-800 rounded" />
+                        <span className="text-[11px] block font-mono text-indigo-400">「正在注入 xG/xGA/攻防指数/凯利公式/市场热度等 10+ 维度量化数据，推导战术草案...」</span>
+                      </div>
+                    )}
+
+                    {/* 分析结果展示（三栏卡片布局） */}
+                    {aiResult && (
+                      <>
+                        {/* 降级模式提示 */}
+                        {aiIsFallback && (
+                          <div className="mb-4 p-3 bg-amber-950/30 border border-amber-500/25 rounded-lg text-amber-300 text-xs">
+                            <AlertTriangle className="w-4 h-4 inline-block mr-1.5" />
+                            <strong>[离线模式]</strong> AI 分析暂时不可用，正在加载离线战术模板。请检查网络连接或 API Key 配置。
+                          </div>
+                        )}
+
+                        {/* 校验警告 */}
+                        {aiValidationWarning && (
+                          <div className="mb-4 p-3 bg-red-950/50 border border-red-500/30 rounded-lg text-red-300 text-xs">
+                            <AlertTriangle className="w-4 h-4 inline-block mr-1.5" />
+                            <strong>[数据一致性校验]</strong> {aiValidationWarning}
+                          </div>
+                        )}
+
+                        {/* 三栏卡片 */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
+                          {/* 卡片 1: 战术总览 */}
+                          <div className="bg-slate-950/60 rounded-xl border border-slate-800 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Scale className="w-4 h-4 text-blue-400" />
+                              <h5 className="text-xs font-bold text-blue-300 uppercase tracking-wider">战术总览</h5>
+                            </div>
+                            <div className="text-xs text-slate-300 leading-relaxed">
+                              {aiResult.tacticalSummary || '暂无战术分析数据'}
+                            </div>
+                          </div>
+
+                          {/* 卡片 2: 进球分析 */}
+                          <div className="bg-slate-950/60 rounded-xl border border-slate-800 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Activity className="w-4 h-4 text-emerald-400" />
+                              <h5 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">进球分析</h5>
+                            </div>
+                            <div className="text-xs text-slate-300 leading-relaxed">
+                              {aiResult.goalAnalysis || '暂无进球分析数据'}
+                            </div>
+                          </div>
+
+                          {/* 卡片 3: 风险预警 */}
+                          <div className={`rounded-xl border p-4 ${
+                            aiResult.riskAlert?.level === 'HIGH'
+                              ? 'bg-red-950/40 border-red-500/30'
+                              : aiResult.riskAlert?.level === 'MEDIUM'
+                                ? 'bg-amber-950/30 border-amber-500/25'
+                                : 'bg-emerald-950/30 border-emerald-500/25'
+                          }`}>
+                            <div className="flex items-center gap-2 mb-3">
+                              <AlertTriangle className={`w-4 h-4 ${
+                                aiResult.riskAlert?.level === 'HIGH'
+                                  ? 'text-red-400'
+                                  : aiResult.riskAlert?.level === 'MEDIUM'
+                                    ? 'text-amber-400'
+                                    : 'text-emerald-400'
+                              }`} />
+                              <h5 className={`text-xs font-bold uppercase tracking-wider ${
+                                aiResult.riskAlert?.level === 'HIGH'
+                                  ? 'text-red-300'
+                                  : aiResult.riskAlert?.level === 'MEDIUM'
+                                    ? 'text-amber-300'
+                                    : 'text-emerald-300'
+                              }`}>风险预警</h5>
+                              {/* 置信度标签 */}
+                              {aiResult.riskAlert?.confidence != null && (
+                                <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-mono ${
+                                  aiResult.riskAlert.confidence >= 0.7
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : aiResult.riskAlert.confidence >= 0.4
+                                      ? 'bg-amber-500/20 text-amber-300'
+                                      : 'bg-red-500/20 text-red-300'
+                                }`}>
+                                  置信度 {(aiResult.riskAlert.confidence * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            <div className={`text-xs leading-relaxed mb-2 ${
+                              aiResult.riskAlert?.level === 'HIGH'
+                                ? 'text-red-200'
+                                : aiResult.riskAlert?.level === 'MEDIUM'
+                                  ? 'text-amber-200'
+                                  : 'text-emerald-200'
+                            }`}>
+                              {aiResult.riskAlert?.summary || '暂无风险评估数据'}
+                            </div>
+                            {/* 关键风险点列表 */}
+                            {aiResult.riskAlert?.keyRisks && aiResult.riskAlert.keyRisks.length > 0 && (
+                              <ul className="space-y-1">
+                                {aiResult.riskAlert.keyRisks.map((risk, idx) => (
+                                  <li key={idx} className={`text-[11px] flex items-start gap-1.5 ${
+                                    aiResult.riskAlert?.level === 'HIGH'
+                                      ? 'text-red-300/80'
+                                      : aiResult.riskAlert?.level === 'MEDIUM'
+                                        ? 'text-amber-300/80'
+                                        : 'text-emerald-300/80'
+                                  }`}>
+                                    <span className="mt-0.5 w-1 h-1 rounded-full shrink-0 bg-current" />
+                                    {risk}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 模型基准参考数据区域 */}
+                        <div className="mt-4 p-2.5 bg-slate-950/60 rounded-lg text-[10px] text-slate-500 border border-slate-800">
+                          <strong className="text-slate-400">📊 模型基准参考（用于AI结果比对）：</strong>
+                          <div className="mt-1 grid grid-cols-3 gap-2 font-mono">
+                            <div>主胜：{(results.compHomeWin * 100).toFixed(1)}%</div>
+                            <div>平局：{(results.compDraw * 100).toFixed(1)}%</div>
+                            <div>客胜：{(results.compAwayWin * 100).toFixed(1)}%</div>
+                            <div>预期进球：{(results.expectedHomeGoals + results.expectedAwayGoals).toFixed(2)}</div>
+                            <div>小球概率：{((results.overUnderProb.find(p => p.line === 2.5)?.under || 0) * 100).toFixed(1)}%</div>
+                            <div>大球概率：{((results.overUnderProb.find(p => p.line === 2.5)?.over || 0) * 100).toFixed(1)}%</div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
                   {/* C. 聚合决策中枢（新增，最显眼位置） */}
                   <AggregationDecisionCenter 
                     marketOdds={convertedOdds}
@@ -1511,79 +1673,6 @@ export default function DashboardPage() {
                       />
                     </div>
 
-                  </div>
-
-                  {/* F. AI 专家推演模块 (DeepSeek API 交互，包含对失配密钥的安全懒加载) */}
-                  <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-indigo-500 via-purple-500 to-pink-500" />
-                    
-                    <div className="flex items-center justify-between flex-wrap gap-4 mb-4 pl-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-1 px-2.5 bg-purple-500/10 text-purple-400 text-xs font-mono font-bold uppercase rounded-lg border border-purple-500/25">
-                          DeepSeek AI Real-Time Analyzer
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-100">AI 专家战术推演点评系统</h4>
-                        <span className="text-[9px] bg-slate-800 px-2 py-0.5 rounded-full text-slate-400">
-                          🔍 防幻觉校验中
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => { const savedKey = localStorage.getItem('deepseek_api_key'); if (!savedKey) { setShowKeyModal(true); return; } rawFetchAiAnalysis(home.id, away.id, odds, results!, { advancedParams, isStatsCustomized, customStats }); }}
-                        disabled={isAiLoading}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-1.5 px-3.5 rounded-xl flex items-center gap-1.5 transition-all shadow-md"
-                      >
-                        <Cpu className={`w-3.5 h-3.5 ${isAiLoading ? 'animate-spin' : ''}`} />
-                        {isAiLoading ? '数智生成中...' : '生成 AI 深度战力点评'}
-                      </button>
-                    </div>
-
-                    {!aiAnalysis && !isAiLoading && (
-                      <p className="text-xs text-slate-400 pl-2">
-                        点击上方按钮启动 DeepSeek AI 顶级精算评委，对该赛事的打法克制关系、战术强弱破绽、大小球深度原因进行文字剖析。
-                      </p>
-                    )}
-
-                    {isAiLoading && (
-                      <div className="pl-2 space-y-2 py-2 animate-pulse">
-                        <div className="h-3 w-5/6 bg-slate-800 rounded" />
-                        <div className="h-3 w-4/6 bg-slate-800 rounded" />
-                        <div className="h-3 w-2/3 bg-slate-800 rounded" />
-                        <span className="text-[11px] block font-mono text-indigo-400">「正在根据物理攻守差、Poisson进球模型、状态系数推导冷门预警战术草案...」</span>
-                      </div>
-                    )}
-
-                    {aiAnalysis && (
-                      <>
-                        {/* AI Validation Warning Banner */}
-                        {aiValidationWarning && (
-                          <div className="mb-4 p-3 bg-red-950/50 border border-red-500/30 rounded-lg text-red-300 text-xs">
-                            <AlertTriangle className="w-4 h-4 inline-block mr-1.5" />
-                            <strong>[防幻觉校验]</strong> {aiValidationWarning}
-                          </div>
-                        )}
-
-                        {/* AI Analysis Content */}
-                        <div className="pl-2 pr-2 py-1 border-t border-slate-800 mt-2.5">
-                          <div className="text-xs text-slate-300 leading-relaxed font-sans whitespace-pre-wrap">
-                            {aiAnalysis}
-                          </div>
-                        </div>
-
-                        {/* Model Data Reference */}
-                        <div className="mt-3 p-2.5 bg-slate-950/60 rounded-lg text-[10px] text-slate-500 border border-slate-800">
-                          <strong className="text-slate-400">📊 模型基准参考（用于AI结果比对）：</strong>
-                          <div className="mt-1 grid grid-cols-3 gap-2 font-mono">
-                            <div>主胜：{(results.compHomeWin * 100).toFixed(1)}%</div>
-                            <div>平局：{(results.compDraw * 100).toFixed(1)}%</div>
-                            <div>客胜：{(results.compAwayWin * 100).toFixed(1)}%</div>
-                            <div>预期进球：{(results.expectedHomeGoals + results.expectedAwayGoals).toFixed(2)}</div>
-                            <div>小球概率：{((results.overUnderProb.find(p => p.line === 2.5)?.under || 0) * 100).toFixed(1)}%</div>
-                            <div>大球概率：{((results.overUnderProb.find(p => p.line === 2.5)?.over || 0) * 100).toFixed(1)}%</div>
-                          </div>
-                        </div>
-                      </>
-                    )}
                   </div>
                 </>
               )}

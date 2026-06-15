@@ -1,10 +1,12 @@
-﻿﻿﻿﻿﻿import { useState, useMemo, useCallback } from 'react';
+﻿﻿﻿﻿import { useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Search, TrendingUp, Zap, MapPin, Sparkles, Info, Award, Swords, Loader2, Check, Clock } from 'lucide-react';
 import { TeamStats, RankedValue } from '../data/realTeamsData';
 import { ALL_LEAGUES, ALL_LEAGUE_TEAMS, LeagueTeam } from '../data/leagueTeams';
 import { useAppStore } from '../store/useAppStore';
 
 export default function TeamInfoSection() {
+  const navigate = useNavigate();
   const [selectedLeague, setSelectedLeague] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -299,7 +301,7 @@ export default function TeamInfoSection() {
             ) : filteredTeams.map((t: LeagueTeam) => {
               const active = t.id === selectedTeamId; const [wins, hasData] = winsOf(t);
               return (
-                <button key={t.id} onClick={() => handleSelectTeam(t.id)} onDoubleClick={() => setHomeAndGo(t.realTeamId || t.id, t.leagueKey)}
+                <button key={t.id} onClick={() => handleSelectTeam(t.id)} onDoubleClick={() => { setHomeAndGo(t.realTeamId || t.id, t.leagueKey); navigate('/dashboard'); }}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border flex items-center justify-between transition-all ${active ? 'bg-blue-950/45 border-blue-500/50 shadow-md' : 'bg-slate-900/60 border-transparent hover:bg-slate-900 hover:border-slate-700'}`}>
                   <div className="flex items-center gap-2.5 min-w-0"><div className="w-7 h-7 rounded-lg bg-slate-950 flex items-center justify-center border border-slate-800 shrink-0"><span className="text-[10px] font-mono text-emerald-400 font-bold">{t.englishName?.charAt(0) || '#'}</span></div><div className="min-w-0"><p className="text-xs font-semibold text-slate-200 truncate">{t.name}</p></div></div>
                   <div className="flex items-center gap-2 shrink-0"><span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800 font-mono">{LGA[t.leagueKey] || t.leagueKey}</span><span className="text-[11px] font-bold text-slate-300 font-mono">{hasData ? `${wins}胜` : '—'}</span></div>
@@ -330,7 +332,7 @@ export default function TeamInfoSection() {
                       <p className="text-xs text-slate-500 mt-0.5 font-mono">{safeTeam?.name || ''}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col md:items-end gap-1.5"><span className="text-[11px] text-slate-500 font-semibold">近 5 轮战绩走势</span><div className="flex gap-1">{(safeTeam?.form?.length ? safeTeam.form : ['—', '—', '—', '—', '—']).map((f, idx) => (<span key={idx} className={`w-6 h-6 rounded flex items-center justify-center font-bold text-[11px] shadow-sm ${f === 'W' ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-500/30' : f === 'D' ? 'bg-amber-900/40 text-amber-300 border border-amber-500/25' : f === 'L' ? 'bg-red-950/50 text-red-300 border border-red-500/30' : 'bg-slate-900/50 text-slate-600 border border-slate-700/30'}`}>{f}</span>))}</div></div>
+                  <div className="flex flex-col md:items-end gap-1.5"><span className="text-[11px] text-slate-500 font-semibold">近 5 轮战绩走势</span><div className="flex gap-1">{(safeTeam?.form?.length ? safeTeam.form : ['—', '—', '—', '—', '—']).map((f, idx) => (<span key={`${safeTeam?.id || 'unknown'}_form_${idx}`} className={`w-6 h-6 rounded flex items-center justify-center font-bold text-[11px] shadow-sm ${f === 'W' ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-500/30' : f === 'D' ? 'bg-amber-900/40 text-amber-300 border border-amber-500/25' : f === 'L' ? 'bg-red-950/50 text-red-300 border border-red-500/30' : 'bg-slate-900/50 text-slate-600 border border-slate-700/30'}`}>{f}</span>))}</div></div>
                 </div>
                 <div className="flex mt-4 pt-3 border-t border-slate-800/60 gap-2">
                   <div className="flex items-center gap-1.5">
@@ -368,8 +370,8 @@ export default function TeamInfoSection() {
                       <span className="text-[10px] px-2 py-1 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">{error}</span>
                     )}
                   </div>
-                  <button onClick={() => setHomeAndGo(safeTeam.id, activeTeamLeague)} className="flex-1 py-2 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white flex items-center justify-center gap-1.5 border border-rose-500/30 shadow-lg shadow-rose-950/30"><ShieldCheck className="w-3.5 h-3.5" /> 设为主场主队</button>
-                  <button onClick={() => setAwayAndGo(safeTeam.id, activeTeamLeague)} className="flex-1 py-2 rounded-lg text-[11px] font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 flex items-center justify-center gap-1.5 border border-slate-600/40"><Swords className="w-3.5 h-3.5" /> 设为客场客队</button>
+                  <button onClick={() => { setHomeAndGo(safeTeam.id, activeTeamLeague); navigate('/dashboard'); }} className="flex-1 py-2 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white flex items-center justify-center gap-1.5 border border-rose-500/30 shadow-lg shadow-rose-950/30"><ShieldCheck className="w-3.5 h-3.5" /> 设为主场主队</button>
+                  <button onClick={() => { setAwayAndGo(safeTeam.id, activeTeamLeague); navigate('/dashboard'); }} className="flex-1 py-2 rounded-lg text-[11px] font-semibold bg-slate-700 hover:bg-slate-600 text-slate-200 flex items-center justify-center gap-1.5 border border-slate-600/40"><Swords className="w-3.5 h-3.5" /> 设为客场客队</button>
                 </div>
               </div>
 

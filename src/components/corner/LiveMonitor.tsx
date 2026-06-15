@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { ExternalLink, History, RefreshCw, X, Lock } from "lucide-react";
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
@@ -213,7 +214,7 @@ const MatchCard = React.memo(function MatchCard({
               {row.homeTeam || "--"} <span className="text-slate-500 mx-1">vs</span> {row.awayTeam || "--"}
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">
-              {row.league || ""} {row.time ? `· ${row.time}` : ""} {row.elapsedMinutes ? `· ${row.elapsedMinutes}'` : ""}
+              {row.league || ""} {row.elapsedMinutes ? `· ${row.elapsedMinutes}'` : ""}
             </div>
           </div>
         </div>
@@ -292,11 +293,16 @@ const MatchCard = React.memo(function MatchCard({
 // ==================== LiveMonitor 主组件 ====================
 
 export default function LiveMonitor() {
+  const navigate = useNavigate();
   const selectedMatchId = useAppStore((s) => s.selectedMatchId);
   const trackedMatchIds = useAppStore((s) => s.trackedMatchIds);
   const addTrackedMatch = useAppStore((s) => s.addTrackedMatch);
   const removeTrackedMatch = useAppStore((s) => s.removeTrackedMatch);
-  const navigateToDashboard = useAppStore((s) => s.navigateToDashboard);
+  const navigateToDashboardStore = useAppStore((s) => s.navigateToDashboard);
+  const navigateToDashboard = useCallback((homeId: string, awayId: string, homeLeague: string, awayLeague: string) => {
+    navigateToDashboardStore(homeId, awayId, homeLeague, awayLeague);
+    navigate('/dashboard');
+  }, [navigateToDashboardStore, navigate]);
   const strategies = useCornerStore((s) => s.strategies) || [];
   const setActiveCornerTab = useCornerStore((s) => s.setActiveCornerTab);
   const setHistoryFilterMatchId = useCornerStore((s) => s.setHistoryFilterMatchId);

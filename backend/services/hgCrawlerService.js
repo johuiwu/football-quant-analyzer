@@ -9,8 +9,6 @@ import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollin
 import { updateCredentials } from "./credentialManager.js";
 import { extractVerFromRequest } from "./transformSigner.js";
 import fs from "fs";
-import net from "net";
-import dns from "dns/promises";
 
 // ======================== 配置常量 ========================
 const HG_USERNAME = process.env.HG_USERNAME || "";
@@ -20,17 +18,29 @@ const HG_PASSWORD = process.env.HG_PASSWORD || "";
 /**
  * 检测域名 443 端口是否可达
  */
-async function checkDomainReachable(url, timeout = 5000) {
+async function checkDomainReachable(url, timeout = 8000) {
+  // ★ 如果配置了代理，跳过检测（代理模式下直连必然失败）
+  if (process.env.PUPPETEER_PROXY) {
+    console.log("[HgCrawler] 代理模式已启用，跳过域名可达性检测");
+    return true;
+  }
   try {
-    const host = new URL(url).hostname;
-    await dns.resolve(host);
-    return await new Promise((resolve) => {
-      const socket = new net.Socket();
-      const timer = setTimeout(() => { socket.destroy(); resolve(false); }, timeout);
-      socket.connect(443, host, () => { clearTimeout(timer); socket.destroy(); resolve(true); });
-      socket.on("error", () => { clearTimeout(timer); socket.destroy(); resolve(false); });
+    // 使用 HTTPS HEAD 请求替代原始 TCP socket 检测
+    // 原始 TCP socket 不支持 SNI，导致需要 SNI 的网站误判为不可达
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    const res = await fetch(url, {
+      method: "HEAD",
+      signal: controller.signal,
+      redirect: "manual",
     });
-  } catch { return false; }
+    clearTimeout(timer);
+    // 任何响应（包括 3xx 重定向）都说明域名可达
+    return res.status > 0;
+  } catch (err) {
+    // fetch 失败（网络错误/超时/SSL错误）视为不可达
+    return false;
+  }
 }
 
 /**
@@ -395,6 +405,16 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
       Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
     });
 
+    // ★ 登录前清除浏览器所有 Cookie 和缓存，避免旧会话冲突导致被踢出
+    try {
+      const client = await page.target().createCDPSession();
+      await client.send("Network.clearBrowserCookies");
+      await client.send("Network.clearBrowserCache");
+      console.log("[HgCrawler] 已清除浏览器 Cookie 和缓存（防止旧会话冲突）");
+    } catch (e) {
+      console.warn("[HgCrawler] 清除 Cookie/缓存失败:", e.message);
+    }
+
     await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     console.log("[HgCrawler] 等待页面完全加载...");
     // 条件等待：检测登录表单或主页特征（替代固定 sleep 5s）
@@ -441,10 +461,11 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
 
         case 'KICKED_OUT':
           popupCount.kickedOut++;
-          if (popupCount.kickedOut > MAX_POPUP) {
-            console.log("[HgCrawler] WARNING: kickedOut 弹窗超过 " + MAX_POPUP + " 次，登录失败");
-            crawlerStatus.error = "popup loop timeout (kickedOut)";
-            return isolated ? { success: false, error: "popup loop timeout (kickedOut)" } : { success: false, error: "popup loop timeout (kickedOut)" };
+          if (popupCount.kickedOut > 2) {
+            // ★ 被踢出超过 2 次直接返回失败，避免死循环
+            console.log("[HgCrawler] 被踢出超过 2 次，登录失败（网站反并发机制触发）");
+            crawlerStatus.error = "登录失败：账号在其他地方登录或网站反爬机制触发，请稍后重试";
+            return { success: false, error: crawlerStatus.error };
           }
           console.log("[HgCrawler] 检测到被踢出登录，点击确认并清理... (" + detected.detail + ")");
           // 1. 点击确认按钮
@@ -452,7 +473,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
             const btn = document.querySelector("#kick_ok_btn");
             if (btn) btn.click();
           });
-          await new Promise((r) => setTimeout(r, 600));
+          await new Promise((r) => setTimeout(r, 1000));
           // 2. 强制移除弹窗容器的 .on 类
           await page.evaluate(() => {
             const dialogIds = ["alert_kick", "C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "system_popup"];
@@ -465,23 +486,40 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
               document.body.style.overflow = "";
             }
           });
-          // 3. 首次被踢出时清除 Cookie 并重新导航
-          if (popupCount.kickedOut === 1) {
-            console.log("[HgCrawler] 首次被踢出，清除 Cookie 并重新导航...");
+          // 3. 清除 Cookie 并关闭当前页面，打开全新页面重新导航
+          console.log("[HgCrawler] 第 " + popupCount.kickedOut + " 次被踢出，关闭当前页面并重新打开...");
+          try {
+            const client = await page.target().createCDPSession();
+            await client.send("Network.clearBrowserCookies");
+            console.log("[HgCrawler] 已清除浏览器 Cookie");
+          } catch (e) {
+            console.warn("[HgCrawler] 清除 Cookie 失败:", e.message);
+          }
+          try {
+            // ★ 关闭旧页面，打开新页面（彻底清除页面状态）
+            await page.close();
+            page = await bi.newPage();
+            await page.setUserAgent(
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            );
+            await page.setViewport({ width: 1920, height: 1400 });
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, "webdriver", { get: () => false });
+              Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+            });
+            // ★ 等待足够时间让网站服务端处理登出状态
+            await new Promise((r) => setTimeout(r, 3000));
+            await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+            // 等待登录表单加载
             try {
-              const client = await page.target().createCDPSession();
-              await client.send("Network.clearBrowserCookies");
-              console.log("[HgCrawler] 已清除浏览器 Cookie");
-            } catch (e) {
-              console.warn("[HgCrawler] 清除 Cookie 失败:", e.message);
-            }
-            try {
-              await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-              await new Promise((r) => setTimeout(r, 1500));
-              console.log("[HgCrawler] 已重新导航到登录页");
-            } catch (e) {
-              console.warn("[HgCrawler] 重新导航失败:", e.message);
-            }
+              await page.waitForFunction(() => {
+                const usr = document.getElementById('usr');
+                return usr && getComputedStyle(usr).display !== 'none';
+              }, { timeout: 8000 });
+            } catch (_) {}
+            console.log("[HgCrawler] 新页面已打开并导航到登录页");
+          } catch (e) {
+            console.warn("[HgCrawler] 重新打开页面失败:", e.message);
           }
           loginClicked = false;
           break;
@@ -609,9 +647,9 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
             }
 
             loginClicked = true;
+            // ★ 不重置 kickedOut 计数器，防止被踢出后重新登录又走"首次被踢出"分支导致死循环
             popupCount.passcodePage = 0;
             popupCount.passcodeDialog = 0;
-            popupCount.kickedOut = 0;
             console.log("[HgCrawler] ✓ 已点击登录按钮");
           }
           await new Promise((r) => setTimeout(r, 500));

@@ -1,4 +1,5 @@
 import { PredictionResults, AdvancedParams, ModelWeights } from '../utils/quantModel';
+import { AIAnalysisResult } from '../hooks/useAIAnalysis';
 
 export class ValidationService {
   static validateAIAnalysis(analysis: string, results: PredictionResults): string | null {
@@ -31,6 +32,61 @@ export class ValidationService {
       const aiWinPercent = parseFloat(winMatch[1]);
       if (Math.abs(aiWinPercent - results.compHomeWin * 100) > 15) {
         warnings.push(`⚠️ AI提及胜率 ${aiWinPercent}%，与模型计算值 ${(results.compHomeWin * 100).toFixed(1)}% 存在显著偏差（${(Math.abs(aiWinPercent - results.compHomeWin * 100)).toFixed(1)}%）`);
+      }
+    }
+
+    return warnings.length > 0 ? warnings.join(' | ') : null;
+  }
+
+  static validateStructuredAnalysis(result: AIAnalysisResult, predictions: PredictionResults): string | null {
+    const warnings: string[] = [];
+
+    // 1. 对 riskAlert.confidence 与模型预测概率做交叉校验
+    if (result.riskAlert?.confidence != null) {
+      const maxProb = Math.max(predictions.compHomeWin, predictions.compDraw, predictions.compAwayWin);
+      // 如果模型最高概率很高但 AI 置信度很低，说明 AI 对模型结论有疑虑
+      if (maxProb > 0.7 && result.riskAlert.confidence < 0.5) {
+        warnings.push(`⚠️ 模型最高概率 ${(maxProb * 100).toFixed(1)}%，但 AI 置信度仅 ${(result.riskAlert.confidence * 100).toFixed(0)}%，存在重大分歧`);
+      }
+      // 如果模型概率分散但 AI 置信度很高，说明 AI 可能过度自信
+      if (maxProb < 0.45 && result.riskAlert.confidence > 0.8) {
+        warnings.push(`⚠️ 模型预测分散（最高 ${(maxProb * 100).toFixed(1)}%），但 AI 置信度高达 ${(result.riskAlert.confidence * 100).toFixed(0)}%，可能过度自信`);
+      }
+    }
+
+    // 2. 对 tacticalSummary 中的数值引用与 quantitativeData 做偏差检测
+    const combinedText = `${result.tacticalSummary} ${result.goalAnalysis}`;
+
+    // 检测 AI 提及的胜率百分比与模型偏差
+    const winMatch = combinedText.match(/(\d+(?:\.\d+)?)%.*胜/);
+    if (winMatch) {
+      const aiWinPercent = parseFloat(winMatch[1]);
+      const modelHomeWin = predictions.compHomeWin * 100;
+      const modelAwayWin = predictions.compAwayWin * 100;
+      if (Math.abs(aiWinPercent - modelHomeWin) > 15 && Math.abs(aiWinPercent - modelAwayWin) > 15) {
+        warnings.push(`⚠️ AI提及胜率 ${aiWinPercent}%，与模型主胜 ${modelHomeWin.toFixed(1)}%/客胜 ${modelAwayWin.toFixed(1)}% 均存在显著偏差`);
+      }
+    }
+
+    // 检测大球/小球判断与模型偏差
+    if ((combinedText.includes('大球') || combinedText.includes('多进球') || combinedText.includes('进球大战')) &&
+        (predictions.expectedHomeGoals + predictions.expectedAwayGoals < 2.5)) {
+      warnings.push(`⚠️ 模型预期总进球仅为 ${(predictions.expectedHomeGoals + predictions.expectedAwayGoals).toFixed(2)}，AI对大球判断存疑`);
+    }
+
+    if ((combinedText.includes('小球') || combinedText.includes('少进球') || combinedText.includes('防守大战')) &&
+        (predictions.expectedHomeGoals + predictions.expectedAwayGoals > 2.8)) {
+      warnings.push(`⚠️ 模型预期总进球为 ${(predictions.expectedHomeGoals + predictions.expectedAwayGoals).toFixed(2)}，AI对小球判断存疑`);
+    }
+
+    // 3. 检测 riskAlert.level 与模型风险评级的一致性
+    if (result.riskAlert?.level) {
+      const modelRiskHigh = predictions.upsetLevel === 'HIGH' || predictions.coldUpsetAlert;
+      if (result.riskAlert.level === 'LOW' && modelRiskHigh) {
+        warnings.push(`⚠️ AI风险等级为 LOW，但模型检测到冷门预警（${predictions.upsetLevel}），风险评估可能不足`);
+      }
+      if (result.riskAlert.level === 'HIGH' && !modelRiskHigh && predictions.compHomeWin > 0.6) {
+        warnings.push(`⚠️ AI风险等级为 HIGH，但模型主胜概率高达 ${(predictions.compHomeWin * 100).toFixed(1)}%，风险评级可能偏高`);
       }
     }
 

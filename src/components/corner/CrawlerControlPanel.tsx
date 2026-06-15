@@ -269,6 +269,11 @@ export default function CrawlerControlPanel() {
   const fetchMatches = async (e_or_forceCorner?: React.MouseEvent | boolean) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     const forceCorner = typeof e_or_forceCorner === "boolean" ? e_or_forceCorner : false;
     const e = typeof e_or_forceCorner !== "boolean" ? e_or_forceCorner : undefined;
     if (e) { e.preventDefault(); e.stopPropagation(); }
@@ -281,7 +286,7 @@ export default function CrawlerControlPanel() {
       
       if (forceCorner) {
         try {
-          const fetchRes = await fetch("/api/corner/fetch", { method: "POST" });
+          const fetchRes = await fetch("/api/corner/fetch", { method: "POST", signal: controller.signal });
           apiData = await fetchRes.json();
           apiSource = "/api/corner/fetch";
           // 即时爬取失败（如 Crawler busy）时回退到缓存接口
@@ -459,6 +464,7 @@ export default function CrawlerControlPanel() {
               matchId: String(item.matchId || "unknown"),
               homeTeam: item.homeTeam || "--",
               awayTeam: item.awayTeam || "--",
+              time: item.time || "",
               elapsedMinutes: Number(item.elapsedMinutes) || 0,
               homeScore: Number(item.homeScore) || 0,
               awayScore: Number(item.awayScore) || 0,
@@ -489,10 +495,14 @@ export default function CrawlerControlPanel() {
       if (!useCornerApi) {
         await fetchStatus();
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError' || err.name === 'AbortController') return;
       console.error("[数据] 获取失败:", err);
       showMessage("error", "获取失败");
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
       fetchingRef.current = false;
     }
   };
@@ -748,7 +758,7 @@ export default function CrawlerControlPanel() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(match.league)}</span>
-                        <span className="text-xs text-slate-500">{translateTime(match.time)}</span>
+                        <span className="text-xs text-slate-500">{translateTime(match.time)}{match.elapsedMinutes ? ` · ${match.elapsedMinutes}'` : ""}</span>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-center">

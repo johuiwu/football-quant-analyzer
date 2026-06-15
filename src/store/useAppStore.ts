@@ -207,12 +207,12 @@ export const useAppStore = create<AppStore>((set) => ({
   setSelectedMatchId: (id) => set({ selectedMatchId: id }),
   addTrackedMatch: (matchId) => set((s) => { const next = s.trackedMatchIds.includes(matchId) ? s.trackedMatchIds : [...s.trackedMatchIds, matchId]; syncTrackedMatchesToBackend(next); return { trackedMatchIds: next }; }),
   removeTrackedMatch: (matchId) => set((s) => { const next = s.trackedMatchIds.filter((id) => id !== matchId); syncTrackedMatchesToBackend(next); return { trackedMatchIds: next }; }),
-  navigateToCorner: (matchId) => set({ selectedMatchId: matchId, activeTab: "corner" }),
+  navigateToCorner: (matchId) => set({ selectedMatchId: matchId }),
   setCornerActiveSubTab: (tab) => set({ cornerActiveSubTab: tab }),
   navigateToDashboard: (homeId, awayId, homeLeague, awayLeague) =>
-    set({ selectedHomeId: homeId, selectedAwayId: awayId, selectedHomeLeague: homeLeague, selectedAwayLeague: awayLeague, activeTab: "dashboard" }),
-  setHomeAndGo: (teamId, league) => set({ selectedHomeId: teamId, selectedHomeLeague: league, activeTab: "dashboard" }),
-  setAwayAndGo: (teamId, league) => set({ selectedAwayId: teamId, selectedAwayLeague: league, activeTab: "dashboard" }),
+    set({ selectedHomeId: homeId, selectedAwayId: awayId, selectedHomeLeague: homeLeague, selectedAwayLeague: awayLeague }),
+  setHomeAndGo: (teamId, league) => set({ selectedHomeId: teamId, selectedHomeLeague: league }),
+  setAwayAndGo: (teamId, league) => set({ selectedAwayId: teamId, selectedAwayLeague: league }),
   resetToDefaults: () => set({
     customWeights: { odds: 0.45, strength: 0.30, homeAway: 0.15, h2h: 0.10, form: 0.05 } as ModelWeights,
     liveMatch: initialLiveMatch,

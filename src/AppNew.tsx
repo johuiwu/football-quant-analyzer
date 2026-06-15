@@ -1,8 +1,8 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import TeamInfoSection from "./components/TeamInfoSection";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { WorldCupDashboard } from "./components/WorldCupDashboard";
+import WorldCupPage from "./pages/WorldCupPage";
 import { useFixtureSync } from "./hooks/useFixtureSync";
 import { useTeamDataSync } from "./hooks/useTeamDataSync";
 import PageHeader from "./components/PageHeader";
@@ -23,9 +23,6 @@ const PATH_TO_TAB: Record<string, string> = {
 };
 
 function AppNewContent() {
-  // ===== Store selectors =====
-  const activeTab = useAppStore((s) => s.activeTab);
-
   const setTeams = useAppStore((s) => s.setTeams);
   const setTeamsLoading = useAppStore((s) => s.setTeamsLoading);
   const setTeamsSyncMsg = useAppStore((s) => s.setTeamsSyncMsg);
@@ -38,24 +35,16 @@ function AppNewContent() {
   const setActiveTab = useAppStore((s) => s.setActiveTab);
 
   const navigate = useNavigate();
-  const isFirstRender = useRef(true);
   const location = useLocation();
+  const isSyncedRef = useRef(false);
 
-  // ===== 双向同步，activeTab 和 URL =====
-
-  // activeTab 到 URL，Store 驱动导航，如 setHomeAndGo 触发
-  useEffect(() => {
-    const targetPath = "/" + activeTab;
-    if (location.pathname !== targetPath) {
-      navigate(targetPath, { replace: true });
-    }
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // URL 到 activeTab，浏览器导航驱动 store 更新
+  // URL → activeTab 单向同步
+  // 仅在首次加载或 URL 变化时同步到 store，不从 store 反向驱动 URL
   useEffect(() => {
     const tab = PATH_TO_TAB[location.pathname];
-    if (tab && tab !== activeTab) {
+    if (tab) {
       setActiveTab(tab as any);
+      isSyncedRef.current = true;
     }
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -113,9 +102,9 @@ function AppNewContent() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
-          <Route path="/standings" element={<StandingsPage />} />
+          <Route path="/standings" element={<ErrorBoundary><StandingsPage /></ErrorBoundary>} />
           <Route path="/teams" element={<ErrorBoundary><TeamInfoSection /></ErrorBoundary>} />
-          <Route path="/worldcup" element={<WorldCupDashboard />} />
+          <Route path="/worldcup" element={<ErrorBoundary><WorldCupPage /></ErrorBoundary>} />
           <Route path="/corner" element={<ErrorBoundary><CornerSystemPage /></ErrorBoundary>} />
           <Route path="/updates" element={<ErrorBoundary><UpdatesPage /></ErrorBoundary>} />
         </Routes>

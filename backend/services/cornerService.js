@@ -2,6 +2,7 @@ import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./corn
 import { evaluateStrategies as evaluateCornerStrategies } from "./cornerEvaluator.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
 import { run, query } from "../dbService.js";
+import { subscribeMatches, unsubscribeAll } from "./GismoSubscriber.js";
 import {
   saveCornerTrigger,
   checkDuplicateBet,
@@ -260,6 +261,30 @@ async function pollOnce() {
   lastFetchTime = Date.now();
   consecutiveFailures = 0;
 
+  // gismo 订阅：提取 matchId 列表并订阅实时数据
+  const matchIds = cachedMatches.map(m => m.matchId).filter(Boolean);
+  if (matchIds.length > 0) {
+    const { getSharedPage } = await import("./browserPool.js");
+    const sharedPage = getSharedPage();
+    if (sharedPage) {
+      subscribeMatches(matchIds, (deltaData) => {
+        // gismo 回调：更新 cachedMatches 中的实时数据
+        const match = cachedMatches.find(m => m.matchId === deltaData.matchId);
+        if (match) {
+          if (deltaData.elapsedMinutes !== undefined) match.elapsedMinutes = deltaData.elapsedMinutes;
+          if (deltaData.homeScore !== undefined) match.homeScore = deltaData.homeScore;
+          if (deltaData.awayScore !== undefined) match.awayScore = deltaData.awayScore;
+          if (deltaData.totalCorners !== undefined) {
+            match.totalCorners = deltaData.totalCorners;
+            match.homeCorners = deltaData.homeCorners || 0;
+            match.awayCorners = deltaData.awayCorners || 0;
+          }
+          console.log(`[cornerService] gismo 更新: ${match.homeTeam} vs ${match.awayTeam}, ${deltaData.elapsedMinutes}'`);
+        }
+      }, sharedPage);
+    }
+  }
+
   console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMarkets).length);
   if (matches.length > 0 && !pollingFirstDone) {
     pollingFirstDone = true;
@@ -372,6 +397,7 @@ export function stopCornerBackendPolling() {
     return { success: true, message: "not polling" };
   }
   console.log("[cornerService] 停止后端轮询...");
+  unsubscribeAll();
   pollingActive = false;
   if (pollingInterval) {
     clearTimeout(pollingInterval);
@@ -425,6 +451,7 @@ export function pauseCornerBackendPolling() {
     return { success: true, message: "already paused" };
   }
   console.log("[cornerService] 暂停后端轮询...");
+  unsubscribeAll();
   pollingPaused = true;
   pauseTime = Date.now();
   if (pollingInterval) {

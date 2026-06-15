@@ -414,7 +414,7 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
     chartGroup.selectAll('line')
       .attr('stroke', 'rgba(148, 163, 184, 0.12)');
 
-    return () => { svgElement.selectAll("*").interrupt().remove(); };
+    return () => { svgElement.interrupt(); };
   }, [home, away, results, homeExp, awayExp]);
 
   const toggleInfo = (key: string) => {

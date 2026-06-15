@@ -1,26 +1,33 @@
-// @ts-nocheck - React 19 class component type compatibility with bundler moduleResolution
 import React from 'react';
 
 interface Props { children: React.ReactNode; fallback?: React.ReactNode; }
-interface State { hasError: boolean; error: Error | null; }
+interface State { hasError: boolean; error: Error | null; errorInfo: React.ErrorInfo | null; }
 
-export class ErrorBoundary extends React.Component<Props, State> {
+export class ErrorBoundary extends React.Component<Props, State, never> {
+  private errorRoute: string;
+
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, errorInfo: null };
+    this.errorRoute = 'pending';
+  }
+
+  componentDidMount() {
+    this.errorRoute = window.location.hash || window.location.pathname;
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { hasError: true, error, errorInfo: null };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[ErrorBoundary] 渲染崩溃:', error.message);
-    console.error('[ErrorBoundary] 组件栈:', info.componentStack);
+  componentDidCatch(error: Error) {
+    const componentStack = (error as any).componentStack || 'No stack available';
+    console.error(`[ErrorBoundary] 渲染崩溃 @ ${this.errorRoute}:`, error.message);
+    console.error('[ErrorBoundary] 组件栈:', componentStack);
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
   render() {
@@ -31,6 +38,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <div className="text-center space-y-4">
             <div className="text-4xl">⚠️</div>
             <h2 className="text-lg font-bold text-red-400">页面渲染异常</h2>
+            <p className="text-xs text-slate-500">{this.errorRoute}</p>
             <p className="text-sm text-slate-400 max-w-md">
               {this.state.error?.message || '未知渲染错误'}
             </p>

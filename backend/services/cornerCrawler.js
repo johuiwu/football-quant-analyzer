@@ -18,6 +18,15 @@ import { POLL_CONFIG } from "./crawlerConfig.js";
 
 puppeteer.use(StealthPlugin());
 
+/** 将 re_time 原始格式（如 "2H^71:13"）转为人类可读格式（如 "71:13"） */
+function formatTime(retime) {
+  if (!retime) return "";
+  if (retime.includes("HT")) return "HT";
+  const tm = retime.match(/^\d+H\^(\d+:\d+)/);
+  if (tm) return tm[1];
+  return retime;
+}
+
 // ======================== 配置 ========================
 const HG_USERNAME = process.env.HG_USERNAME || "";
 const HG_PASSWORD = process.env.HG_PASSWORD || "";
@@ -1093,7 +1102,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
 
             const result = {
               homeTeam, awayTeam, league,
-              time: timeStr, elapsedMinutes,
+              time: formatTime(timeStr), elapsedMinutes,
               homeScore, awayScore, totalCorners,
               cornerOU, cornerHDP, nextCorner, cornerOE,
               rawOdds: []
@@ -1226,7 +1235,7 @@ async function parseCornerMarkets(page, matchScores = {}) {
               }
 
               results.push({
-                homeTeam, awayTeam, league, time: timeStr, elapsedMinutes,
+                homeTeam, awayTeam, league, time: formatTime(timeStr), elapsedMinutes,
                 homeScore, awayScore, totalCorners,
                 cornerHomeCount, cornerAwayCount,
                 cornerOU, cornerHDP, nextCorner, cornerOE
@@ -1843,13 +1852,13 @@ async function fetchCornerDataViaAPI(page) {
       const retime = game.RETIMESET || game.re_time || scoreInfo.retime || "";
       let elapsed = 0;
       const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
-      if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+      if (tm) elapsed = parseInt(tm[2], 10) + (parseInt(tm[3], 10) > 0 ? 1 : 0);
       else if (retime.includes("HT")) elapsed = 45;
 
       const m = {
         matchId: game.GID || game.gid || "api_" + cornerMatches.length,
         matchName: homeTeam + " vs " + awayTeam, homeTeam, awayTeam, league,
-        time: retime, elapsedMinutes: elapsed,
+        time: formatTime(retime), elapsedMinutes: elapsed,
         homeScore: scoreInfo.homeScore || 0,
         awayScore: scoreInfo.awayScore || 0,
         homeCorners: parseInt(game.SCORE_H || game.score_h, 10) || 0,
@@ -2033,7 +2042,7 @@ async function fetchCornerDataViaAPI(page) {
       const retime = g.RETIMESET || g.re_time || "";
       let elapsed = 0;
       const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
-      if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+      if (tm) elapsed = parseInt(tm[2], 10) + (parseInt(tm[3], 10) > 0 ? 1 : 0);
       else if (retime.includes("HT")) elapsed = 45;
 
       const m = {
@@ -2041,7 +2050,7 @@ async function fetchCornerDataViaAPI(page) {
         matchName: ht + " vs " + at,
         homeTeam: ht, awayTeam: at,
         league: g.LEAGUE || g.league || "",
-        time: retime, elapsedMinutes: elapsed,
+        time: formatTime(retime), elapsedMinutes: elapsed,
         homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
         awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
         totalCorners: 0, homeCorners: 0, awayCorners: 0,
@@ -2137,7 +2146,7 @@ async function fetchCornerDataViaAPI(page) {
       if (hdpItems.length > 0 || ouItems.length > 0 || hdpHalfItems.length > 0 || ouHalfItems.length > 0) {
         const marketData = {
           league: g.LEAGUE || g.league || "",
-          time: g.RETIMESET || g.re_time || "",
+          time: formatTime(g.RETIMESET || g.re_time || ""),
           homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
           awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
           hdp: hdpItems,
@@ -2621,13 +2630,13 @@ async function _crawlViaPureHttp() {
     const retime = game.RETIMESET || game.re_time || scoreInfo.retime || "";
     let elapsed = 0;
     const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
-    if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+    if (tm) elapsed = parseInt(tm[2], 10) + (parseInt(tm[3], 10) > 0 ? 1 : 0);
     else if (retime.includes("HT")) elapsed = 45;
 
     const m = {
       matchId: game.GID || game.gid || "api_" + cornerMatches.length,
       matchName: homeTeam + " vs " + awayTeam, homeTeam, awayTeam, league,
-      time: retime, elapsedMinutes: elapsed,
+      time: formatTime(retime), elapsedMinutes: elapsed,
       homeScore: scoreInfo.homeScore || 0, awayScore: scoreInfo.awayScore || 0,
       homeCorners: parseInt(game.SCORE_H || game.score_h, 10) || 0,
       awayCorners: parseInt(game.SCORE_C || game.score_c, 10) || 0,
@@ -2717,7 +2726,7 @@ async function _crawlViaPureHttp() {
     const retime = g.RETIMESET || g.re_time || "";
     let elapsed = 0;
     const tm = retime.match(/^(\d)H\^(\d+):(\d+)/);
-    if (tm) elapsed = (parseInt(tm[1], 10) - 1) * 45 + parseInt(tm[2], 10);
+    if (tm) elapsed = parseInt(tm[2], 10) + (parseInt(tm[3], 10) > 0 ? 1 : 0);
     else if (retime.includes("HT")) elapsed = 45;
 
     const m = {
@@ -2725,7 +2734,7 @@ async function _crawlViaPureHttp() {
       matchName: ht + " vs " + at,
       homeTeam: ht, awayTeam: at,
       league: g.LEAGUE || g.league || "",
-      time: retime, elapsedMinutes: elapsed,
+      time: formatTime(retime), elapsedMinutes: elapsed,
       homeScore: parseInt(g.SCORE_H || g.score_h, 10) || 0,
       awayScore: parseInt(g.SCORE_C || g.score_c, 10) || 0,
       totalCorners: 0, homeCorners: 0, awayCorners: 0,

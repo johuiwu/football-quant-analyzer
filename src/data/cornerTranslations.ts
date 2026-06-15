@@ -1,4 +1,4 @@
-﻿// 角球系统翻译表 - 联赛、国家、球队名称中英对照
+// 角球系统翻译表 - 联赛、国家、球队名称中英对照
 // 从 CrawlerControlPanel.tsx 抽取，便于复用
 export const leagueTranslation: { [key: string]: string } = {
   "International Friendly": "国际友谊赛",
@@ -386,8 +386,9 @@ export const translateTime = (time: string): string => {
   const ct = sanitizeText(time);
   if (!ct) return "--";
   if (ct === "HT") return "半场";
-  if (ct.startsWith("1H")) return ct.replace("1H", "上半场 ");
-  if (ct.startsWith("2H")) return ct.replace("2H", "下半场 ");
+  // formatTime 已将 "2H^71:13" 转为 "71:13"，提取分钟数显示
+  const mmss = ct.match(/^(\d+):\d+$/);
+  if (mmss) return mmss[1] + "'";
   return ct;
 };
 

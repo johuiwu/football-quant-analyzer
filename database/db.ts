@@ -499,13 +499,23 @@ export async function getAllCompleteTeams(): Promise<CompleteTeam[]> {
       rank: row.rank,
       homeStats,
       awayStats,
-      form: JSON.parse(row.form || "[]"),
+      form: (() => {
+        const raw = row.form;
+        if (!raw) return ['D','D','D','D','D'];
+        try { return JSON.parse(raw); } catch {}
+        return raw.split('').slice(0, 5);
+      })(),
       cleanSheets: row.clean_sheets,
       shotsPerGame: row.shots_per_game,
       shotAccuracy: row.shot_accuracy,
       homeXg: row.home_xg,
       awayXg: row.away_xg,
-      formLast5: JSON.parse(row.form_last5 || "[]"),
+      formLast5: (() => {
+        const raw = row.form_last5;
+        if (!raw) return [];
+        try { return JSON.parse(raw); } catch {}
+        return [];
+      })(),
       elo: row.elo ?? undefined,
     };
   });

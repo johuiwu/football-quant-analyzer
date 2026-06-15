@@ -6,6 +6,7 @@ import aiRoutes from './aiRoutes.js';
 import cornerRoutes from './cornerRoutes.js';
 import crawlerRoutes from './crawlerRoutes.js';
 import fixtureRoutes from './fixtureRoutes.js';
+import worldcupRoutes from './worldcupRoutes.js';
 
 const router = Router();
 router.use(leagueRoutes);
@@ -15,5 +16,6 @@ router.use(aiRoutes);
 router.use(cornerRoutes);
 router.use(crawlerRoutes);
 router.use(fixtureRoutes);
+router.use(worldcupRoutes);
 
 export default router;

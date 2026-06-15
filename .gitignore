@@ -106,6 +106,12 @@ start_local.bat
 # 测试报告
 backend/pipeline-test-report.json
 
+# 备份文件
+*.bak
+
+# 外部模型仓库
+world-cup-2026-prediction-model/
+
 # 根目录杂文件
 analyze-hga-ver.js
 find-hga-api.js

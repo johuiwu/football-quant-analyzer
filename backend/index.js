@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb', parameterLimit: 10000 }));
 
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
@@ -103,6 +103,15 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
+  if (err.type === 'request.aborted' || err.code === 'ECONNABORTED') {
+    console.warn(`[warn] 请求被中止: ${req.method} ${req.url}`);
+    return;
+  }
+  if (err.status && err.status >= 400 && err.status < 500) {
+    console.warn(`[warn] ${err.status} ${err.message} — ${req.method} ${req.url}`);
+    res.status(err.status).json({ error: true, message: err.message });
+    return;
+  }
   console.error('Unhandled error:', err);
   res.status(500).json({ error: true, message: 'Internal server error' });
 });

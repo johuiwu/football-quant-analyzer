@@ -44,9 +44,12 @@ const FALLBACK_DOMAINS = [
   "https://m510.crw066.com",
 ];
 
-/** 角球系统浏览器固定无头模式 */
+/** 角球系统浏览器模式：优先读取 CRAWLER_HEADLESS 环境变量 */
 function getHeadless() {
-  return true;
+  const val = process.env.CRAWLER_HEADLESS;
+  if (val === "false" || val === "0") return false;
+  if (val === "true" || val === "1") return true;
+  return true; // 默认 headless
 }
 
 // ======================== 浏览器启动 ========================

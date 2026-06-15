@@ -449,6 +449,18 @@ lowScoreProbability: {
 
   coldUpsetAlert: boolean; // Cold alarm
 
+  handicapCoverage: {
+
+    covered: boolean;
+
+    netGoals: number;
+
+    requiredMargin: number;
+
+    reason: string;
+
+  };
+
 }
 
 
@@ -1877,7 +1889,9 @@ const strengthDiff = homeStrength - awayStrength;
 
     riskRating,
 
-    coldUpsetAlert
+    coldUpsetAlert,
+
+    handicapCoverage: checkHandicapCoverage(expectedHomeGoals, expectedAwayGoals, asianFeatures.handicapValue)
 
   };
 
@@ -1983,7 +1997,8 @@ const strengthDiff = homeStrength - awayStrength;
       recommendedDirection: 'DRAW',
       recommendedReason: '系统进入安全模式，请检查数据完整性。',
       riskRating: 'MEDIUM',
-      coldUpsetAlert: false
+      coldUpsetAlert: false,
+      handicapCoverage: { covered: true, netGoals: 0, requiredMargin: 0, reason: '安全模式，无盘口验证' }
     };
   }
 }
@@ -2506,7 +2521,46 @@ function getDynamicWeights(
   return weights;
 }
 
+export function checkHandicapCoverage(
+  homeGoals: number,
+  awayGoals: number,
+  handicap: number
+): { covered: boolean; netGoals: number; requiredMargin: number; reason: string } {
+  const netGoals = homeGoals - awayGoals;
 
+  if (handicap === 0) {
+    return { covered: true, netGoals, requiredMargin: 0, reason: '平手盘，无需覆盖' };
+  }
+
+  if (handicap < 0) {
+    const absHandicap = Math.abs(handicap);
+    const requiredMargin = Math.ceil(absHandicap);
+    const covered = netGoals >= requiredMargin;
+    return {
+      covered,
+      netGoals,
+      requiredMargin,
+      reason: covered
+        ? `预期净胜 ${netGoals.toFixed(2)} 球，足够覆盖主让${absHandicap}球（需净胜≥${requiredMargin}球）`
+        : `需要净胜 ≥${requiredMargin} 球才能覆盖主让${absHandicap}球，当前预期净胜 ${netGoals.toFixed(2)} 球`
+    };
+  }
+
+  if (handicap > 0) {
+    const requiredMargin = Math.ceil(handicap);
+    const covered = netGoals >= -0.5;
+    return {
+      covered,
+      netGoals,
+      requiredMargin,
+      reason: covered
+        ? `预期净胜 ${netGoals.toFixed(2)} 球，主队受让${handicap}球下保持不败，足以覆盖盘口`
+        : `预期净负 ${Math.abs(netGoals).toFixed(2)} 球，无法覆盖受让${handicap}球盘口`
+    };
+  }
+
+  return { covered: false, netGoals, requiredMargin: 0, reason: '未知盘口' };
+}
 
 // ==================== 信心信号判定 ====================
 
