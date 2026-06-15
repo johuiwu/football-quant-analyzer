@@ -125,6 +125,18 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
 
+  // 支持 GHU_PROXY 环境变量设置 HTTPS 代理
+  const proxyUrl = process.env.GHU_PROXY;
+  if (proxyUrl) {
+    autoUpdater.netSession = null; // 让 electron-updater 使用默认 session
+    // 通过 session 设置代理
+    const session = require('electron').session;
+    const ses = session.defaultSession;
+    ses.setProxy({ proxyRules: proxyUrl }).then(() => {
+      console.log(`[autoUpdater] 已设置代理: ${proxyUrl}`);
+    });
+  }
+
   autoUpdater.checkForUpdatesAndNotify();
 
   autoUpdater.on("checking-for-update", () => {
@@ -164,8 +176,18 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on("error", (err) => {
-    console.error("[autoUpdater] 更新出错:", err.message);
-    if (mainWindow) mainWindow.webContents.send('update-error', { message: err.message });
+    const msg = err.message || '';
+    console.error("[autoUpdater] 更新出错:", msg);
+
+    let friendlyMsg = msg;
+    if (msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('net::ERR') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+      friendlyMsg = `无法连接更新服务器(GitHub)，请检查网络连接。\n` +
+        `如在中国大陆，请设置代理环境变量后重启程序：\n` +
+        `  set GHU_PROXY=http://127.0.0.1:7890\n` +
+        `（原始错误: ${msg}）`;
+    }
+
+    if (mainWindow) mainWindow.webContents.send('update-error', { message: friendlyMsg });
   });
 }
 
