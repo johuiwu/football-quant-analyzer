@@ -119,24 +119,89 @@ function createWindow() {
 // ─── 生命周期 ───
 
 // ===== 自动更新 =====
+
+// 自动检测可用代理：GHU_PROXY 环境变量 → 系统代理 → 常见本地代理端口
+async function detectProxy() {
+  // 1. 优先使用 GHU_PROXY 环境变量
+  if (process.env.GHU_PROXY) {
+    console.log(`[autoUpdater] 使用环境变量代理: ${process.env.GHU_PROXY}`);
+    return process.env.GHU_PROXY;
+  }
+
+  // 2. 尝试读取 Windows 系统代理设置
+  try {
+    const { execSync } = require('child_process');
+    const regOutput = execSync(
+      'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer 2>nul',
+      { encoding: 'utf-8', timeout: 3000 }
+    );
+    const match = regOutput.match(/REG_SZ\s+(.+)/);
+    if (match && match[1].trim()) {
+      let proxy = match[1].trim();
+      // 处理 "127.0.0.1:7890" 格式
+      if (!proxy.startsWith('http')) {
+        proxy = 'http://' + proxy;
+      }
+      console.log(`[autoUpdater] 检测到系统代理: ${proxy}`);
+      return proxy;
+    }
+  } catch (_) {
+    // 读取注册表失败，忽略
+  }
+
+  // 3. 探测常见本地代理端口
+  const commonProxies = [
+    'http://127.0.0.1:7890',  // Clash / Clash for Windows
+    'http://127.0.0.1:7897',  // Clash Verge
+    'http://127.0.0.1:10809', // V2RayN
+    'http://127.0.0.1:10808', // V2RayN (socks→http)
+    'http://127.0.0.1:1080',  // SS/SSR
+    'http://127.0.0.1:1087',  // Surge
+    'http://127.0.0.1:8888',  // Proxifier
+  ];
+
+  const net = require('net');
+  for (const proxyUrl of commonProxies) {
+    const url = new URL(proxyUrl);
+    const port = parseInt(url.port);
+    const host = url.hostname;
+    try {
+      const reachable = await new Promise((resolve) => {
+        const socket = new net.Socket();
+        socket.setTimeout(500);
+        socket.on('connect', () => { socket.destroy(); resolve(true); });
+        socket.on('timeout', () => { socket.destroy(); resolve(false); });
+        socket.on('error', () => { socket.destroy(); resolve(false); });
+        socket.connect(port, host);
+      });
+      if (reachable) {
+        console.log(`[autoUpdater] 检测到本地代理: ${proxyUrl}`);
+        return proxyUrl;
+      }
+    } catch (_) { /* 忽略 */ }
+  }
+
+  return null; // 未检测到代理
+}
+
+// 先直连 GitHub，失败后自动切换代理重试
+let proxyRetryAttempted = false;
+
+async function checkForUpdatesWithProxyRetry() {
+  try {
+    await autoUpdater.checkForUpdatesAndNotify();
+  } catch (err) {
+    // checkForUpdatesAndNotify 可能不抛异常，错误通过 error 事件处理
+  }
+}
+
 function setupAutoUpdater() {
   if (!app.isPackaged) return;
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
 
-  // 支持 GHU_PROXY 环境变量设置 HTTPS 代理
-  const proxyUrl = process.env.GHU_PROXY;
-  if (proxyUrl) {
-    autoUpdater.netSession = null; // 让 electron-updater 使用默认 session
-    // 通过 session 设置代理
-    const session = require('electron').session;
-    const ses = session.defaultSession;
-    ses.setProxy({ proxyRules: proxyUrl }).then(() => {
-      console.log(`[autoUpdater] 已设置代理: ${proxyUrl}`);
-    });
-  }
-
+  // 首次直连检查更新
   autoUpdater.checkForUpdatesAndNotify();
 
   autoUpdater.on("checking-for-update", () => {
@@ -175,14 +240,44 @@ function setupAutoUpdater() {
     });
   });
 
-  autoUpdater.on("error", (err) => {
+  autoUpdater.on("error", async (err) => {
     const msg = err.message || '';
     console.error("[autoUpdater] 更新出错:", msg);
 
+    const isNetworkError = msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('net::ERR') ||
+      msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED');
+
+    // 网络错误且尚未尝试过代理重试 → 自动检测代理并重试
+    if (isNetworkError && !proxyRetryAttempted) {
+      proxyRetryAttempted = true;
+      console.log("[autoUpdater] 网络错误，尝试自动检测代理...");
+      const proxy = await detectProxy();
+      if (proxy) {
+        try {
+          const session = require('electron').session;
+          await session.defaultSession.setProxy({ proxyRules: proxy });
+          console.log(`[autoUpdater] 已设置代理 ${proxy}，重试检查更新...`);
+          if (mainWindow) mainWindow.webContents.send('update-error', {
+            message: `网络连接失败，已自动检测到代理 ${proxy}，正在重试...`
+          });
+          // 短暂延迟后重试
+          setTimeout(() => {
+            autoUpdater.checkForUpdatesAndNotify();
+          }, 1000);
+          return;
+        } catch (proxyErr) {
+          console.error("[autoUpdater] 设置代理失败:", proxyErr.message);
+        }
+      } else {
+        console.log("[autoUpdater] 未检测到可用代理");
+      }
+    }
+
+    // 最终错误提示
     let friendlyMsg = msg;
-    if (msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('net::ERR') || msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT')) {
+    if (isNetworkError) {
       friendlyMsg = `无法连接更新服务器(GitHub)，请检查网络连接。\n` +
-        `如在中国大陆，请设置代理环境变量后重启程序：\n` +
+        `如在中国大陆，可设置代理环境变量后重启程序：\n` +
         `  set GHU_PROXY=http://127.0.0.1:7890\n` +
         `（原始错误: ${msg}）`;
     }
