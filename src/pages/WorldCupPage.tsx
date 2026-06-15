@@ -578,7 +578,8 @@ function SandboxTab() {
     homeExpectedGoals: typeof data?.homeExpectedGoals === 'number' ? data.homeExpectedGoals : 0,
     awayExpectedGoals: typeof data?.awayExpectedGoals === 'number' ? data.awayExpectedGoals : 0,
     predictedScore: typeof data?.predictedScore === 'string' ? data.predictedScore : '0-0',
-    dataSource: data?.dataSource
+    dataSource: data?.dataSource,
+    scoreProbabilities: Array.isArray(data?.scoreProbabilities) ? data.scoreProbabilities : undefined,
   });
 
   const homeInfo = worldcupTeamIdToName[homeId];
@@ -757,6 +758,27 @@ function SandboxTab() {
                   <span className="px-3 py-1 rounded-full bg-slate-600/30 text-slate-300 font-mono">平 {fmtWinProb(result?.drawProb ?? 0)}</span>
                   <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">客 {fmtWinProb(result?.awayWinProb ?? 0)}</span>
                 </div>
+                {result?.scoreProbabilities && result.scoreProbabilities.length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-[11px] text-slate-500 mb-2 font-medium">最可能比分</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {result.scoreProbabilities.slice(0, 5).map((sp, idx) => (
+                        <div
+                          key={sp.score}
+                          className={`
+                            p-2 rounded-lg text-center border transition-all
+                            ${idx === 0
+                              ? 'bg-[#0F1424] border border-indigo-400/50 shadow-[0_0_20px_rgba(99,102,241,0.15)]'
+                              : 'bg-[#0F1424] border-slate-700/50 hover:bg-[#1A2234]'}
+                          `}
+                        >
+                          <div className={`text-sm font-bold ${idx === 0 ? 'text-white' : 'text-slate-200'}`}>{sp.score}</div>
+                          <div className={`text-xs ${idx === 0 ? 'text-indigo-200' : 'text-slate-500'}`}>{(sp.prob * 100).toFixed(1)}%</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="bg-slate-800/30 rounded-lg p-3 text-center">

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { matchProb } from '../../world-cup-2026-prediction-model/elo.mjs';
+import { matchProb, poissonPmf, DC_RHO } from '../../world-cup-2026-prediction-model/elo.mjs';
 import { getTeamStats } from '../../src/data/worldcup_team_stats.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -99,6 +99,38 @@ export function toExternalTeamName(systemId) {
 }
 
 /**
+ * Dixon-Coles τ 修正因子
+ * 修正低比分（0-0, 1-0, 0-1, 1-1）的泊松概率
+ */
+function dcTau(a, b, lambda, mu, rho) {
+  if (a === 0 && b === 0) return 1 - lambda * mu * rho;
+  if (a === 0 && b === 1) return 1 + lambda * rho;
+  if (a === 1 && b === 0) return 1 + mu * rho;
+  if (a === 1 && b === 1) return 1 - rho;
+  return 1;
+}
+
+/**
+ * 计算比分概率矩阵，返回前 N 个最可能的比分
+ */
+function computeScoreProbabilities(lambda, mu, topN = 5) {
+  const scores = [];
+  for (let a = 0; a <= 6; a++) {
+    const pA = poissonPmf(a, lambda);
+    for (let b = 0; b <= 6; b++) {
+      const tau = dcTau(a, b, lambda, mu, DC_RHO);
+      const p = pA * poissonPmf(b, mu) * tau;
+      if (p > 0.001) { // 过滤极低概率
+        scores.push({ score: `${a}-${b}`, prob: p });
+      }
+    }
+  }
+  scores.sort((x, y) => y.prob - x.prob);
+  const total = scores.reduce((s, x) => s + x.prob, 0);
+  return scores.slice(0, topN).map(x => ({ score: x.score, prob: x.prob / total }));
+}
+
+/**
  * 基于近期胜率 (winRate) 对 Elo 评分做小幅动态调整
  * 借鉴 Pallab9999 项目的 form 特征思路
  */
@@ -145,6 +177,9 @@ export async function predictWithExternalModel(homeTeamId, awayTeamId) {
   // 中立场预测（世界杯默认中立场地），使用 form 调整后的 Elo
   const result = matchProb(homeForm.adjusted, awayForm.adjusted, 0);
 
+  // 计算比分概率矩阵（前 5 最可能比分）
+  const scoreProbabilities = computeScoreProbabilities(result.expectedGoalsA, result.expectedGoalsB, 5);
+
   // 用泊松众数作为预测比分
   function poissonMode(lambda) {
     return Math.round(lambda);
@@ -161,6 +196,7 @@ export async function predictWithExternalModel(homeTeamId, awayTeamId) {
     awayExpectedGoals: result.expectedGoalsB,
     predictedScore: `${homeGoals}-${awayGoals}`,
     dataSource: 'external',
-    formAdjustment: { home: homeForm.delta, away: awayForm.delta }
+    formAdjustment: { home: homeForm.delta, away: awayForm.delta },
+    scoreProbabilities
   };
 }

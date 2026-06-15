@@ -49,6 +49,26 @@ function calculatePoissonProbabilities(xgHome, xgAway) {
   return { homeWin, draw, awayWin };
 }
 
+/**
+ * 基于泊松分布计算前 N 个最可能的比分
+ */
+function computeInternalScoreProbabilities(homeExpectedGoals, awayExpectedGoals, topN = 5) {
+  const scores = [];
+  for (let a = 0; a <= 6; a++) {
+    for (let b = 0; b <= 6; b++) {
+      const pA = poissonProb(a, homeExpectedGoals);
+      const pB = poissonProb(b, awayExpectedGoals);
+      const p = pA * pB;
+      if (p > 0.001) {
+        scores.push({ score: `${a}-${b}`, prob: p });
+      }
+    }
+  }
+  scores.sort((x, y) => y.prob - x.prob);
+  const total = scores.reduce((s, x) => s + x.prob, 0);
+  return scores.slice(0, topN).map(x => ({ score: x.score, prob: x.prob / total }));
+}
+
 export function calculateWorldCupElo(teamA, teamB) {
   const Ra = teamA.elo;
   const Rb = teamB.elo;
@@ -194,6 +214,7 @@ export async function predictMatch(homeTeam, awayTeam, stage) {
     homeExpectedGoals,
     awayExpectedGoals,
     predictedScore,
+    scoreProbabilities: computeInternalScoreProbabilities(homeExpectedGoals, awayExpectedGoals, 5),
     dataSource: 'internal'
   };
 }
@@ -237,6 +258,7 @@ export async function predictMatchWithStats(homeTeam, awayTeam, stage, homeRecen
     homeExpectedGoals,
     awayExpectedGoals,
     predictedScore,
+    scoreProbabilities: computeInternalScoreProbabilities(homeExpectedGoals, awayExpectedGoals, 5),
     dataSource: 'internal'
   };
 }

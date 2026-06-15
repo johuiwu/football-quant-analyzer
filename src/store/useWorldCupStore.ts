@@ -9,6 +9,7 @@ export interface WorldCupPrediction {
   awayExpectedGoals: number;
   predictedScore: string;
   dataSource?: 'crawler' | 'static' | 'elo';
+  scoreProbabilities?: { score: string; prob: number }[];
 }
 
 export interface WorldCupGroupProb {
