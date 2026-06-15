@@ -1,3 +1,0 @@
-﻿interface:
-  display_name: "AI代码清理"
-  short_description: "清理AI生成代码中的冗余、命名混乱和无意义注释"

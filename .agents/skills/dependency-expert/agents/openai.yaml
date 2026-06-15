@@ -1,3 +1,0 @@
-﻿interface:
-  display_name: "依赖管理"
-  short_description: "解决包安装失败、版本冲突、依赖升级问题"
