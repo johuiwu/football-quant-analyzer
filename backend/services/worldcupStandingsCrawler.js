@@ -1,7 +1,46 @@
 import puppeteer from 'puppeteer';
+import { worldcupTeamIdToName } from '../../src/data/worldcup_data.js';
 
 const STANDINGS_URL = 'https://www.livescore.com/en/football/international/world-cup-2026/standings/';
 const TIMEOUT = 30000;
+
+// livescore 英文名 → 系统 teamId 映射
+const LIVESCORE_TO_TEAM_ID = {
+  'USA': 'meiguo', 'Australia': 'aodaliya', 'Mexico': 'moxige', 'South Korea': 'hanguo',
+  'Paraguay': 'balagui', 'Qatar': 'kataer', 'Czechia': 'jieke1', 'Bosnia and Herzegovina': 'bohei1',
+  'Scotland': 'sugelan', 'Canada': 'jianada', 'Brazil': 'baxi', 'Morocco': 'moluoge',
+  'Switzerland': 'ruishi', 'South Africa': 'nanfei', 'Haiti': 'haidi', 'Turkiye': 'tuerqi1',
+  'Germany': 'deguo', 'Curaçao': 'kulasuo', 'Curacao': 'kulasuo', "Côte d'Ivoire": 'ketediwa1', 'Ivory Coast': 'ketediwa1', 'Ecuador': 'eguaduoer',
+  'Netherlands': 'helan', 'Japan': 'riben', 'Sweden': 'ruidian1', 'Tunisia': 'tunisi1',
+  'Belgium': 'bilishi', 'Egypt': 'aiji1', 'Iran': 'yilang', 'New Zealand': 'xinxilan1',
+  'Spain': 'xibanya', 'Cape Verde': 'fodejiao1', 'Saudi Arabia': 'shatealabo', 'Uruguay': 'wulagui',
+  'France': 'faguo', 'Senegal': 'saineijiaer', 'Iraq': 'yilake1', 'Norway': 'nuowei',
+  'Argentina': 'agenting', 'Algeria': 'aerjiliya', 'Austria': 'aodili', 'Jordan': 'yuedan1',
+  'Portugal': 'putaoya', 'DR Congo': 'minzhugangguo', 'Uzbekistan': 'wuzibiekesitan', 'Colombia': 'gelunbiya',
+  'England': 'yinggelan', 'Croatia': 'keluodiya', 'Ghana': 'jiana', 'Panama': 'banama',
+  'Korea Republic': 'hanguo', 'Czech Republic': 'jieke1', 'Turkey': 'tuerqi1',
+  'United States': 'meiguo', 'Bosnia': 'bohei1'
+};
+
+/**
+ * 将 livescore 英文球队名转为中文名
+ */
+function toChineseName(englishName) {
+  const teamId = LIVESCORE_TO_TEAM_ID[englishName];
+  if (teamId && worldcupTeamIdToName[teamId]) {
+    return worldcupTeamIdToName[teamId].cn;
+  }
+  return englishName;
+}
+
+/**
+ * 将小组名标准化为中文（如 "Group G" → "G组"）
+ */
+function normalizeGroupName(name) {
+  const m = name.match(/Group\s+([A-L])/i);
+  if (m) return m[1] + '组';
+  return name;
+}
 
 /**
  * 爬取 livescore 积分榜页面
@@ -131,6 +170,15 @@ export async function fetchStandings() {
     });
 
     await browser.close();
+
+    // 将英文名映射为中文名，小组名标准化为中文
+    for (const group of result.groups) {
+      group.name = normalizeGroupName(group.name);
+      for (const team of group.teams) {
+        team.name = toChineseName(team.name);
+      }
+    }
+
     return { success: true, ...result };
 
   } catch (error) {

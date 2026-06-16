@@ -21,6 +21,36 @@ import { ValidationService } from '../services/ValidationService';
 import AdvancedParamsPanel from '../components/AdvancedParamsPanel';
 import ModelWeightsPanel from '../components/ModelWeightsPanel';
 
+/**
+ * 统一仲裁器：根据盘口深度和预期净胜球，修正推荐方向
+ * 与 AggregationDecisionCenter.tsx 中的 calculateFinalDirection 逻辑完全一致
+ */
+function calculateFinalDirection(
+  rawDirection: 'HOME_WIN' | 'DRAW' | 'AWAY_WIN',
+  handicap: number,
+  expectedNetGoals: number
+): 'HOME_WIN' | 'DRAW' | 'AWAY_WIN' {
+  if (handicap === 0) return rawDirection;
+
+  // 主让球：模型推荐主胜但净胜球不足以覆盖盘口 → 修正为客胜
+  if (rawDirection === 'HOME_WIN' && handicap < 0) {
+    const requiredMargin = Math.ceil(Math.abs(handicap));
+    if (expectedNetGoals < requiredMargin) {
+      return 'AWAY_WIN';
+    }
+  }
+
+  // 受让球：模型推荐客胜但客队净胜球不足以覆盖盘口 → 修正为主胜
+  if (rawDirection === 'AWAY_WIN' && handicap > 0) {
+    const requiredMargin = Math.ceil(Math.abs(handicap));
+    if (expectedNetGoals > -requiredMargin) {
+      return 'HOME_WIN';
+    }
+  }
+
+  return rawDirection;
+}
+
 export default function DashboardPage() {
   const selectedHomeId = useAppStore((s) => s.selectedHomeId);
   const selectedAwayId = useAppStore((s) => s.selectedAwayId);
@@ -1084,109 +1114,26 @@ export default function DashboardPage() {
                   </div>
 
                   {/* C. 聚合决策中枢（新增，最显眼位置） */}
-                  <AggregationDecisionCenter 
+                  <AggregationDecisionCenter
                     marketOdds={convertedOdds}
                     results={results}
                     homeTeamName={home.nameCn}
                     awayTeamName={away.nameCn}
                     handicap={asianHandicap.handicap}
+                    expectedNetGoals={results.expectedHomeGoals - results.expectedAwayGoals}
                     homeTeam={home}
                     awayTeam={away}
+                    payoutRate={results.payoutRate}
+                    riskRating={results.riskRating}
+                    compHomeWin={results.compHomeWin}
+                    compDraw={results.compDraw}
+                    compAwayWin={results.compAwayWin}
+                    recommendedReason={results.recommendedReason}
+                    upsetLevel={results.upsetLevel}
+                    coldUpsetAlert={results.coldUpsetAlert}
+                    zScoreHome={results.zScoreHome}
+                    zScoreAway={results.zScoreAway}
                   />
-
-                  {/* E. 推荐方向精简决策板 */}
-                  <div className="p-6 rounded-2xl bg-gradient-to-r from-[#111A30] to-[#162744] border border-blue-500/30 shadow-2xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-36 h-36 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-                    
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold tracking-widest bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-md">
-                          10大模型综合集成方向
-                        </span>
-                        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white mt-1.5 flex items-center gap-2">
-                          🎯 建议方向: 
-                          <span className="text-rose-400 font-extrabold">{results.recommendedDirection}</span>
-                        </h2>
-                      </div>
-                      
-                      <div className="flex items-center gap-2.5">
-                        <div className="text-right">
-                          <span className="block text-[10px] text-slate-400">机构资金回返率</span>
-                          <span className="font-mono text-sm font-bold text-slate-200">{(results.payoutRate * 100).toFixed(2)}%</span>
-                        </div>
-                        <div className="h-8 w-[1px] bg-slate-800" />
-                        <div>
-                          <span className="block text-[10px] text-slate-400">爆冷预兆等级</span>
-                          <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
-                            results.riskRating === 'LOW'
-                              ? 'bg-emerald-500/15 text-emerald-400'
-                              : results.riskRating === 'MEDIUM'
-                              ? 'bg-yellow-500/15 text-yellow-500'
-                              : 'bg-rose-500/15 text-rose-500'
-                          }`}>
-                            {results.riskRating === 'LOW' ? '🔥 极低风险' : results.riskRating === 'MEDIUM' ? '⚠️ 稳妥适中' : '💀 高风险防守'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <p className="text-slate-300 text-xs sm:text-sm leading-relaxed mb-4">
-                      {results.recommendedReason}
-                    </p>
-
-                    <div className="flex flex-wrap gap-2.5 text-xs">
-                      <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800">
-                        <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                        <span className="text-slate-400">主胜期望率:</span>
-                        <strong className="text-rose-400 font-mono">{(results.compHomeWin * 100).toFixed(1)}%</strong>
-                      </div>
-                      <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800">
-                        <span className="w-2 h-2 rounded-full bg-slate-500" />
-                        <span className="text-slate-400">平局期望率:</span>
-                        <strong className="text-slate-300 font-mono">{(results.compDraw * 100).toFixed(1)}%</strong>
-                      </div>
-                      <div className="flex items-center gap-1.5 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span className="text-slate-400">客胜期望率:</span>
-                        <strong className="text-emerald-400 font-mono">{(results.compAwayWin * 100).toFixed(1)}%</strong>
-                      </div>
-                    </div>
-
-                    <div key={selectedMatchId || "upset-alert"}>
-                    <ErrorBoundary>
-                      {results.upsetLevel === "cold_start" ? (
-                        <div key="upset-cold-start" className="mt-4 flex items-center gap-2 bg-slate-500/10 border border-slate-500/20 px-3.5 py-2.5 rounded-xl text-slate-400 text-xs text-left">
-                          <Flame className="w-4.5 h-4.5 shrink-0 text-slate-500" />
-                          <span>
-                            <strong>📊 数据积累中：</strong>
-                            历史投注数据尚不足 5 场，爆冷预警功能将在积累足够数据后自动启用。
-                            当前使用基础模型进行风险评估。
-                          </span>
-                        </div>
-                      ) : results.coldUpsetAlert ? (
-                        (() => {
-                          const isDanger = results.upsetLevel === "danger";
-                          const bgColor = isDanger ? "bg-rose-500/15 border-rose-500/30" : "bg-orange-500/10 border-orange-500/20";
-                          const textColor = isDanger ? "text-rose-300" : "text-orange-300";
-                          const iconColor = isDanger ? "text-rose-500" : "text-orange-400";
-                          const label = isDanger ? "🔴 高危爆冷预警" : "🟠 冷门预警";
-                          const zHome = results.zScoreHome && results.zScoreHome !== 0 ? results.zScoreHome.toFixed(1) : "数据待积累";
-                          const zAway = results.zScoreAway && results.zScoreAway !== 0 ? results.zScoreAway.toFixed(1) : "数据待积累";
-                          return (
-                            <div key={results.upsetLevel || "upset-alert"} className={"mt-4 flex items-center gap-2 border px-3.5 py-2.5 rounded-xl text-xs text-left " + bgColor + " " + textColor}>
-                              <Flame className={"w-4.5 h-4.5 shrink-0 h-full " + iconColor} />
-                              <span>
-                                <strong>{label}：</strong>
-                                投注量异常 (Z-Score: 主 {zHome} / 客 {zAway})，
-                                模型概率显著高于赔率隐含概率，建议防冷。
-                              </span>
-                            </div>
-                          );
-                        })()
-                      ) : null}
-                    </ErrorBoundary>
-                    </div>
-                  </div>
 
                   {/* D. 综合胜平负概率与亚盘隐含概率比对展示面板 */}
                   <div className="p-5 bg-[#0F1424] rounded-2xl border border-slate-800/80 shadow-xl">

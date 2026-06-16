@@ -18,11 +18,54 @@ interface Props {
   homeTeamName?: string;
   awayTeamName?: string;
   handicap?: number;
+  expectedNetGoals?: number;
   homeTeam?: any; // TeamStats from parent
   awayTeam?: any; // TeamStats from parent
+  payoutRate?: number;
+  riskRating?: string;
+  compHomeWin?: number;
+  compDraw?: number;
+  compAwayWin?: number;
+  recommendedReason?: string;
+  upsetLevel?: string;
+  coldUpsetAlert?: boolean;
+  zScoreHome?: number;
+  zScoreAway?: number;
 }
 
-export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap, homeTeam, awayTeam }: Props) {
+/**
+ * 盘口对齐修正：当模型推荐方向与盘口覆盖矛盾时，强制翻转方向
+ * - 主让球(handicap<0)：HOME_WIN 需净胜 ≥ ceil(|handicap|) 球，否则修正为 AWAY_WIN
+ * - 受让球(handicap>0)：AWAY_WIN 需客队净胜 ≥ ceil(handicap) 球，否则修正为 HOME_WIN
+ * - 平手盘 / DRAW：不修正
+ */
+function calculateFinalDirection(
+  modelDirection: 'HOME_WIN' | 'DRAW' | 'AWAY_WIN',
+  handicap: number,
+  expectedNetGoals: number
+): 'HOME_WIN' | 'DRAW' | 'AWAY_WIN' {
+  if (handicap === 0) return modelDirection;
+
+  // 主让球：模型推荐主胜但净胜球不足以覆盖盘口 → 修正为客胜
+  if (modelDirection === 'HOME_WIN' && handicap < 0) {
+    const requiredMargin = Math.ceil(Math.abs(handicap));
+    if (expectedNetGoals < requiredMargin) {
+      return 'AWAY_WIN';
+    }
+  }
+
+  // 受让球：模型推荐客胜但客队净胜球不足以覆盖盘口 → 修正为主胜
+  if (modelDirection === 'AWAY_WIN' && handicap > 0) {
+    const requiredMargin = Math.ceil(Math.abs(handicap));
+    if (expectedNetGoals > -requiredMargin) {
+      return 'HOME_WIN';
+    }
+  }
+
+  return modelDirection;
+}
+
+export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap, expectedNetGoals, homeTeam, awayTeam, payoutRate, riskRating, compHomeWin, compDraw, compAwayWin, recommendedReason, upsetLevel, coldUpsetAlert, zScoreHome, zScoreAway }: Props) {
   const liveMatch = useAppStore((s) => s.liveMatch);
 
   const {
@@ -169,14 +212,19 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
   } = dynamicPredictions;
 
   const recommendation = useMemo(() => {
+    const effectiveHandicap = handicap ?? 0;
+    const effectiveNetGoals = expectedNetGoals ?? 0;
+
     // 优先使用 aggregatedDecision 中的数据
     if (results?.aggregatedDecision) {
       const { direction, confidence } = results.aggregatedDecision;
+      // 应用盘口对齐修正
+      const finalDirection = calculateFinalDirection(direction, effectiveHandicap, effectiveNetGoals);
       let directionText = '平局';
       let colorClass = 'bg-gradient-to-r from-amber-400 via-orange-400 to-red-400';
       let glowClass = 'drop-shadow-[0_0_12px_rgba(251,146,60,0.6)]';
       
-      switch(direction) {
+      switch(finalDirection) {
         case 'HOME_WIN':
           directionText = '主胜';
           colorClass = 'bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500';
@@ -198,26 +246,34 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
         confidence: confidence || adjustedHomeWin,
         colorClass,
         glowClass,
-        aggregatedDirection: direction
+        aggregatedDirection: finalDirection
       };
     }
     
     // 如果没有 aggregatedDecision，使用本地计算
     if (adjustedHomeWin > adjustedAwayWin && adjustedHomeWin > adjustedDraw) {
+      const finalDirection = calculateFinalDirection('HOME_WIN', effectiveHandicap, effectiveNetGoals);
+      const directionText = finalDirection === 'HOME_WIN' ? '主胜' : finalDirection === 'AWAY_WIN' ? '客胜' : '平局';
+      const colorClass = finalDirection === 'HOME_WIN' ? 'bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500' : finalDirection === 'AWAY_WIN' ? 'bg-gradient-to-r from-cyan-400 via-green-400 to-yellow-400' : 'bg-gradient-to-r from-amber-400 via-orange-400 to-red-400';
+      const glowClass = finalDirection === 'HOME_WIN' ? 'drop-shadow-[0_0_12px_rgba(139,92,246,0.6)]' : finalDirection === 'AWAY_WIN' ? 'drop-shadow-[0_0_12px_rgba(34,197,94,0.6)]' : 'drop-shadow-[0_0_12px_rgba(251,146,60,0.6)]';
       return { 
-        direction: '主胜', 
+        direction: directionText, 
         confidence: adjustedHomeWin, 
-        colorClass: 'bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500',
-        glowClass: 'drop-shadow-[0_0_12px_rgba(139,92,246,0.6)]',
-        aggregatedDirection: 'HOME_WIN'
+        colorClass,
+        glowClass,
+        aggregatedDirection: finalDirection
       };
     } else if (adjustedAwayWin > adjustedHomeWin && adjustedAwayWin > adjustedDraw) {
+      const finalDirection = calculateFinalDirection('AWAY_WIN', effectiveHandicap, effectiveNetGoals);
+      const directionText = finalDirection === 'AWAY_WIN' ? '客胜' : finalDirection === 'HOME_WIN' ? '主胜' : '平局';
+      const colorClass = finalDirection === 'AWAY_WIN' ? 'bg-gradient-to-r from-cyan-400 via-green-400 to-yellow-400' : finalDirection === 'HOME_WIN' ? 'bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500' : 'bg-gradient-to-r from-amber-400 via-orange-400 to-red-400';
+      const glowClass = finalDirection === 'AWAY_WIN' ? 'drop-shadow-[0_0_12px_rgba(34,197,94,0.6)]' : finalDirection === 'HOME_WIN' ? 'drop-shadow-[0_0_12px_rgba(139,92,246,0.6)]' : 'drop-shadow-[0_0_12px_rgba(251,146,60,0.6)]';
       return { 
-        direction: '客胜', 
+        direction: directionText, 
         confidence: adjustedAwayWin, 
-        colorClass: 'bg-gradient-to-r from-cyan-400 via-green-400 to-yellow-400',
-        glowClass: 'drop-shadow-[0_0_12px_rgba(34,197,94,0.6)]',
-        aggregatedDirection: 'AWAY_WIN'
+        colorClass,
+        glowClass,
+        aggregatedDirection: finalDirection
       };
     } else {
       return { 
@@ -225,10 +281,10 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
         confidence: adjustedDraw, 
         colorClass: 'bg-gradient-to-r from-amber-400 via-orange-400 to-red-400',
         glowClass: 'drop-shadow-[0_0_12px_rgba(251,146,60,0.6)]',
-        aggregatedDirection: 'DRAW'
+        aggregatedDirection: 'DRAW' as const
       };
     }
-  }, [results, adjustedHomeWin, adjustedDraw, adjustedAwayWin]);
+  }, [results, adjustedHomeWin, adjustedDraw, adjustedAwayWin, handicap, expectedNetGoals]);
 
   const homeTeamDisplay = homeTeamName || safeHomeTeam.nameCn;
   const awayTeamDisplay = awayTeamName || safeAwayTeam.nameCn;
@@ -239,11 +295,9 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
       case 'HOME_WIN': return `${homeTeamDisplay} 主胜`;
       case 'AWAY_WIN': return `${awayTeamDisplay} 客胜`;
       case 'DRAW': return '平局';
-      case 'OVER': return '大球';
-      case 'UNDER': return '小球';
       default: return '平局';
     }
-  }, [recommendation.aggregatedDirection, recommendation.direction, homeTeamDisplay, awayTeamDisplay]);
+  }, [recommendation.aggregatedDirection, homeTeamDisplay, awayTeamDisplay]);
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence > 0.7) return 'text-emerald-400';
@@ -259,7 +313,7 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <Zap className="w-6 h-6 text-yellow-400" />
-              <span className="text-xl font-bold text-white">终极多核推荐:</span>
+              <span className="text-xl font-bold text-white">最终推荐:</span>
             </div>
             <span className={`text-3xl font-black ${recommendation.colorClass} bg-clip-text text-transparent ${recommendation.glowClass}`}>
               {displayDirection}
@@ -284,9 +338,63 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
         {/* 副标题 */}
         <div className="mt-2 pl-8">
           <span className="text-sm text-slate-500">
-            融合拟合 Poisson 目标、等级 Elo 战力修正与 Dixon 变态方程
+            融合来源：量化模型 + 市场数据
           </span>
         </div>
+
+        {/* 整合数据：期望率、回返率、预警等级 */}
+        <div className="mt-3 pl-8 flex flex-wrap items-center gap-3">
+          {compHomeWin !== undefined && compDraw !== undefined && compAwayWin !== undefined && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /><span className="text-slate-400">主胜</span><strong className="text-rose-400 font-mono">{(compHomeWin * 100).toFixed(1)}%</strong></span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-500" /><span className="text-slate-400">平局</span><strong className="text-slate-300 font-mono">{(compDraw * 100).toFixed(1)}%</strong></span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><span className="text-slate-400">客胜</span><strong className="text-emerald-400 font-mono">{(compAwayWin * 100).toFixed(1)}%</strong></span>
+            </div>
+          )}
+          {payoutRate !== undefined && (
+            <div className="flex items-center gap-1 text-xs border-l border-slate-700 pl-3">
+              <span className="text-slate-400">机构回返率</span>
+              <strong className="text-slate-200 font-mono">{(payoutRate * 100).toFixed(2)}%</strong>
+            </div>
+          )}
+          {riskRating && (
+            <div className="flex items-center gap-1 text-xs border-l border-slate-700 pl-3">
+              <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
+                riskRating === 'LOW' ? 'bg-emerald-500/15 text-emerald-400' : riskRating === 'MEDIUM' ? 'bg-yellow-500/15 text-yellow-500' : 'bg-rose-500/15 text-rose-500'
+              }`}>
+                {riskRating === 'LOW' ? '🔥 极低风险' : riskRating === 'MEDIUM' ? '⚠️ 稳妥适中' : '💀 高风险防守'}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* 推荐理由 */}
+        {recommendedReason && (
+          <div className="mt-3 pl-8">
+            <p className="text-slate-400 text-xs leading-relaxed">{recommendedReason}</p>
+          </div>
+        )}
+
+        {/* 爆冷预警 / 数据积累中 */}
+        {upsetLevel === "cold_start" && (
+          <div className="mt-3 flex items-center gap-2 bg-slate-500/10 border border-slate-500/20 px-3 py-2 rounded-lg text-slate-400 text-[11px]">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+            <span>📊 数据积累中：历史投注数据尚不足 5 场，爆冷预警功能将在积累足够数据后自动启用。</span>
+          </div>
+        )}
+        {coldUpsetAlert && upsetLevel !== "cold_start" && (() => {
+          const isDanger = upsetLevel === "danger";
+          return (
+            <div className={`mt-3 flex items-center gap-2 border px-3 py-2 rounded-lg text-[11px] ${isDanger ? "bg-rose-500/15 border-rose-500/30 text-rose-300" : "bg-orange-500/10 border-orange-500/20 text-orange-300"}`}>
+              <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${isDanger ? "text-rose-500" : "text-orange-400"}`} />
+              <span>
+                <strong>{isDanger ? "🔴 高危爆冷预警" : "🟠 冷门预警"}：</strong>
+                投注量异常 (Z-Score: 主 {zScoreHome && zScoreHome !== 0 ? zScoreHome.toFixed(1) : "数据待积累"} / 客 {zScoreAway && zScoreAway !== 0 ? zScoreAway.toFixed(1) : "数据待积累"})，
+                模型概率显著高于赔率隐含概率，建议防冷。
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* 数据展示区域 */}
