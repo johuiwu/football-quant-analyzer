@@ -6,9 +6,26 @@ puppeteer.use(StealthPlugin());
 import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, FALLBACK_DOMAINS, loadCookiesFromDisk, setUid, getUid } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
-import { updateCredentials } from "./credentialManager.js";
+import { updateCredentials, loadAndValidate } from "./credentialManager.js";
 import { extractVerFromRequest } from "./transformSigner.js";
 import fs from "fs";
+
+// ======================== 登录互斥锁 ========================
+// 防止 hgCrawlerService.loginToHG 和 autoLogin.autoLoginAndGetCredentials 同时运行
+let loginMutex = Promise.resolve();
+
+/**
+ * 等待登录互斥锁并注册新的互斥段
+ * @param {Function} fn - 需要互斥执行的异步函数
+ * @returns {Promise} fn 的返回值
+ */
+export function withLoginMutex(fn) {
+  let resolve;
+  const next = new Promise(r => { resolve = r; });
+  const prev = loginMutex;
+  loginMutex = next;
+  return prev.then(() => fn()).finally(resolve);
+}
 
 // ======================== 配置常量 ========================
 const HG_USERNAME = process.env.HG_USERNAME || "";
@@ -289,6 +306,28 @@ async function detectLoginState(page) {
 
 // ======================== 登录 ========================
 export async function loginToHG(credentials, forceNew = false, isolated = false) {
+  // ★ 登录互斥锁：防止与 autoLogin 并发
+  return withLoginMutex(async () => {
+    // 互斥锁获取后先检查凭证是否已有效（可能前一个登录已成功）
+    if (!forceNew && !isolated) {
+      try {
+        const validCreds = await loadAndValidate();
+        if (validCreds && validCreds.uid && validCreds.ver) {
+          const sharedPage = getSharedPage();
+          if (sharedPage && isBrowserActive()) {
+            console.log("[HgCrawler] 互斥锁获取后检测到凭证有效且共享页面可用，跳过登录");
+            crawlerStatus.isLoggedIn = true;
+            return { success: true };
+          }
+        }
+      } catch (_) {}
+    }
+
+    return await _loginToHGImpl(credentials, forceNew, isolated);
+  });
+}
+
+async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
   console.log("[HgCrawler] 开始登录...");
   crawlerStatus.error = null;
 
@@ -508,7 +547,7 @@ export async function loginToHG(credentials, forceNew = false, isolated = false)
               Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
             });
             // ★ 等待足够时间让网站服务端处理登出状态
-            await new Promise((r) => setTimeout(r, 3000));
+            await new Promise((r) => setTimeout(r, 8000));
             await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
             // 等待登录表单加载
             try {

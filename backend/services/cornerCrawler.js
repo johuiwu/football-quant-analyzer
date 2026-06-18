@@ -14,6 +14,7 @@ import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap, randomDela
 import { loadCredentials, updateCredentials, isCredentialsValid, invalidateCookieCache, loadAndValidate, getSavedLoginCredentials, validateCredentials } from "./credentialManager.js";
 import { fetchCornerData, fetchHdpOuData, fetchGameDetail } from "./hgApiClient.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
+import { withLoginMutex } from "./hgCrawlerService.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -95,24 +96,68 @@ export async function randomMouseMove(page) {
 async function extractBalance(page) {
   try {
     const balance = await page.evaluate(() => {
-      const body = document.body;
-      if (!body) return null;
-      const text = body.textContent || "";
-      const patterns = [
-        /Balance[:\s]*[$]?\s*([\d,]+\.?\d*)/i,
-        /余额[:\s]*[¥$€]?\s*([\d,]+\.?\d*)/i,
-        /Credit[:\s]*[$]?\s*([\d,]+\.?\d*)/i,
-        /[$]?\s*([\d,]+\.?\d{2})/
+      // 工具：从文本中提取第一个像金额的数字
+      const parseNumber = (text) => {
+        if (!text) return null;
+        const m = text.match(/[$¥€]?\s*([\d,]+\.\d{2})/);
+        if (m) {
+          const n = parseFloat(m[1].replace(/,/g, ""));
+          if (Number.isFinite(n)) return n;
+        }
+        return null;
+      };
+
+      // 第 1 步：按 id/class 选择器精确定位余额元素
+      const selectors = [
+        '[id*="balance" i]', '[id*="credit" i]', '[id*="wallet" i]',
+        '[class*="balance" i]', '[class*="credit" i]', '[class*="wallet" i]',
+        '[class*="cash" i]', '[class*="money" i]'
       ];
-      for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match) return parseFloat(match[1].replace(/,/g, ""));
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          // 优先取元素直接文本（含直接子节点）
+          const directText = (el.childNodes && Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3)
+            .map(n => n.textContent.trim())
+            .filter(Boolean)
+            .join(" ")) || el.textContent || "";
+          const num = parseNumber(directText);
+          if (num !== null) return num;
+        }
       }
+
+      // 第 2 步：兜底 - 遍历所有含 Balance/余额/Credit/额度 关键词的元素
+      // 仅在该元素的 200 字符范围内匹配，避免全页误匹配
+      const keywords = ["Balance", "余额", "Credit", "额度"];
+      const all = document.querySelectorAll("*");
+      for (const el of all) {
+        // 跳过 script/style
+        if (el.tagName === "SCRIPT" || el.tagName === "STYLE") continue;
+        // 仅检查元素直接文本（不深入子节点）
+        const ownText = (el.childNodes && Array.from(el.childNodes)
+          .filter(n => n.nodeType === 3)
+          .map(n => n.textContent)
+          .join("")) || "";
+        if (!ownText || ownText.length > 200) continue;
+        for (const kw of keywords) {
+          if (ownText.includes(kw)) {
+            // 关键词命中后，从该元素（含子节点）的 200 字符文本中提取数字
+            const fullText = (el.textContent || "").slice(0, 200);
+            const num = parseNumber(fullText);
+            if (num !== null) return num;
+            break;
+          }
+        }
+      }
+
       return null;
     });
     if (balance !== null) {
       setBalance(balance);
       console.log("[cornerCrawler] 余额: " + balance);
+    } else {
+      console.log("[extractBalance] 未找到余额元素");
     }
     return balance;
   } catch (e) {
@@ -2355,11 +2400,13 @@ async function _processHttpResults(rcnResult, rnouResult, uid, ver, cookieStr) {
     console.warn("[cornerCrawler] 纯HTTP: 会话已过期，触发 autoLogin 重新登录...");
     invalidateCookieCache();
     try {
-      const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
-      const savedLogin = getSavedLoginCredentials();
-      const loginResult = await autoLoginAndGetCredentials({
-        username: savedLogin?.username || process.env.HG_USERNAME || "",
-        password: savedLogin?.password || process.env.HG_PASSWORD || "",
+      const loginResult = await withLoginMutex(async () => {
+        const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
+        const savedLogin = getSavedLoginCredentials();
+        return await autoLoginAndGetCredentials({
+          username: savedLogin?.username || process.env.HG_USERNAME || "",
+          password: savedLogin?.password || process.env.HG_PASSWORD || "",
+        });
       });
       if (!loginResult.success || !loginResult.uid || !loginResult.ver) return null;
       updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
@@ -2676,20 +2723,27 @@ async function _crawlViaPureHttp() {
     return null;
   }
 
-  // 4. 触发 autoLogin
+  // 4. 触发 autoLogin（通过登录互斥锁保护，防止与 hgCrawlerService.loginToHG 并发）
   console.log("[cornerCrawler] 纯HTTP: 触发 Puppeteer 登录...");
   let newCreds = null;
   try {
-    const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
-    const savedLogin = getSavedLoginCredentials();
-    const loginPromise = autoLoginAndGetCredentials({
-      username: savedLogin?.username || process.env.HG_USERNAME || "",
-      password: savedLogin?.password || process.env.HG_PASSWORD || "",
+    const loginResult = await withLoginMutex(async () => {
+      // 互斥锁获取后先检查凭证是否已有效（可能 hgCrawlerService 已登录成功）
+      const existingCreds = loadCredentials();
+      if (existingCreds && existingCreds.uid && existingCreds.ver) {
+        const validCheck = await loadAndValidate().catch(() => null);
+        if (validCheck && validCheck.uid) {
+          console.log("[cornerCrawler] 互斥锁获取后凭证已有效，跳过 autoLogin");
+          return { success: true, uid: validCheck.uid, ver: validCheck.ver, cookies: validCheck.cookies || [] };
+        }
+      }
+      const { autoLoginAndGetCredentials } = await import("./autoLogin.js");
+      const savedLogin = getSavedLoginCredentials();
+      return await autoLoginAndGetCredentials({
+        username: savedLogin?.username || process.env.HG_USERNAME || "",
+        password: savedLogin?.password || process.env.HG_PASSWORD || "",
+      });
     });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("autoLogin 60s超时")), 60000)
-    );
-    const loginResult = await Promise.race([loginPromise, timeoutPromise]);
     if (loginResult.success && loginResult.uid && loginResult.ver) {
       updateCredentials({ uid: loginResult.uid, ver: loginResult.ver, cookies: loginResult.cookies || [] });
       newCreds = loadCredentials();
@@ -2984,6 +3038,7 @@ export async function loginToHG(username, password) {
 
 // ======================== 关闭 ========================
 export { getBalance } from "./browserPool.js";
+export { extractBalance };
 
 export async function closeCrawler() {
   stopCornerPolling();

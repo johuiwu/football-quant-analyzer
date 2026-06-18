@@ -246,7 +246,7 @@ async function handleKickedOut(page) {
       const btn = document.querySelector("#kick_ok_btn");
       if (btn) btn.click();
     });
-    await sleep(600);
+    await sleep(3000);
 
     // 2. 强制移除弹窗容器的 .on 类（确保弹窗关闭）
     await page.evaluate(() => {
@@ -472,11 +472,14 @@ export async function autoLoginAndGetCredentials(options = {}) {
         }
       });
 
-      // 3. 加载已有 Cookie（如有）
-      const savedCookies = loadCookiesFromDisk();
-      if (savedCookies && savedCookies.length > 0) {
-        await page.setCookie(...savedCookies);
-        console.log("[autoLogin] 已加载 " + savedCookies.length + " 条 Cookie");
+      // 3. 清除浏览器 Cookie 和缓存（避免旧会话冲突导致被踢出）
+      try {
+        const client = await page.target().createCDPSession();
+        await client.send("Network.clearBrowserCookies");
+        await client.send("Network.clearBrowserCache");
+        console.log("[autoLogin] 已清除浏览器 Cookie 和缓存");
+      } catch (e) {
+        console.warn("[autoLogin] 清除 Cookie/缓存失败:", e.message);
       }
 
       // 4. 导航到登录页
