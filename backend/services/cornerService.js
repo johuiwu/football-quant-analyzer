@@ -190,7 +190,8 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
  */
 async function processAutoBetsForMatches(matches) {
   const betConfig = getBetConfig();
-  if (!betConfig.isRealMode || !betConfig.autoBetEnabled) return;
+  // ★ 不再提前 return：即使 isRealMode=false 或 autoBetEnabled=false，
+  // 也要进入投注函数生成 skipped 记录，让用户在投注记录中看到策略触发了但未执行
   for (const match of matches) {
     if (betConfig.trackedMatchIds.length > 0 && !betConfig.trackedMatchIds.includes(match.matchId)) {
       console.log("[cornerService] 比赛不在追踪白名单中: matchId=" + match.matchId);

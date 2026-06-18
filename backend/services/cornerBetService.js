@@ -136,16 +136,54 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
   console.log("[角球投注] 二次确认关闭，进入自动执行流程...");
 
   const betTarget = buildBetTarget(betDirection, match.cornerHandicap || 0);
+  const matchId = match.matchId || "";
+  const matchName = match.matchName || "";
+  const sid = String(strategyId);
+  const now = new Date().toISOString();
 
   const betData = {
-    matchName: match.matchName || "",
-    matchId: match.matchId || "",
+    matchName,
+    matchId,
     odds: actualOdds ?? match.cornerOdds ?? 0,
     amount: betConfig.amount,
     handicap: match.cornerHandicap || 0,
-    strategyId: String(strategyId),
+    strategyId: sid,
     betDirection: betDirection || "auto"
   };
+
+  // ★ 先在 corner_bets 表中插入 pending 记录（确保无论投注成功/失败都有记录）
+  await ensureBetTable();
+  let betRecordId;
+  try {
+    const insertResult = await run(
+      "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status, bet_target, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+      [matchId, matchName, sid, betData.odds, betData.amount, betTarget, now]
+    );
+    betRecordId = insertResult.lastID;
+    console.log(`[投注诊断] 策略${sid}已创建投注记录 bet#${betRecordId}，正在尝试下单...`);
+  } catch (insertErr) {
+    console.error("[角球投注] 创建投注记录失败:", insertErr.message);
+    return;
+  }
+
+  // ★ 非真实模式：直接标记为 skipped，不执行实际投注
+  if (!betConfig.isRealMode) {
+    await run(
+      "UPDATE corner_bets SET status = 'skipped', error_reason = '非真实模式', executed_at = ? WHERE id = ?",
+      [new Date().toISOString(), betRecordId]
+    );
+    console.log(`[角球投注] 非真实模式，跳过实际投注 bet#${betRecordId}`);
+    return;
+  }
+
+  if (!betConfig.autoBetEnabled) {
+    await run(
+      "UPDATE corner_bets SET status = 'skipped', error_reason = '自动投注未启用', executed_at = ? WHERE id = ?",
+      [new Date().toISOString(), betRecordId]
+    );
+    console.log(`[角球投注] 自动投注未启用，跳过实际投注 bet#${betRecordId}`);
+    return;
+  }
 
   // 自动重试逻辑
   let result = null;
@@ -153,7 +191,7 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
   while (attempt <= MAX_AUTO_RETRIES) {
     try {
       const credCheck = await loadAndValidate().catch(() => null);
-      if (credCheck && credCheck.valid) {
+      if (credCheck && credCheck.uid) {
         console.log("[角球投注] 使用纯HTTP投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
         result = await executeBetViaHttp(betData);
       } else {
@@ -164,27 +202,27 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
       result = { success: false, error: err.message };
     }
 
-    if (result.success || result.insufficient) break;
+    if (result && (result.success || result.insufficient)) break;
 
     attempt++;
     if (attempt <= MAX_AUTO_RETRIES) {
-      console.error(`[投注失败重试记录] 第${attempt}次重试: ${result.error || "unknown"}`);
+      console.error(`[投注失败重试记录] 第${attempt}次重试: ${result?.error || "unknown"}`);
       await sleep(RETRY_DELAY_MS);
     }
   }
 
-  await ensureBetTable();
+  // ★ result 安全兜底
+  if (!result) {
+    result = { success: false, error: "投注结果为空（可能所有重试均未返回结果）" };
+  }
 
-  const now = new Date().toISOString();
-  const matchId = match.matchId || "";
-  const matchName = match.matchName || "";
-  const sid = String(strategyId);
   const finalRetryCount = attempt;
+  const executedAt = new Date().toISOString();
 
   if (result.success) {
     await run(
-      "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status, executed_at, retry_count, bet_target) VALUES (?, ?, ?, ?, ?, 'success', ?, ?, ?)",
-      [matchId, matchName, sid, betData.odds, betData.amount, now, finalRetryCount, betTarget]
+      "UPDATE corner_bets SET status = 'success', executed_at = ?, retry_count = ? WHERE id = ?",
+      [executedAt, finalRetryCount, betRecordId]
     );
     await saveCornerHistory({
       match_id: matchId,
@@ -197,8 +235,8 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
     console.log("[角球投注] 自动执行结果: 成功");
   } else if (result.insufficient) {
     await run(
-      "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status, error_message, error_reason, executed_at, retry_count, bet_target) VALUES (?, ?, ?, ?, ?, 'insufficient', ?, ?, ?, ?, ?)",
-      [matchId, matchName, sid, betData.odds, betData.amount, result.error || "余额不足", result.error || "余额不足", now, finalRetryCount, betTarget]
+      "UPDATE corner_bets SET status = 'insufficient', error_message = ?, error_reason = ?, executed_at = ?, retry_count = ? WHERE id = ?",
+      [result.error || "余额不足", result.error || "余额不足", executedAt, finalRetryCount, betRecordId]
     );
     await saveCornerHistory({
       match_id: matchId,
@@ -212,8 +250,8 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
   } else {
     const errMsg = result.error || "unknown";
     await run(
-      "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status, error_message, error_reason, executed_at, retry_count, bet_target) VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?, ?)",
-      [matchId, matchName, sid, betData.odds, betData.amount, errMsg, errMsg, now, finalRetryCount, betTarget]
+      "UPDATE corner_bets SET status = 'failed', error_message = ?, error_reason = ?, executed_at = ?, retry_count = ? WHERE id = ?",
+      [errMsg, errMsg, executedAt, finalRetryCount, betRecordId]
     );
     await saveCornerHistory({
       match_id: matchId,
@@ -252,6 +290,9 @@ export async function processBetQueue() {
   try {
     const task = betQueue.shift();
 
+    // ★ 投注诊断日志
+    console.log(`[投注诊断] 策略${task.strategyId}已进入投注执行队列，正在尝试下单...`);
+
     if (betConfig.autoBetConfirmRequired) {
       console.log("[cornerBetService] 二次确认模式: bet#" + task.betId + " " + task.matchName + " 等待用户确认");
       await run(
@@ -285,6 +326,17 @@ export async function processBetQueue() {
       return;
     }
 
+    // ★ 非真实模式：标记为 skipped，不执行实际投注
+    if (!betConfig.isRealMode) {
+      await run(
+        "UPDATE corner_bets SET status = 'skipped', error_reason = '非真实模式', executed_at = ? WHERE id = ?",
+        [new Date().toISOString(), task.betId]
+      );
+      console.log(`[cornerBetService] 非真实模式，跳过实际投注 bet#${task.betId}`);
+      isProcessing = false;
+      return;
+    }
+
     const betData = {
       matchName: task.matchName,
       matchId: task.matchId,
@@ -300,7 +352,7 @@ export async function processBetQueue() {
     let attempt = 0;
     while (attempt <= MAX_AUTO_RETRIES) {
       const credCheck = await loadAndValidate().catch(() => null);
-      if (credCheck && credCheck.valid) {
+      if (credCheck && credCheck.uid) {
         console.log("[cornerBetService] 使用纯HTTP投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
         result = await executeBetViaHttp(betData);
       } else {
@@ -308,13 +360,18 @@ export async function processBetQueue() {
         result = await executeBetOnHG(betData);
       }
 
-      if (result.success || result.insufficient) break;
+      if (result && (result.success || result.insufficient)) break;
 
       attempt++;
       if (attempt <= MAX_AUTO_RETRIES) {
-        console.error(`[投注失败重试记录] 第${attempt}次重试: ${result.error || "unknown"}`);
+        console.error(`[投注失败重试记录] 第${attempt}次重试: ${result?.error || "unknown"}`);
         await sleep(RETRY_DELAY_MS);
       }
+    }
+
+    // ★ result 安全兜底
+    if (!result) {
+      result = { success: false, error: "投注结果为空（可能所有重试均未返回结果）" };
     }
 
     const finalRetryCount = attempt;
@@ -353,9 +410,10 @@ export async function processBetQueue() {
         ).catch(() => {});
       }
     } else {
+      const errMsg = result.error || "unknown";
       await run(
         "UPDATE corner_bets SET status = 'failed', error_message = ?, error_reason = ?, retry_count = ?, bet_target = ? WHERE id = ?",
-        [result.error || "unknown", result.error || "unknown", finalRetryCount, betTarget, task.betId]
+        [errMsg, errMsg, finalRetryCount, betTarget, task.betId]
       );
       if (task.historyId) {
         await run(
