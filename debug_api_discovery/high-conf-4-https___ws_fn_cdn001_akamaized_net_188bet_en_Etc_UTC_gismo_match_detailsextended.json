@@ -1,0 +1,385 @@
+{
+  "queryUrl": "match_detailsextended/70771296",
+  "doc": [
+    {
+      "event": "match_detailsextended",
+      "_dob": 1780852377,
+      "_maxage": 10,
+      "data": {
+        "_doc": "details",
+        "_matchid": 70771296,
+        "teams": {
+          "home": "China",
+          "away": "Tunisia Youth"
+        },
+        "index": [
+          "goalattempts",
+          125,
+          126,
+          171,
+          127,
+          124,
+          120,
+          123,
+          129,
+          121,
+          122,
+          40,
+          45,
+          50,
+          60,
+          158,
+          1030,
+          "ballsafepercentage",
+          1126,
+          "attackpercentage",
+          1029,
+          "dangerousattackpercentage",
+          161
+        ],
+        "values": {
+          "40": {
+            "name": "Yellow cards",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "45": {
+            "name": "Yellow/red cards",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "50": {
+            "name": "Red cards",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "60": {
+            "name": "Substitutions",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "120": {
+            "name": "Free kicks",
+            "value": {
+              "home": 8,
+              "away": 4
+            }
+          },
+          "121": {
+            "name": "Goal kicks",
+            "value": {
+              "home": 5,
+              "away": 2
+            }
+          },
+          "122": {
+            "name": "Throw-ins",
+            "value": {
+              "home": 9,
+              "away": 12
+            }
+          },
+          "123": {
+            "name": "Offsides",
+            "value": {
+              "home": 0,
+              "away": 4
+            }
+          },
+          "124": {
+            "name": "Corner kicks",
+            "value": {
+              "home": 0,
+              "away": 3
+            }
+          },
+          "125": {
+            "name": "Shots on target",
+            "value": {
+              "home": 1,
+              "away": 1
+            }
+          },
+          "126": {
+            "name": "Shots off target",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "127": {
+            "name": "Saves",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "129": {
+            "name": "Fouls",
+            "value": {
+              "home": 4,
+              "away": 8
+            }
+          },
+          "158": {
+            "name": "Injuries",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "161": {
+            "name": "Penalties",
+            "value": {
+              "home": 0,
+              "away": 0
+            }
+          },
+          "171": {
+            "name": "Shots blocked",
+            "value": {
+              "home": 0,
+              "away": 1
+            }
+          },
+          "1029": {
+            "name": "Dangerous Attack",
+            "value": {
+              "home": 16,
+              "away": 34
+            }
+          },
+          "1030": {
+            "name": "Ball Safe",
+            "value": {
+              "home": 37,
+              "away": 47
+            }
+          },
+          "1126": {
+            "name": "Attack",
+            "value": {
+              "home": 34,
+              "away": 46
+            }
+          },
+          "1627": {
+            "name": "Yellow cards",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "1628": {
+            "name": "Red cards",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "1634": {
+            "name": "Corner kicks",
+            "value": {
+              "home": "0",
+              "away": "3"
+            }
+          },
+          "goalattempts": {
+            "name": "Goal attempts",
+            "value": {
+              "home": 1,
+              "away": 1
+            }
+          },
+          "freekicksperiod": {
+            "name": "Free kicks",
+            "value": {
+              "home": "8",
+              "away": "4"
+            }
+          },
+          "goalkicksperiod": {
+            "name": "Goal kicks",
+            "value": {
+              "home": "5",
+              "away": "2"
+            }
+          },
+          "throwinsperiod": {
+            "name": "Throw-ins",
+            "value": {
+              "home": "9",
+              "away": "12"
+            }
+          },
+          "offsidesperiod": {
+            "name": "Offsides",
+            "value": {
+              "home": "0",
+              "away": "4"
+            }
+          },
+          "shotsonperiod": {
+            "name": "Shots on target",
+            "value": {
+              "home": "1",
+              "away": "1"
+            }
+          },
+          "shotsoffperiod": {
+            "name": "Shots off target",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "savesperiod": {
+            "name": "Saves",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "foulsperiod": {
+            "name": "Fouls",
+            "value": {
+              "home": "4",
+              "away": "8"
+            }
+          },
+          "shotsblockedperiod": {
+            "name": "Shots blocked",
+            "value": {
+              "home": "0",
+              "away": "1"
+            }
+          },
+          "yellowredcardsperiod": {
+            "name": "Yellow/red cards",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "substitutionsperiod": {
+            "name": "Substitutions",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "goalattemptsperiod": {
+            "name": "Goal attempts",
+            "value": {
+              "home": "1",
+              "away": "1"
+            }
+          },
+          "injuriesperiod": {
+            "name": "Injuries",
+            "value": {
+              "home": "0",
+              "away": "0"
+            }
+          },
+          "ballsafepercentage": {
+            "name": "Ball Safe",
+            "value": {
+              "home": 64,
+              "away": 44
+            }
+          },
+          "attackpercentage": {
+            "name": "Attack",
+            "value": {
+              "home": 17,
+              "away": 17
+            }
+          },
+          "dangerousattackpercentage": {
+            "name": "Dangerous Attack",
+            "value": {
+              "home": 19,
+              "away": 39
+            }
+          },
+          "ballsafeperiod": {
+            "name": "Ball Safe",
+            "value": {
+              "home": "37",
+              "away": "47"
+            }
+          },
+          "attackperiod": {
+            "name": "Attack",
+            "value": {
+              "home": "34",
+              "away": "46"
+            }
+          },
+          "dangerousperiod": {
+            "name": "Dangerous Attack",
+            "value": {
+              "home": "16",
+              "away": "34"
+            }
+          },
+          "ballsafeperiodpercentage": {
+            "name": "Ball Safe",
+            "value": {
+              "home": "64",
+              "away": "44"
+            }
+          },
+          "attackperiodpercentage": {
+            "name": "Attack",
+            "value": {
+              "home": "17",
+              "away": "17"
+            }
+          },
+          "dangerousperiodpercentage": {
+            "name": "Dangerous Attack",
+            "value": {
+              "home": "19",
+              "away": "39"
+            }
+          }
+        },
+        "types": {
+          "40": "Yellow cards",
+          "45": "Yellow/red cards",
+          "50": "Red cards",
+          "60": "Substitutions",
+          "120": "Free kicks",
+          "121": "Goal kicks",
+          "122": "Throw-ins",
+          "123": "Offsides",
+          "124": "Corner kicks",
+          "125": "Shots on target",
+          "126": "Shots off target",
+          "127": "Saves",
+          "129": "Fouls",
+          "158": "Injuries",
+          "161": "Penalties",
+          "171": "Shots blocked",
+          "1029": "Dangerous Attack",
+          "1030": "Ball Safe",
+          "1126": "Attack",
+          "goalattempts": "Goal attempts",
+          "ballsafepercentage": "Ball Safe",
+          "attackpercentage": "Attack",
+          "dangerousattackpercentage": "Dangerous Attack"
+        }
+      }
+    }
+  ]
+}

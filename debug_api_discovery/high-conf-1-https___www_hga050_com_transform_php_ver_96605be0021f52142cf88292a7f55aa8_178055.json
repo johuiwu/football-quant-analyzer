@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name='viewport' content='maximum-scale=1, width=device-width, user-scalable=no, minimum-scale=1.0, viewport-fit=cover'/>
+	<title>滾球球類選單</title>
+	<script id="homeJS">
+function config_set(){var _self=this;var parentClass;var ConfigAry;_self.init=function(){ConfigAry=_self.set()};_self.set=function(){var ary=new Object;ary["SCROLLHIDE_SW"]=true;ary["CONFIG_BASE"]=1E3;ary["GTYPEARY"]=new Array("FT","BK","ES","TN","VB","BM","TT","BS","SK","OP");ary["SHOWTYPEARY"]=new Array("live","today","early");ary["RTYPEARY"]=new Array("rb","r","r");ary["RMB"]=new Array("100","500","1,000");ary["HKD"]=new Array("100","500","1,000");ary["USD"]=new Array("10","50","100");ary["MYR"]=
+new Array("50","200","500");ary["SGD"]=new Array("20","50","100");ary["THB"]=new Array("50","1,000","2,000");ary["GBP"]=new Array("10","50","100");ary["JPY"]=new Array("500","1,000","5,000");ary["EUR"]=new Array("10","50","100");ary["IDR"]=new Array("100,000...

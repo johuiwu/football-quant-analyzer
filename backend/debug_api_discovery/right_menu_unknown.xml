@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<title>right menu</title>
+	<meta name='viewport' content='maximum-scale=1, width=device-width, user-scalable=no, minimum-scale=1.0, viewport-fit=cover'/>th=device-width, user-scalable=no, minimum-scale=1.0, viewport-fit=cover' />
+	<script id="homeJS">
+function Util(_win,_dom){var _self=this;var win=_win;var dom=_dom;var parentClass;var config_set;var LS;var fixY=15;_self.init=function(){};_self.setParentclass=function(_parentclass){parentClass=_parentclass;LS=parentClass.getThis("LS");config_set=parentClass.getThis("config_set")};_self.getThis=function(varible){return eval(varible)};_self.addEvent=function(targetObj,eventName,fun,parObj){try{var retFun=function(e){fun(e,parObj)};if(targetObj.eventName==null)targetObj.eventName=new Array;else _self.removeEvent(targetObj,
+eventName);targetObj.eventName[eventName]=retFun;targetObj.addEventListener(eventName,retFun,false)}catch(ex){try{targetObj.attachEvent("on"+eventName,retFun);if(targetObj.eventName==null)targetObj.eventName=new Array;targetObj.eventName[eventName]=retFun}catch(exx){}}};_self.removeEvent=function(targetObj,eventName){if(targetObj.eventName==null)return;try{targetObj.removeEventListener(eventName,targetObj.eventName[eventName])}catch(ex){try{targetObj.detachEvent("on"+eventName,targetObj.eventName[eventName])}catch(exx){}}};
+_self.mergeArray=function(){var newArray=new Object;for(i=0;i<arguments.length;i++)for(var key in arguments[i])newArray[key]=arguments[i][key];return newArray};_self.getProtocal=function(){return dom.location.protocol};_self.getWebDomain=function(){return dom.domain};_self.getWebUrl=function(){return _self.getProtocal()+"//"+_self.getWebDomain()};_self.goToIndex=function(){_self.topGoToUrl(_self.getWebUrl())};_self.topGoToUrl=function(_url,par){var paramStr="";var str="";if(par)for(var key in par){var content=
+par[key]+"";str+=key+"="+(content=="undefined"?"":content)+"&"}if(top.isapp=="Y")str+="isapp="+top.isapp+"&";if(str!="")paramStr="?"+str;top.location=_url+paramStr};_self.chkErrorMsg=function(errHash,LS_code){if(errHash["status"]!=null&&errHash["status"]=="error")if(errHash["code"]!=null&&errHash["code"]=="4X014"){if(!top.doubleLogin){top.doubleLogin=true;alert(LS_code.get(errHash["code"]))}_self.goToIndex();return true}else if(errHash["code"]!=null&&errHash["code"].indexOf("clean_db")!=-1){if(errHash["msg"])_self.showErrorMsg(errHash["msg"]);
+parentClass.dispatchEvent("showLoading",{"showLoading":false});return true}return false};_self.initOnBlurDiv=function(showObj,clickObj,clickFun,clickParam){clickObj.tabIndex=100;var param=new Object;param.showObj=showObj;param.clickObj=clickObj;param.clickFun=clickFun;param.clickParam=clickParam;_self.addEvent(clickObj,"blur",_self.onBlurEvent,param)};_self.onBlurEvent=function(e,param){if(param.clickParam&&param.clickParam.className)_self.classFunc(param.clickObj,param.clickParam.className,"remove")};
+_self.setInfEvent=function(icon,param){param.info_mode!=false?param.info_mode=true:param.info_mode=false;param._focus.prev_scroll_lock=true;_self.addEvent(icon,"click",_self.showInfEvent,{"icon":icon,"param":param})};_self.showInfEvent=function(e,_par){var icon=_par.icon;var param=_par.param;var all=param._focus.getElementsByTagName("*");for(var i=0,max=all.length;i<max;i++)if(all[i]==e.target)return false;if(e.target==param._focus)return false;if(param._setView.classList.contains(param._viewClass)){param._setView.classList.remove(param._viewClass);
+if(param.info_mode)_self.removeEvent(param._focus,"click");_self.removeEvent(dom.getElementsByTagName("div")[0],"mousedown");_self.removeEvent(dom.getElementsByTagName("div")[0],"touchstart")}else{param._setView.classList.add(param._viewClass);if(param.info_mode)_self.addEvent(param._focus,"click",_self.closeInfElmt,param);_self.addEvent(dom.getElementsByTagName("div")[0],"mousedown",_self.InfBlurEvent,_par);_self.addEvent(dom.getElementsByTagName("div")[0],"touchstart",_self.InfBlurEvent,_par)}};
+_self.InfBlurEvent=function(e,_par){var icon=_par.icon;var param=_par.param;var mouseIN=false;var all=param._focus.getElementsByTagName("*");for(var i=0,max=all.length;i<max;i++)if(all[i]==e.target)mouseIN=true;if(param._focus==e.target)mouseIN=true;if(!mouseIN){var all=icon.getElementsByTagName("*");for(var i=0,max=all.length;i<max;i++)if(all[i]==e.target)return false;if(e.target==icon)return false;_self.closeInfElmt(null,param)}};_self.closeInfElmt=function(e,param){dom.activeElement.blur();if(param._setView.classList.contains(param._viewClass))param._setView.classList.remove(param._viewClass);
+_self.removeEvent(param._focus,"click");_self.removeEvent(dom.getElementsByTagName("div")[0],"mousedown");_self.removeEvent(dom.getElementsByTagName("div")[0],"touchstart")};_self.clone=function(obj){if(null==obj||typeof obj!="object")return obj;if(obj instanceof Date){var copy=new Date;copy.setTime(obj.getTime());return copy}if(obj instanceof Array){var copy=[];for(var i=0,len=obj.length;i<len;++i)copy[i]=_self.clone(obj[i]);return copy}if(obj instanceof Object){var copy={};for(var attr in obj)if(obj.hasOwnProperty(attr))copy[attr]=
+_self.clone(obj[attr]);return copy}throw new Error("Unable to copy obj! Its type isn't supported.");};_self.showErrorMsg=function(msg){_self.showMsg(msg,"N",null)};_self.showMsg=function(msg,_confirm,retFun){parentClass.dispatchEvent("showAlertMsg",{"confirm":_confirm,"msg":msg,"retFun":retFun})};_self.showTxt=function(msg){if(msg+""=="undefined"||msg+""=="null"||msg+""=="NaN")return"";return msg};_self.echo=function(msg){};_self.err=function(title,e){try{console.error(title+"\n"+e)}catch(e){}};_self.formatThousand=
+function(num){num=num+"";var re=/(-?\d+)(\d{3})/;while(re.test(num))num=num.replace(re,_self.replacer);return num};_self.replacer=function(match,p1,p2){return[p1,p2].join(",")};_self.util_formatNumber=function(num){return _self.formatNumber(num,2,true)};_self.formatNumber=function(num,b,add){var point=b;var t=1;for(;b>0;t*=10,b--);if(num*1>=0)if(add)return _self.addZero(Math.round(num*t+1/t)/t,point);else return Math.round(num*t+1/t)/t;else if(add)return _self.addZero(Math.round(num*t-1/t)/t,point);
+else return Math.round(num*t+1/t)/t};_self.chgCreditAnimation=function(obj){var oldcash=obj.savechk;var nowcash=obj.maxcredit;var targetCurrency=obj.currency;var targetCredit=obj.credit;var targetMoney=obj.money;var removeFun=obj.removeFun;var Ary=obj.Ary;var count=obj.count;var total=0;var returnObj=new Array;Ary.splice(0,Ary.length);var obj1=new Object;obj1["s"]=oldcash;obj1["e"]=nowcash;Ary.push(obj1);if(count==1)count=0;var final=Ary[count]["s"];var random=Ary[count]["e"];targetCurrency.innerHTML=
+_self.showTxt(top["userData"].currency);if(targetMoney=="header_money"||targetMoney=="menu_acc_page"){var _maxcredit=_self.trans_thousand(random);if(random*1>99999&&random*1<=999999999)_maxcredit=_self.transThousand(Math.floor(random),0);else if(random*1>999999999)_maxcredit="\u2022\u2022\u2022\u2022\u2022";targetCredit.innerHTML=_maxcredit}else targetCredit.innerHTML=_self.showTxt(_self.trans_thousand(random));if(random>final)_self.setTimeoutClass(targetMoney,"ani_credit_add","add",removeFun,700);
+top["userData"]["oldCredit"]=_self.showTxt(random.toString());count++;top["orderinfo"]["date"]="";returnObj["Ary"]=Ary;returnObj["count"]=count;return returnObj};_self.addZero=function(code,b){code+="";var str="";var index=code.indexOf(".");if(index==-1){code+=".";index=code.length-1}var r=b*1-(code.length-index-1);for(i=0;i<r;i++)str+="0";str=code+str;return str};_self.mprintf=function(vals,fronts,points,comma,thousand){var out=_self.printf(vals,fronts,points,comma);if(thousand)out=_self.formatThousand(out);
+return out};_self.printf=function(vals,fronts,points,comma){vals=""+vals;var cmd=new Array;cmd=vals.split(".");if(cmd.length>1)if(cmd[1].length>points)if(points!=0){tmp=Math.pow(10,points*1);vals=Math.round(vals*tmp+1E-4)/tmp;vals=""+vals;cmd=vals.split(".")}else{cmd=new Array(cmd[0]);vals=cmd[0]}for(ii=0;ii<fronts-cmd[0].length;ii++)vals="0"+vals;if(comma){valarr=vals.split(".");tmpval=valarr[0];for(ii=valarr[0].length;ii>3;ii-=3){comma_index=ii-3;strA=tmpval.substring(0,comma_index);strB=tmpval.substring(comma_index);
+tmpval=strA+","+strB}if(valarr.length>1)tmpval+="."+valarr[1];vals=tmpval}if(points>0)if(cmd.length>1)for(ii=0;ii<points-cmd[1].length;ii++)vals=vals+"0";else{vals=vals+".";for(ii=0;ii<points;ii++)vals=vals+"0"}return vals};_self.getObjAry=function(tmpScreen,aryStr,attribute,isOnly){var newAry=new Array;var _attribute=attribute;if(tmpScreen!=null&aryStr!=null){if(_attribute==null)_attribute="id";newAry=_self.getChildAry(tmpScreen.getElementsByTagName("*"),aryStr,newAry,_attribute,isOnly)}return newAry};
+_self.getChildAry=function(objAry,aryStr,newAry,attribute,isOnly){for(var i=0;i<objAry.length;i++){var obj=objAry[i];var _id=obj.getAttribute(attribute);if(_id!=null)if(aryStr.indexOf(","+_id+",")!=-1){if(attribute=="id")newAry[_id]=obj;else newAry.push(obj);if(isOnly)return newAry}}return newAry};_self.getSpan=function(divObj,spanid){return _self.getObj(divObj,spanid)};_self.getObj=function(divObj,tagID){var obj=null;try{obj=divObj.children[tagID]}catch(e){obj=null}return obj};_self.setObjectClass=
+function(targetObj,classStr){if(targetObj.className!=undefined)targetObj.className=classStr;else targetObj.setAttribute("class",classStr)};_self.getObjAbsolute_new=function(obj,stop_name){var abs=new Object;abs["left"]=obj.offsetLeft;abs["top"]=obj.offsetTop;while(obj=obj.offsetParent){if(_self.getStyle(obj,"position")=="relative")if(obj.id!=""&&obj.offsetParent.id!=""&&_self.getStyle(obj,"top")!="auto"&&_self.getStyle(obj,"margin-top")!="auto"&&_self.getStyle(obj,"margin-top")!="0px"){abs["top"]+=
+-obj.offsetTop;continue}if(stop_name!=undefined&&obj.id==stop_name)break;else if(_self.getStyle(obj,"position")=="absolute")break;abs["left"]+=obj.offsetLeft;abs["top"]+=obj.offsetTop}return abs};_self.getStyle=function(oElm,strCssRule){var strValue="";if(document.defaultView&&document.defaultView.getComputedStyle)strValue=document.defaultView.getComputedStyle(oElm,"").getPropertyValue(strCssRule);else if(oElm.currentStyle){strCssRule=strCssRule.replace(/\-(\w)/g,function(strMatch,p1){return p1.toUpperCase()});
+strValue=oElm.currentStyle[strCssRule]}else return"error";return strValue};_self.checkFormat=function(msg,type){var ret=null;var _msg=msg+"";switch(type){case 0:ret=_msg.match("^[a-zA-Z0-9]*$");break;case 1:ret=_msg.match("^[0-9]*$");break;case 2:ret=_msg.match("^[a-zA-Z0-9]*$");if(ret){if(_msg.match("^[a-zA-Z]*$")||_msg.match("^[0-9]*$"))ret=false;if(_msg.length<6||_msg.length>12)ret=false}break;default:ret=_msg.match("^[a-zA-Z0-9]*$");break}return ret?true:false};_self.getKeyCode=function(e){return win.event?
+win.event.keyCode:e.which};_self.prevDefault=function(e){if(e.preventDefault)e.preventDefault();else e.returnValue=false};_self.ChkKeyUser=function(target,FunParam){if(_self.isAndroid())_self.addEvent(target,"input",_self.ChkInpKeyUser,FunParam);else _self.addEvent(target,"keypress",_self.ChkBoardKeyUser,FunParam)};_self.ChkBoardKeyUser=function(e,FunParam){var _par=FunParam!=null?FunParam.param:null;if(FunParam!=null)if(FunParam.initShow)FunParam.initShow(e,_par);var keyCode=_self.getKeyCode(e);
+if(keyCode==13)_self.prevDefault(e);else if(keyCode==8);else if((keyCode<48||keyCode>57)&&(keyCode>95||keyCode<106)&&!(keyCode>64&&keyCode<91||keyCode>96&&keyCode<123)){_self.prevDefault(e);if(FunParam!=null&&FunParam.onErr)FunParam.onErr(e,_par)}};_self.ChkInpKeyUser=function(e,FunParam){var _par=FunParam!=null?FunParam.param:null;if(FunParam!=null)if(FunParam.initShow)FunParam.initShow(e,_par);var inCode=e.data;if(inCode!=null)if(inCode.match(/[^a-zA-Z0-9]/)){var St=e.target;var position=_self.getCaretPosition(St)-
+inCode.length;var result=St.value.split("");result.splice(position,inCode.length);St.value=result.join("");_self.setSelectionRange(e.target,position,position);if(FunParam!=null&&FunParam.onErr)FunParam.onErr(e,_par)}};_self.ChkKeyCash=function(target,FunParam){if(_self.isAndroid())_self.addEvent(target,"input",_self.ChkInpKeyCash,FunParam);else{_self.addEvent(target,"keypress",_self.ChkBoardKeyCash,FunParam);_self.addEvent(target,"keyup",_self.doSucKeyCash,FunParam)}};_self.ChkBoardKeyCash=function(e,
+FunParam){var _par=FunParam!=null?FunParam.param:null;if(FunParam!=null){if(FunParam.initShow)FunParam.initShow(e,_par);FunParam.isCHK=false}var keyCode=_self.getKeyCode(e);if(keyCode==13){_self.prevDefault(e);return false}else if(keyCode>=48&&keyCode<=57||keyCode==8);else if(keyCode<96||keyCode>105){if(FunParam!=null&&FunParam.onErr)FunParam.onErr(e,_par);_self.prevDefault(e);return false}else if(e.code||e.key){var charCode=e.code||e.key;charCode=charCode.replace(/\D/g,"");if(charCode==""){if(FunParam!=
+null&&FunParam.onErr)FunParam.onErr(e,_par);_self.prevDefault(e);return false}}if(FunParam!=null)FunParam.isCHK=true};_self.doSucKeyCash=function(e,FunParam){var _par=FunParam!=null?FunParam.param:null;if(FunParam!=null&&FunParam.onSuc&&FunParam.isCHK)FunParam.onSuc(e,_par)};_self.ChkInpKeyCash=function(e,FunParam){var _par=FunParam!=null?FunParam.param:null;if(FunParam!=null){if(FunParam.initShow)FunParam.initShow(e,_par);FunParam.isCHK=false}var inCode=e.data;if(inCode!=null)if(inCode.match(/[^0-9]/)){if(FunParam!=
+null&&FunParam.onErr)FunParam.onErr(e,_par);var St=e.target;var position=_self.getCaretPosition(St)-inCode.length;var result=St.value.split("");result.splice(position,inCode.length);St.value=result.join("");_self.setSelectionRange(e.target,position,position);return false}if(FunParam!=null)FunParam.isCHK=true;if(FunParam!=null&&FunParam.onSuc)FunParam.onSuc(e,_par)};_self.Replace_credits=function(targetObj,credit_old,e){var keyCode=_self.getKeyCode(e);var position=_self.getCaretPosition(targetObj);
+var credit=targetObj.value.replace(/\D/g,"");if(credit!=""){credit=credit*1;var num_length=credit.toString().length;if(keyCode>=48&&keyCode<=57||keyCode>=96&&keyCode<=105){if(credit_old*1!=credit&&num_length%3==1)position++}else if(keyCode==8){if(num_length%3==0&&credit_old*1!=credit&&position>0)position--}else if(keyCode>=37&&keyCode<=40||keyCode==13)return true;targetObj.value=_self.mprintf(credit,0,0,false,true);_self.setSelectionRange(targetObj,position,position)}else targetObj.value=""};_self.Replace_Input_credits=
+function(targetObj,credit_old,e){var inCode=e.data;var position=_self.getCaretPosition(targetObj);var credit=targetObj.value.replace(/\D/g,"");if(credit!=""){credit=credit*1;var num_length=credit.toString().length;if(inCode!=null){if(num_length%3==1&&inCode.match(/\d/))position+=inCode.length;if(inCode.match(/\D/))position-=inCode.length}else if(num_length%3==0&&credit_old*1!=credit&&position>0)position--;targetObj.value=_self.mprintf(credit,0,0,false,true);_self.setSelectionRange(targetObj,position,
+position)}else targetObj.value=""};_self.getCaretPosition=function(oField){var iCaretPos=0;if(document.selection){oField.focus();var oSel=document.selection.createRange();oSel.moveStart("character",0-oField.value.length);iCaretPos=oSel.text.length}else if(oField.selectionStart||oField.selectionStart=="0")iCaretPos=oField.selectionStart;return iCaretPos};_self.setSelectionRange=function(input,selectionStart,selectionEnd){if(input.setSelectionRange){input.focus();input.setSelectionRange(selectionStart,
+selectionStart)}else if(input.createTextRange){var range=input.createTextRange();range.collapse(true);range.moveEnd("character",selectionEnd);range.moveStart("character",selectionStart);range.select()}};_self.classFunc=function(dom,c,a){a=a||"";if(!Array.isArray)Array.isArray=function(arg){return Object.prototype.toString.call(arg)==="[object Array]"};if(!(typeof c=="string")&&!Array.isArray(c))return;var o=dom.className.split(" ");if(!Array.isArray(c))c=c.split(" ");Array.prototype.push.apply(o,
+c);o=_self.unique(o);if(a=="remove"){var z=JSON.parse(JSON.stringify(c));for(var i=0,len=z.length;i<len;i++){var ind=o.indexOf(z[i]);if(ind!=-1)o.splice(ind,1)}}dom.className=o.join(" ")};_self.unique=function(array){var r=[];for(var i=0,l=array.length;i<l;i++){for(var j=i+1;j<l;j++)if(array[i]===array[j])j=++i;r.push(array[i])}return r};_self.isIE=function(){if(win.navigator.userAgent.toUpperCase().indexOf("MSIE")!=-1)return true;return false};_self.isAndroid=function(){if(win.navigator.userAgent.toUpperCase().indexOf("ANDROID")!=
+-1)return true;return false};_self.checkScrollToHide=function(e,targetObj){var newScrollTop=e.target.scrollTop;if(newScrollTop>0)targetObj["backtop"].style.display="";else if(newScrollTop<=0)targetObj["backtop"].style.display="none"};_self.str_chk=function(str,EngNeed){var str_char=0;var str_len=str.length;for(var i=0;i<str_len;i++){var tmp_str=str.substr(i,1);if(tmp_str.match(/[A-Za-z]/))str_char++}if(!str.match(/^[a-zA-Z0-9]*$/))return"err_combination";if(str_len<6||str_len>12)return"err_length";
+if(str.match(/\s/)||str.match(/_/)||str.match(/\^/))return"err_contain";if(str_char>=EngNeed&&str_len>str_char)return"chk_OK";else return"chk_wrong"};_self.isUCBrowser=function(){return navigator.userAgent.indexOf("UCBrowser")!=-1?true:false};_self.extendsClass=function(parentClass,childClass,_win,_dom,_postHash){childClass.prototype=parentClass;objClass=new childClass(_win,_dom,_postHash);objClass._super=parentClass;return objClass};_self.checkReportTeach=function(cookie,parentClass){};_self.isIE=
+function(){if(window.navigator.userAgent.toUpperCase().indexOf("MSIE")!=-1)return true;return false};_self.parseXml=function(xml){var tempHtml=new parseHTML(xml);var xml=tempHtml.getChildren();var firstNode=xml[0].tagName;root=tempHtml.getTag(firstNode);xmlnode=new xmlNode(root);tempHtml.remove();return xmlnode};_self.chg_credit=function(targetObj,start_credit,end_credit){var total=300;var credit_s=start_credit*1;var credit_e=end_credit*1;var final=credit_s;var diff=credit_e-credit_s;var plus=Math.floor(diff/
+total);var cnt=0;var i=setInterval(function(){final=final+plus;if(cnt>=total){targetObj.innerHTML=trans_thousand(random);clearInterval(i);return}targetObj.innerHTML=trans_thousand(final);cnt++},1)};_self.transThousand=function(val,points){var print_f=val;print_f=_self.addComma(print_f);print_f=_self.print_t(print_f,points);return print_f};_self.trans_thousand=function(val){var print_f=val;print_f=_self.addComma(print_f);print_f=_self.print_t(print_f,2);return print_f};_self.addComma=function(vals){var integer=
+"";var decimal="";var tmpval="";var pn=vals<0?"-":"";vals=""+Math.abs(vals);if(vals.indexOf(".")>=0){var valarr=vals.split(".");integer=valarr[0];decimal=valarr[1];tmpval=valarr[0]}else{integer=vals;tmpval=vals}for(ii=integer.length;ii>3;ii-=3){var comma_index=ii-3;var strA=tmpval.substring(0,comma_index);var strB=tmpval.substring(comma_index);tmpval=strA+","+strB}if(vals.indexOf(".")>=0)tmpval+="."+decimal;tmpval=pn+tmpval;return tmpval};_self.print_t=function(vals,points){vals=""+vals;var cmd=new Array;
+cmd=vals.split(".");if(cmd.length>1)for(ii=0;ii<points-cmd[1].length;ii++)vals=vals+"0";else if(points>0){vals=vals+".";for(ii=0;ii<points;ii++)vals=vals+"0"}return vals};_self.ignoreDots=function(_ior,ignoreNum){var floatIor=_self.print_t(_ior,2);var tmpIor=floatIor+"";var tmp=tmpIor.split(".");var _int=tmp[0];var _float=tmp[1];var newIor=_int+"."+_float.substr(0,ignoreNum);return newIor};_self.mulFloat=function(num1,num2){var m=0,s1=num1.toString(),s2=num2.toString();try{m+=s1.split(".")[1].length}catch(e){}try{m+=
+s2.toString().split(".")[1].length}catch(e){}return Number(s1.replace(".",""))*Number(s2.replace(".",""))/Math.pow(10,m)};_self.checkWtypeIsOU=function(wtype){var wtypeDouble2017=new Array("TARU","TBRU","TDRU","TERU");var ary=new Array("ROU","HROU","AROU","BROU","CROU","DROU","EROU","FROU","ROUH","ROUC","HRUH","HRUC","OU","HOU","AOU","BOU","COU","DOU","EOU","FOU","PAOU","PBOU","PCOU","PDOU","PEOU","PFOU","OUH","OUC","HOUH","HOUC","POU","HPOU","HPOUH","HPOUC","POUH","POUC");var finalAry=ary.concat(wtypeDouble2017);
+return _self.in_array(wtype.toUpperCase(),finalAry)};_self.showConnectMsg=function(xml){var ret="";if(xml==""){_self.printStackTrace();ret=LS_code.get("0X003")}else try{var xmlnode=_self.parseXml(xml);var code=xmlnode.Node(xmlnode.Root[0],"code").innerHTML;var msg=xmlnode.Node(xmlnode.Root[0],"msg").innerHTML;if(code=="error")ret=msg}catch(e){}return ret};_self.printStackTrace=function(){var msg="Stack trace:";_self.trace(msg)};_self.getArguments=function(obj){var ret=new Array;for(var _key in obj)ret.push(obj[_key]);
+return ret.join(",")};_self.trace=function(msg){try{top["errorHash"]=msg}catch(e){top["errorHash"]="catch:"+msg}};_self.in_array=function(txt,ary){return ary.indexOf(txt)!=-1};_self.alertConnectMsg=function(msg){var ret=false;if(msg=="doubleLogin"){if(top["CookieManager2"])top["CookieManager2"].set("doubleLogin","double_"+(new Date).getTime());_self.goToIndex();ret=true}else if(msg=="goHome"){_self.goToIndex();ret=true}else if(msg!=""){_self.showErrorMsg(msg);ret=true}return ret};_self.switchShowType=
+function(type,isUpper){var _type=type.toLowerCase();var hash=new Object;hash["fu"]="early";hash["ft"]="today";hash["rb"]="live";hash["p3"]="parlay";hash["early"]="fu";hash["today"]="ft";hash["live"]="rb";hash["parlay"]="p3";hash["soon"]="next1";hash["hot"]="hot";hash["n1"]="next1";hash["n6"]="next6";hash["mixft"]="mix";var ret=hash[_type]!=null?hash[_type]:type;return isUpper?ret.toUpperCase():ret.toLowerCase()};_self.setDefFilter=function(filterHash){var filterTab=new Array("FT","RB","MIX","Next1",
+"Next6");var retAry=new Array;echo("\u8a2d\u5b9a\u521d\u59cb\u904e\u6ffe\u5bb9\u5668",filterHash);for(var f=0;f<filterTab.length;f++)if(filterHash&&filterHash[filterTab[f]]*1>0){retAry["count"]=filterHash[filterTab[f]]*1;retAry["type"]=filterTab[f];return retAry}else echo(filterTab[f],"\u6578\u91cf\u70ba0,\u7e7c\u7e8c\u7e5e\u4e0b\u4e00\u500b\u904e\u6ffe\u9801\u7c64");return"noTab"};_self.switchFilterType=function(type){var hash=new Object;hash["rb"]="RB";hash["fantasy"]="FANTASY";hash["fs"]="FS";
+hash["prestart"]="FT";hash["mix"]="MIX";hash["next1"]="Next1";hash["next6"]="Next6";hash["fu"]="FU";hash["parlay"]="FT";hash["early"]="FU";hash["RB"]="rb";hash["FT"]="prestart";hash["MIX"]="mix";hash["Next1"]="next1";hash["Next6"]="next6";hash["FU_FANTASY"]="fantasy";hash["FT_FANTASY"]="fantasy";hash["FANTASY"]="fantasy";hash["FS"]="fs";hash["FU"]="fu";hash["FS_FU"]="fs";hash["parlay_game"]="game";hash["fu_game"]="game";if(hash[type]==null)return type;return hash[type]};_self.showLS=function(code){if(top["LS_code_tw"][code]+
+""=="undefined")return code;return top["LS_code_tw"][code]};_self.convertNodeToHash=function(NodeObj,orgHash){var newHash=new Object;for(i=0;i<NodeObj.children.length;i++)try{_key=NodeObj.children[i].localName;_value=NodeObj.children[i].innerHTML;newHash[_key]=_value}catch(e){_self.showErrorMsg(classname,"convertNodeToHash",e.toString())}return orgHash!=null?_self.mergeHash(orgHash,newHash):newHash};_self.mergeHash=function(){var newHash=new Object;for(i=0;i<arguments.length;i++)for(var key in arguments[i])try{newHash[key]=
+arguments[i][key]}catch(e){alert(e.toString())}return newHash};_self.countSize=function(tarObj){return Object.keys(tarObj).length};_self.in_object=function(_key,tarObj){for(var i in tarObj)if(_key==i)return true;return false};_self.checkWtypeIsRSH=function(wtype){var ary=new Array("RSHA","RSHB","RSHC","RSHD","RSHE","RSHF","RSHG","RSHH","RSHI","RSHJ","RSHK","RSHL","RSHM","RSHN","RSHO","PRSHA","PRSHB","PRSHC","PRSHD","PRSHE","PRSHF","PRSHG","PRSHH","PRSHI","PRSHJ","PRSHK","PRSHL","PRSHM","PRSHN","PRSHO");
+return _self.in_array(wtype.toUpperCase(),ary)};_self.addClass=function(targetObj,classStr){if(!targetObj.classList.contains(classStr))targetObj.classList.add(classStr)};_self.removeClass=function(targetObj,classStr){if(targetObj.classList.contains(classStr))targetObj.classList.remove(classStr)};_self.initCheckScroll=function(totalObj,divObj,leftObj,rightObj,isRatio){var total_w=isRatio=="Y"?totalObj.scrollWidth:totalObj.clientWidth;var menu_w=divObj.clientWidth;var scroll_w=divObj.scrollLeft;if(total_w>
+menu_w){if(scroll_w!=0)leftObj.classList.add("on")}else{if(leftObj.classList.contains("on")){leftObj.classList.remove("on");_self.removeEvent(leftObj,"click")}if(rightObj.classList.contains("on")){rightObj.classList.remove("on");_self.removeEvent(rightObj,"click")}}if(leftObj.classList.contains("on"))_self.addEvent(leftObj,"click",_self.move,{"click":leftObj,"div":divObj,"direction":"left","opposite":rightObj});if(rightObj.classList.contains("on"))_self.addEvent(rightObj,"click",_self.move,{"click":rightObj,
+"div":divObj,"direction":"right","opposite":leftObj})};_self.move=function(e,hash){var clickObj=hash.click;var divObj=hash.div;var movePix=divObj.clientWidth;var move=hash.direction=="right"?movePix:movePix*-1;if(clickObj.id.match(/ratio/))move=hash.direction=="right"?move+1:move-1;_self.checkScrolltoShow(clickObj,hash.direction,hash.opposite,divObj,move)};_self.checkScrolltoShow=function(clickObj,_dir,_oppositeObj,divObj,move){var dirAry=new Object;dirAry["left"]="right";dirAry["right"]="left";if(!_oppositeObj.classList.contains("on")){_oppositeObj.classList.add("on");
+_self.addEvent(_oppositeObj,"click",_self.move,{"click":_oppositeObj,"div":divObj,"direction":dirAry[_dir],"opposite":clickObj})}var sl=divObj.scrollLeft+move;divObj.scrollLeft+=move;if(_dir=="right"){var scroll_w=sl+divObj.clientWidth;if(scroll_w>=divObj.scrollWidth&&clickObj.classList.contains("on"))clickObj.classList.remove("on")}else if(sl<=0&&clickObj.classList.contains("on"))clickObj.classList.remove("on")};_self.clearObject=function(obj){for(var key in obj)delete obj[key];return obj};_self.clearArray=
+function(ary){ary.length=0;return ary};_self.checkVal=function(str){var NUMS=/[0-9]+/;var A_Z=/[a-zA-Z]+/;var all=/^[a-zA-Z0-9]+$/;if(!A_Z.test(str)||!NUMS.test(str)||!all.test(str))return false;else return true};_self.checkValLogin=function(str){var all=/^[a-zA-Z0-9]+$/;if(!all.test(str))return false;else return true};_self.transDateFS=function(_date,langx){var tmpDate=_date.split(" ")[0];var tmpTime=_date.split(" ")[1];var _YYYY=tmpDate.split("-")[0];var _MM=tmpDate.split("-")[1];var _DD=tmpDate.split("-")[2];
+var _hh=tmpTime.split(":")[0];var _mm=tmpTime.split(":")[1];if(langx=="en-us")var newFormat=_DD+" / "+_MM+" / "+_YYYY+" "+_hh+":"+_mm;else var newFormat=_YYYY+" / "+_MM+" / "+_DD+" "+_hh+":"+_mm;return newFormat};_self.isDifferent_ary=function(_ary,_cp){var ary_str=JSON.stringify(_ary);var cp_str=JSON.stringify(_cp);return ary_str!=cp_str};_self.isIOS12=function(){var ret=false;var ag=navigator.userAgent;if(ag.indexOf("iPhone")!=-1||ag.indexOf("iPad")!=-1){var os="OS";var pos=ag.indexOf(os);var tmp_agent=
+ag.substring(pos+os.length,ag.length);var str=tmp_agent.indexOf("_");var version=tmp_agent.substring(0,str);if(version*1==12)ret=true}return ret};_self.getIosVer=function(){var ag=navigator.userAgent;if(ag.indexOf("iPhone")!=-1||ag.indexOf("iPad")!=-1){var os="OS";var pos=ag.indexOf(os);var tmp_agent=ag.substring(pos+os.length,ag.length);var version=tmp_agent.trim().split(" ");return version[0]}else return false};_self.backTopProc=function(){var scrollTarget=_self.getScrollDom(_self.isIOS());if(_self.isIOS()){var iosVer=
+_self.getIosVer();if(iosVer.match(/^18_(0|1)/))scrollTarget.scrollIntoView({behavior:"smooth",block:"start"});else scrollTarget.scrollIntoView({block:"start"})}else scrollTarget.scrollTop=0};_self.throttle=function(fn,delay){var lastTime=0;return function(...args){var now=Date.now();if(now-lastTime>=delay){lastTime=now;fn.apply(this,args)}}};_self.isIOS=function(){var ret=false;var ag=navigator.userAgent;if(ag.indexOf("iPhone")!=-1||ag.indexOf("iPad")!=-1)ret=true;return ret};_self.isSafari=function(){var ua=
+navigator.userAgent.toLowerCase();if(ua.indexOf("safari")!=-1)if(ua.indexOf("chrome")>-1)return false;else return true};_self.findVal_object=function(txt,obj){for(var key in obj)if(obj[key]==txt)return true;return false};_self.writeLog=function(classname,msg){};_self.writeLoginErrLog=function(classname,msg){};_self.parseNewObj=function(str){var tmp=(new DOMParser).parseFromString(str,"text/html");return tmp.body.children[0]};_self.scrollFun=function(divName){var _div=dom.getElementById(divName);try{_self.addEvent(_div,
+"touchstart",_self.bodyScroll,{"divName":divName});_self.addEvent(_div,"touchmove",_self.bodyScroll,{"divName":divName})}catch(e){echo(e)}};_self.bodyScroll=function(e,par){_self.listenEvent(e,dom.getElementById(par.divName))};_self.touchObject=function(targetObject,eventObject){try{var allobj=targetObject.getElementsByTagName("*");if(allobj.length==0)return true;for(var i=0;i<allobj.length;i++)if(allobj[i]==eventObject)return true}catch(e){return false}return true};_self.listenEvent=function(e,targetObject){var touch=
+e.targetTouches[0];var ts=new Object;if(e.type=="touchstart"){ts.x=touch.pageX;ts.y=touch.pageY}echo(e.target);if(!_self.touchObject(targetObject,e.target)){if(e.target.id!="")_self.stopBodyDefaultEvent(e)}else{if(targetObject.scrollTop==0)if(ts.y-touch.pageY<0)if(e.type=="touchmove")_self.stopBodyDefaultEvent(e);if(targetObject.scrollTop+targetObject.clientHeight==targetObject.scrollHeight)if(ts.y-touch.pageY>0)if(e.type=="touchmove")_self.stopBodyDefaultEvent(e)}};_self.stopBodyDefaultEvent=function(e){e.preventDefault();
+e.stopPropagation()};_self.chkuc=function(Fun,param){if(navigator.userAgent.indexOf("MIX")>-1){if(Fun)setTimeout(Fun,100,param)}else if(Fun)setTimeout(Fun,2,param)};_self.getRotation=function(){return window.Math.abs(window.orientation)};_self.selectresizeblur=function(Fun){if(navigator.userAgent.indexOf("UCBrowser")<=-1)win.addEventListener("resize",Fun)};_self.sortObject=function(tarObj){var keys=new Array;var ret=new Object;for(var k in tarObj)if(tarObj.hasOwnProperty(k))keys.push(k);keys.sort();
+for(var i=0;i<keys.length;i++){var _k=keys[i];ret[_k]=tarObj[_k]}return ret};_self.sumArrayVal=function(_arr){return _arr.reduce(sumFunc)};function sumFunc(a,b){return a+b}_self.aryRemove=function(array,index){var r=[];for(var i=0;i<array.length;i++)if(i!=index)r.push(array[i]);return r};_self.pcDropdowns=function(classId,focusId){dom.getElementById(focusId).tabIndex=1;setTimeout("pcFocus('"+focusId+"')",300);_self.addEvent(dom.getElementById(focusId),"blur",_self.pcBlur,{"id":classId})};pcFocus=
+function(focus_id){dom.getElementById(focus_id).focus({preventScroll:true})};_self.pcBlur=function(e,param){dom.getElementById(param.id).classList.remove("on")};_self.getTimestamp=function(){return(new Date).getTime()};_self.checkTS=function(tarTS,newTS,_php){return tarTS==newTS};_self.dragScroll=function(dom,targetName,addClickFun,removeClickFun,param){var _document=dom;var mousemove="mousemove";var mouseup="mouseup";var mousedown="mousedown";var mouseleave="mouseleave";var EventListener="EventListener";
+var addEventListener="add"+EventListener;var removeEventListener="remove"+EventListener;var newScrollX,newScrollY;var isDown=false;var isMoving=false;var dragged=[];for(i=0;i<dragged.length;){el=dragged[i++];el=el.container||el;el[removeEventListener](mousedown,el.md,0);_document.getElementById(targetName)[removeEventListener](mouseup,el.mu,0);_document.getElementById(targetName)[removeEventListener](mousemove,el.mm,0)}var dragClassName=param?"dragscroll_"+param.tagName:"dragscroll";dragged=[].slice.call(_document.getElementsByClassName(dragClassName));
+for(i=0;i<dragged.length;)(function(el,lastClientX,lastClientY,pushed,scroller,cont){(cont=el.container||el)[addEventListener](mousedown,cont.md=function(e){isDown=true;if(!el.hasAttribute("nochilddrag")||_document.elementFromPoint(e.pageX,e.pageY)==cont){pushed=1;lastClientX=e.clientX;lastClientY=e.clientY;e.preventDefault()}},0);_document.getElementById(targetName)[addEventListener](mouseup,cont.mu=function(){if(isMoving)if(param)setTimeout(addClickFun,300,param);else setTimeout(addClickFun,300);
+isMoving=false;isDown=false;pushed=0},0);_document.getElementById(targetName)[addEventListener](mouseleave,cont.mlv=function(){if(isMoving)if(param)setTimeout(addClickFun,300,param);else setTimeout(addClickFun,300);isMoving=false;isDown=false},0);_document.getElementById(targetName)[addEventListener](mousemove,cont.mm=function(e){if(!isDown)return;isMoving=true;if(isMoving){echo("\u89f8\u767c\u5230\u4e86move\uff0c\u9ede\u64ca\u4e8b\u4ef6\u88ab\u79fb\u9664\u4e86");if(param)if(param.total&&param.scroll){var tmpTotalWidth=
+param.isRatio=="Y"?param.total.scrollWidth:param.total.clientWidth;if(tmpTotalWidth>param.scroll.clientWidth)setTimeout(removeClickFun,100)}else setTimeout(removeClickFun,100,param)}if(pushed){(scroller=el.scroller||el).scrollLeft-=newScrollX=-lastClientX+(lastClientX=e.clientX);if(el==_document.body)(scroller=_document.documentElement).scrollLeft-=newScrollX}},0)})(dragged[i++])};_self.getRandomInt=function(max){return Math.floor(Math.random()*Math.floor(max))};_self.setMyGameCookie=function(cookie,
+ecidHash,gtype){try{var myGameStr=JSON.stringify(ecidHash);cookie.set(gtype+"_myGame_"+top["userData"].mid,myGameStr)}catch(e){echo(top.choice_gtype+"_myGame add ecid error")}};_self.chkAllMyGameHash=function(chkTS){var gtype_ary=new Array("ft","bk","es","bs","bm","op","sk","tt","tn","vb");var allZero=true;for(var i=0;i<gtype_ary.length;i++){var ecidHash=top["myGameHash"][gtype_ary[i]];var tmpCnt=_self.countSize(ecidHash);if(!chkTS){if(tmpCnt!=0){allZero=false;break}}else if(tmpCnt!=0)for(var ecid in ecidHash)if(ecidHash[ecid]["ts"]==
+null||ecidHash[ecid]["ts"]==""){allZero=false;break}}return allZero};_self.delMyGameHash=function(myGameHash,ecid,config_set){if(myGameHash[ecid]["ts"]!=null&&myGameHash[ecid]["ts"]!=""){var tarTS=myGameHash[ecid]["ts"];var nowTS=_self.getTimestamp();var sec_diff=Math.abs(nowTS-tarTS);var delSec=config_set.get("CONFIG_MYGAME_DEL_COOKIE");if(sec_diff>=delSec)delete myGameHash[ecid]}else myGameHash[ecid]["ts"]=_self.getTimestamp()};_self.compareTime=function(t1,t2,diffType){t1=t1.replace(/\-/g,"/");
+t2=t2.replace(/\-/g,"/");diffType=diffType.toLowerCase();var t1=new Date(t1);var t2=new Date(t2);var timeType=1;switch(diffType){case "second":timeType=1E3;break;case "minute":timeType=1E3*60;break;case "hour":timeType=1E3*3600;break;case "day":timeType=1E3*3600*24;break;default:break}ret=parseInt((t2.getTime()-t1.getTime())/parseInt(timeType));return ret};_self.transGameDate=function(gameDate,system_time){var ret="";var tmpdate=gameDate.split(" ");var xml_date=tmpdate[0];var gmt=new Date(system_time.replace(/-/g,
+"/"));var now_m=parseInt(gmt.getMonth()+1);var game_m=parseInt(xml_date.split("-")[0]);if(now_m>game_m)gmt.setFullYear(gmt.getFullYear()+1);var y=gmt.getFullYear();ret=get24Hours(y+"-"+gameDate,true);return ret};_self.get24Hours=function(gameDate,showDate){var ret="";var tmp=gameDate.replace(/-/g,"/");tmp=tmp.replace(/a/g," am").replace(/p/g," pm");var h=(new Date(tmp)).getHours();var str_h=parseInt(h)<10?"0"+h:h;var tmpd=gameDate.split(" ");var tmph=tmpd[1].split(":");ret=showDate?tmpd[0]+" "+str_h+
+":"+tmph[1]:str_h+":"+tmph[1];ret=ret.replace(/a/gi,"").replace(/p/gi,"");return ret};_self.isBase64=function(name,val){var CookieManager=new win.CookieManager;if(!val||val===""||val.trim()==="")return val;try{if(btoa(atob(val))==val)return val}catch(e){var delComplete=_self.delCookie(name,CookieManager);if(delComplete){echo("\u522a\u9664Cookie:",name,",\u56e0\u70bavalue\u6c92\u7d93\u904e\u7de8\u78bc");return false}}};_self.delCookie=function(name,obj){obj.del(name);echo("\u6e05\u9664Cookie:",name,
+"\u5b8c\u7562!!");return true};_self.CookieChkProc=function(act){var except_regex=/visid_incap_|incap_ses_/;var cookies=document.cookie.split(";");var CookieManager=new win.CookieManager;if(act=="encode")top.cookieEncode_sw="Y";for(var i=0;i<cookies.length;i++){var cookie=cookies[i];var key=cookie.split("=",1)[0];var val=cookie.split(key+"=")[1];try{val=act=="decode"&&key!=""?atob(val):val}catch(e){echo("[error] = ",key,e);CookieManager.del(key)}if(key!="")if(!except_regex.test(key))_self.CookieEncode(key,
+val,CookieManager);if(!CookieManager.get("CookieChk")&&act=="encode")CookieManager.set("CookieChk","Y");else if(act=="decode"&&top.cookieEncode_sw!="Y")CookieManager.del("CookieChk")}};_self.CookieEncode=function(key,val,obj){try{obj.set(key,val);return true}catch(e){echo(e);_self.delCookie(key,obj)}};_self.SaveGoldProc=function(gold){if(gold==0)gold="";var CookieManager=new win.CookieManager;var needSave=CookieManager.get("lastBetCredit_sw_"+top.userData.mid);if(needSave=="Y")CookieManager.set("lastBetCredit_"+
+top.userData.mid,gold)};_self.stringToXml=function(strXML){if(window.ActiveXObject){var xmlDoc=new ActiveXObject("Microsoft.XMLDOM");xmlDoc.async="false";xmlDoc.loadXML(strXML);return xmlDoc}else{var parser=new DOMParser;var xmlDoc=parser.parseFromString(strXML,"text/xml");return xmlDoc}};_self.xmlToString=function(xmlObject){if(window.ActiveXObject)return xmlObject.xml;else return(new XMLSerializer).serializeToString(xmlObject).replaceAll(/<([^> ]+)( [^>]+)?\/>/g,_self.replaceTag("<a1a2></a1>","a",
+"$"))};_self.replaceTag=function(str,org,rep){return str.replaceAll(org,rep)};_self.isXML=function(str){try{var parser=new DOMParser;var xmlDoc=parser.parseFromString(str,"application/xml");return!xmlDoc.getElementsByTagName("parsererror").length}catch(e){return false}};_self.getWagersParam=function(xmlnode,_mc,wagersInfo){var ret={};try{var gtype=xmlnode.Node(xmlnode.Root[0],"gtype").innerHTML;var wtype=xmlnode.Node(xmlnode.Root[0],"wtype").innerHTML;ret["menutype"]=wagersInfo["menutype"];ret["w_ms"]=
+wagersInfo["subtype"];ret["ptype"]=wagersInfo["ptype"];ret["str_showtype"]=wagersInfo["str_showtype"];ret["title_gtype"]=wagersInfo["title_gtype"];ret["str_wtype"]=wagersInfo["wtype"];ret["league"]=wagersInfo["league"]?wagersInfo["league"]:_mc["bet_finish_league"].innerHTML;ret["tid"]=_mc["bet_finish_tid"].innerHTML;ret["team_h"]=_mc["bet_finish_team_h"].innerHTML;ret["team_c"]=_mc["bet_finish_team_c"].innerHTML;ret["score"]=_mc["bet_finish_score"].innerHTML;ret["ioratio"]=_mc["bet_finish_ior"].innerHTML;
+ret["concede"]=_mc["bet_finish_chose_con"].innerHTML;ret["gold"]=_mc["bet_finish_gold"].innerHTML;ret["wingold"]=_mc["bet_finish_win_gold"].innerHTML;ret["gtype"]=wtype=="FS"?wtype:gtype;ret["wtype"]=wtype;ret["rtype"]=xmlnode.Node(xmlnode.Root[0],"rtype").innerHTML;ret["type"]=xmlnode.Node(xmlnode.Root[0],"type").innerHTML;ret["gid"]=xmlnode.Node(xmlnode.Root[0],"gid").innerHTML;ret["team_id_h"]=xmlnode.Node(xmlnode.Root[0],"team_id_h").innerHTML;ret["team_id_c"]=xmlnode.Node(xmlnode.Root[0],"team_id_c").innerHTML;
+ret["strong"]=xmlnode.Node(xmlnode.Root[0],"strong").innerHTML;ret["spread"]=xmlnode.Node(xmlnode.Root[0],"spread").innerHTML;ret["ball_act"]=xmlnode.Node(xmlnode.Root[0],"ball_act").innerHTML;ret["dg_mode"]=xmlnode.Node(xmlnode.Root[0],"dg_mode").innerHTML;ret["delaysec"]=xmlnode.Node(xmlnode.Root[0],"delaysec").innerHTML||"0";ret["date"]=xmlnode.Node(xmlnode.Root[0],"date").innerHTML;ret["time"]=xmlnode.Node(xmlnode.Root[0],"time").innerHTML;ret["choice_team"]=_mc["bet_finish_chose_team"].innerHTML;
+var showtype="live";var tmp=top.systemtime.split(" ");var d=tmp[0];var t=tmp[1];if(ret["date"]==d){if(t<ret["time"])showtype="today"}else if(ret["date"]>d)showtype="early";ret["showtype"]=showtype}catch(e){console.error(e)}return ret};_self.isPD=function(wtype){return wtype.match(/^H?R?PD[3|5|7]?$/g)};_self.isT=function(wtype){return wtype.match(/^R?T$/g)};_self.transTodayWagers=function(ret,LS_game){_self.createDefaultTodayWagers();if(_self.isPD(ret["wtype"]))ret["choice_team"]=ret["choice_team"].replace("-",
+" - ");else if(_self.isT(ret["wtype"]))ret["choice_team"]=ret["choice_team"].replace("-","~");else if(ret["wtype"]=="RMG")ret["str_wtype"]=ret["str_wtype"].replace(/\s*/g,"");if(ret["gtype"]=="SK")ret["title_gtype"]=ret["title_gtype"].replace(/\s*/g,"");var str_gtype=ret["title_gtype"]+" ";var str_w_ms=ret["w_ms"]?" - "+ret["w_ms"]:"";var str_ptype="";var str_wtype="";if(ret["gtype"]=="BS"){str_ptype=ret["ptype"]!=""&&ret["ptype"]!="0"?" - "+ret["ptype"]:"";str_wtype=ret["str_showtype"]+ret["str_wtype"]+
+str_ptype}else{str_ptype=ret["ptype"]!=""&&ret["ptype"]!="0"?ret["ptype"]+" - ":"";str_wtype=ret["str_showtype"]+str_ptype+ret["str_wtype"]}var str_league=ret["league"];var ticket_id=ret["tid"];var result=ret["choice_team"];var team_h_show=ret["team_h"];var team_c_show=ret["team_c"];var score=ret["score"];var ioratio=ret["ioratio"];var concede=ret["concede"];var gold=ret["gold"];var win_gold=ret["wingold"];var gtype=ret["gtype"];var wtype=ret["wtype"];var rtype=ret["rtype"];var type=ret["type"];var gid=
+ret["gid"];var team_id_h=ret["team_id_h"];var team_id_c=ret["team_id_c"];var strong=ret["strong"];var spread=ret["spread"];var ball_act=ret["ball_act"];var dg_mode=ret["dg_mode"];var team_h_ratio="";var team_c_ratio="";var dg="";var dg_str="";var ball_act_class="";var ball_act_ret="";var w_ms=str_w_ms;var delaysec=ret["delaysec"]||"0";var showtype=ret["showtype"];var R_ary=["R","HR","RE","HRE","PR","HPR","ARE","BRE","CRE","DRE","ERE","FRE","AR","BR","CR","DR","ER","FR","W3"];if(R_ary.indexOf(wtype)!=
+-1)if(type=="H")team_h_ratio=spread;else team_c_ratio=spread;var OU_ary=["ROU","HROU","AROU","BROU","CROU","DROU","EROU","FROU","ROUH","ROUC","HRUH","HRUC","OU","HOU","AOU","BOU","COU","DOU","EOU","FOU","OUH","OUC","HOUH","HOUC","TARU","TBRU","TDRU","TERU"];if(OU_ary.indexOf(wtype)!=-1||wtype=="W3")result+=" "+concede;var wagers="<wagers tid='"+ticket_id+"'>";wagers+="<w_id>"+ticket_id+"</w_id>";wagers+="<addtime></addtime>";wagers+="<oddf_type></oddf_type>";wagers+="<gidfl>0</gidfl>";wagers+="<gid></gid>";
+wagers+="<gtype>"+str_gtype+"</gtype>";wagers+="<bet_gtype>"+gtype+"</bet_gtype>";wagers+="<wtype>"+_self.chkXmlTag(str_wtype)+"</wtype>";wagers+="<w_ms>"+w_ms+"</w_ms>";wagers+="<bet_wtype>"+wtype+"</bet_wtype>";wagers+="<league>"+str_league+"</league>";wagers+="<team_id_h>"+team_id_h+"</team_id_h>";wagers+="<team_id_c>"+team_id_c+"</team_id_c>";wagers+="<team_h_show>"+team_h_show+"</team_h_show>";wagers+="<team_c_show>"+team_c_show+"</team_c_show>";wagers+="<team_h_ratio>"+team_h_ratio+"</team_h_ratio>";
+wagers+="<team_c_ratio>"+team_c_ratio+"</team_c_ratio>";wagers+="<strong>"+strong+"</strong>";wagers+="<org_score></org_score>";wagers+="<score>"+score+"</score>";wagers+="<result>"+result+"</result>";wagers+="<pname></pname>";wagers+="<ioratio>"+ioratio+"</ioratio>";wagers+="<rtype>"+rtype+"</rtype>";wagers+="<type>"+type+"</type>";wagers+="<concede>"+concede+"</concede>";wagers+="<adddate></adddate>";wagers+="<fore_result></fore_result>";wagers+="<odd_f></odd_f>";wagers+="<code_value></code_value>";
+wagers+="<ptype>"+top.userData["pay_type"]+"</ptype>";wagers+="<showtype>"+showtype+"</showtype>";wagers+="<bet_showtype></bet_showtype>";wagers+="<ball_map></ball_map>";wagers+="<delaysec>"+delaysec+"</delaysec>";var ballact="0";var is_dg=false;if(gtype=="FT"&&(ball_act=="Y"||dg_mode=="Y")){is_dg=true;ballact=ball_act=="Y"?"1":"2"}else if(parseInt(delaysec)>0)is_dg=true;if(is_dg){dg="Y";dg_str=LS_game.get("dg_A");ball_act_class="word_yellow";ball_act_ret=LS_game.get("dg_N")}wagers+="<dg>"+dg+"</dg>";
+wagers+="<dg_str>"+dg_str+"</dg_str>";wagers+="<ball_act_class>"+ball_act_class+"</ball_act_class>";wagers+="<ball_act_ret>"+ball_act_ret+"</ball_act_ret>";wagers+="<ballact>"+ballact+"</ballact>";wagers+="<cancel_apn></cancel_apn>";wagers+="<gold>"+gold+"</gold>";wagers+="<win_gold>"+win_gold+"</win_gold>";wagers+="<cancel_line></cancel_line>";wagers+="</wagers>";_self.addWagers(wagers)};_self.addTag=function(tagname,tagval,tagatt,chkXml){var node=top["wagers_xmlnode"].createElement(tagname);if(tagval)if(chkXml)node.innerHTML=
+_self.chkXmlTag(tagval);else node.innerHTML=tagval;for(var keys in tagatt)node.setAttribute(keys,tagatt[keys]);return node};_self.chkXmlTag=function(tag){var ret=tag;ret=_self.replaceTag(ret,"&","&amp;");ret=_self.replaceTag(ret,"'","&apos;");ret=_self.replaceTag(ret,'"',"&quot;");ret=_self.replaceTag(ret,"<","&lt;");ret=_self.replaceTag(ret,">","&gt;");ret=_self.replaceTag(ret,"&nbsp;"," ");return ret};_self.transTodayWagersP=function(param,LS_game){if(param["bet_gtype"]=="SK")param["gtype"]=param["gtype"].replace(/\s*/g,
+"");_self.createDefaultTodayWagers();var wagers="<wagers tid='"+param["tid"]+"'>";wagers+="<w_id>"+param["tid"]+"</w_id>";wagers+="<addtime></addtime>";wagers+="<oddf_type></oddf_type>";wagers+="<gidfl>0</gidfl>";wagers+="<gid></gid>";wagers+="<gtype>"+param["gtype"]+"</gtype>";wagers+="<bet_gtype>"+param["bet_gtype"]+"</bet_gtype>";wagers+="<w_ms></w_ms>";wagers+="<wtype></wtype>";wagers+="<bet_wtype>"+param["bet_wtype"]+"</bet_wtype>";for(var i=0;i<param["wagers_sub"].length;i++){var sub=param["wagers_sub"][i];
+var tmp_type=sub["p_rtype"].substr(sub["p_rtype"].length-1,sub["p_rtype"].lengh);var result=sub["result"];var OU_ary=["ROU","HROU","AROU","BROU","CROU","DROU","EROU","FROU","ROUH","ROUC","HRUH","HRUC","OU","HOU","AOU","BOU","COU","DOU","EOU","FOU","OUH","OUC","HOUH","HOUC","TARU","TBRU","TDRU","TERU"];if(OU_ary.indexOf(sub["p_wtype"])!=-1||sub["p_wtype"]=="W3"){var _abs="";if(sub["p_wtype"]=="W3")if(tmp_type=="N")_abs="-";else _abs=tmp_type==sub["strong"]?"-":"+";sub["strong"];result+=" "+_abs+sub["combine"]}if(_self.isPD(sub["p_wtype"]))result=
+result.replace("-"," - ");else if(_self.isT(sub["p_wtype"]))result=result.replace("-","~");else if(sub["p_wtype"]=="RMG")sub["wtype_sub"]=sub["wtype_sub"].replace(/\s*/g,"");var str_ms_sub=sub["ms_sub"]?" - "+sub["ms_sub"]:"";var wagers_sub="<wagers_sub>";wagers_sub+="<date>"+sub["date"]+"</date>";wagers_sub+="<wtype_sub>"+_self.chkXmlTag(sub["wtype_sub"])+"</wtype_sub>";wagers_sub+="<ms_sub>"+str_ms_sub+"</ms_sub>";wagers_sub+="<league>"+sub["league"]+"</league>";wagers_sub+="<team_h_show>"+sub["team_h_show"]+
+"</team_h_show>";wagers_sub+="<team_c_show>"+sub["team_c_show"]+"</team_c_show>";wagers_sub+="<ratio></ratio>";wagers_sub+="<org_score></org_score>";wagers_sub+="<score>"+sub["score"]+"</score>";var team_h_ratio="";var team_c_ratio="";var strong="";var R_ary=["R","HR","RE","HRE","PR","HPR","ARE","BRE","CRE","DRE","ERE","FRE","AR","BR","CR","DR","ER","FR","W3"];if(R_ary.indexOf(sub["p_wtype"])!=-1){if(tmp_type=="H")team_h_ratio=sub["combine"];else team_c_ratio=sub["combine"];strong=tmp_type==sub["strong"]?
+"Y":"N"}wagers_sub+="<strong>"+strong+"</strong>";wagers_sub+="<team_h_ratio>"+team_h_ratio+"</team_h_ratio>";wagers_sub+="<team_c_ratio>"+team_c_ratio+"</team_c_ratio>";wagers_sub+="<result>"+_self.chkXmlTag(result)+"</result>";wagers_sub+="<pname></pname>";wagers_sub+="<ioratio>"+sub["ioratio"]+"</ioratio>";wagers_sub+="<p_wtype>"+sub["p_wtype"]+"</p_wtype>";wagers_sub+="<p_ball_act_class>"+sub["p_ball_act_class"]+"</p_ball_act_class>";wagers_sub+="<p_ball_act_ret>"+sub["p_ball_act_ret"]+"</p_ball_act_ret>";
+wagers_sub+="<sub_delaysec>"+sub["sub_delaysec"]+"</sub_delaysec>";wagers_sub+="</wagers_sub>";wagers+=wagers_sub}wagers+="<main_ball_act_class>"+param["main_ball_act_class"]+"</main_ball_act_class>";wagers+="<main_ball_act_ret>"+param["main_ball_act_ret"]+"</main_ball_act_ret>";wagers+="<ball_act_class>"+param["ball_act_class"]+"</ball_act_class>";wagers+="<ball_act_ret>"+param["ball_act_ret"]+"</ball_act_ret>";wagers+="<cancel_apn></cancel_apn>";wagers+="<gold>"+param["gold"]+"</gold>";wagers+=
+"<win_gold>"+param["win_gold"]+"</win_gold>";wagers+="<cancel_line></cancel_line>";wagers+="<delaysec>0</delaysec>";wagers+="<ballact>0</ballact>";wagers+="</wagers>";_self.addWagers(wagers)};_self.createDefaultTodayWagers=function(){var tag="</amout_gold>";if(!top["wagers_xmlnode"]||top["wagers_xmlnode"].indexOf(tag)==-1){var xml='<?xml version="1.0" encoding="UTF-8"?><serverresponse><code>todaywagers</code><amout_gold></amout_gold><count></count><ts>nocheck</ts></serverresponse>';top["wagers_xmlnode"]=
+xml}};_self.addWagers=function(tmp_wagers){var tag="</amout_gold>";top["wagers_xmlnode"]=top["wagers_xmlnode"].replace(tag,tag+tmp_wagers)};_self.sprintf=function(points,vals){var cal=1;var keep=1;if(vals<0)keep=-1;vals=Math.abs(vals);for(var i=0;i<points;i++)cal=cal*10;return Math.round(vals*cal+1/(cal*1E3))/cal*keep};_self.getScrollDom=function(ios){var scrollObj=ios?dom.getElementById("scroll_html"):dom.getElementById("body_show");return scrollObj};_self.getTimeDiff=function(timetype){var diff=
+0;if(timetype=="devTime"){var devDate=new Date;var utc=(new Date).getTime()+(new Date).getTimezoneOffset()*60*1E3;var offset=-4;var sysDate=new Date(utc+36E5*offset);var diffTime=devDate.getTime()-sysDate.getTime();diff=Math.floor(diffTime/36E5)}return diff};_self.setZero=function(val){var n=parseInt(val);return n<10?"0"+n:n.toString()};_self.newDatetime=function(obj){var gmt=new Date(obj.systime.replace(/-/g,"/"));var now_m=parseInt(gmt.getMonth()+1);var game_m=parseInt(obj.datetime.split("-")[0]);
+if(now_m>game_m)gmt.setFullYear(gmt.getFullYear()+1);var y=gmt.getFullYear();var tmpDate=obj.datetime.split(" ")[0];var tmpTime=obj.datetime.split(" ")[1];tmpTime=_self.get24Hours(y+"-"+obj.datetime,false);var str_M=tmpDate.split("-")[0];var str_D=tmpDate.split("-")[1];var str_H=tmpTime.split(":")[0];var str_Min=tmpTime.split(":")[1];var isToday=_self.isToday(y+"-"+tmpDate);var _datetime="";var diff=_self.getTimeDiff(obj.timetype);if(Math.abs(diff)>0){var dateStr=y+"-"+tmpDate+" "+tmpTime;var _tmpDate=
+new Date(dateStr.replace(/-/g,"/"));var newDate=new Date(_tmpDate.getTime()+diff*60*60*1E3);var newMonth=_self.setZero(newDate.getMonth()+1);var newDay=_self.setZero(newDate.getDate());var newHour=_self.setZero(newDate.getHours());var newMin=_self.setZero(newDate.getMinutes());var earlyDateTime=obj.langx=="en-us"?newDay+" "+obj.LS_game.get("mon_"+newMonth)+"<b></b>"+newHour+":"+newMin:newMonth+obj.LS_game.get("mon_str")+newDay+obj.LS_game.get("day_str")+"<b></b>"+newHour+":"+newMin;if(newDay!=str_D*
+1)_datetime=earlyDateTime;else _datetime=isToday?obj.LS_game.get("showtype_today")+"<b></b>"+newHour+":"+newMin:earlyDateTime}else{var earlyDateTime=obj.langx=="en-us"?str_D+" "+obj.LS_game.get("mon_"+str_M)+"<b></b>"+tmpTime:str_M+obj.LS_game.get("mon_str")+str_D+obj.LS_game.get("day_str")+"<b></b>"+tmpTime;_datetime=isToday?obj.LS_game.get("showtype_today")+"<b></b>"+str_H+":"+str_Min:earlyDateTime}return _datetime};_self.isToday=function(str){var d=new Date(str.replace(/-/g,"/"));var todaysDate=
+new Date;utc=todaysDate.getTime()+todaysDate.getTimezoneOffset()*60*1E3;var offset=-4;var newtodaysDate=new Date(utc+36E5*offset);if(d.setHours(0,0,0,0)==newtodaysDate.setHours(0,0,0,0))return true;else return false};_self.getKeyValue=function(xmlnode,tmpGame,key,wtypeStr,auto){key=key.toUpperCase();var retVal="";if(xmlnode!=null)if(auto==false)retVal=xmlnode.Node(tmpGame,key,auto)?xmlnode.Node(tmpGame,key,auto).innerHTML:"";else retVal=xmlnode.Node(tmpGame,key)?xmlnode.Node(tmpGame,key).innerHTML:
+"";else if(wtypeStr&&wtypeStr!="")retVal=tmpGame[wtypeStr]&&tmpGame[wtypeStr][key]?tmpGame[wtypeStr][key]:"";else retVal=tmpGame[key]?tmpGame[key]:"";return retVal};_self.chgGameType=function(type){var _type=type.toLowerCase();var hash=new Object;hash["all"]="main";hash["lol"]="lol";hash["dota2"]="dota";hash["counter strike"]="cs";hash["kog"]="kog";hash["valorant"]="val";hash["wild rift"]="wr";hash["mobile legends"]="ml";hash["starcraft ii"]="star2";hash["pubg"]="pubg";hash["aov"]="aov";hash["overwatch"]=
+"ove";hash["rainbow six"]="rs";hash["rocket league"]="rl";hash["starcraft"]="star";hash["warcraft iii"]="war";hash["crossfire"]="cro";hash["call of duty"]="cod";hash["free fire"]="ff";hash["age of empires"]="aoe";hash["age of empires 2"]="aoe2";hash["pokemon unite"]="pu";hash["apex legends"]="al";hash["others"]="others";return hash[_type]};_self.getMyGameTotalCount=function(_gtype){var gtype_ary=new Array("ft","bk","es","bs","bm","op","sk","tt","tn","vb");var myGameTotalCount=0;for(var i=0;i<gtype_ary.length;i++){var myGameHash=
+top["myGameHash"][gtype_ary[i]];if(gtype_ary[i]!=_gtype){myGameTotalCount+=_self.countSize(myGameHash);myGameTotalCount-=_self.cntMyGameRemove(myGameHash)}}lastMyGameTotalCount=myGameTotalCount;return myGameTotalCount};_self.cntMyGameRemove=function(myGameHash){var cntRemove=0;for(var key in myGameHash){var tmpTS=myGameHash[key]["ts"];if(tmpTS&&tmpTS!="")cntRemove++}return cntRemove};_self.setTimeoutClass=function(obj_id,class_name,act,timeout_fun,timeout_ms){if(dom.getElementById(obj_id)!=null){if(act==
+"add")_self.addClass(dom.getElementById(obj_id),class_name);else if(act=="remove")_self.removeClass(dom.getElementById(obj_id),class_name);setTimeout(timeout_fun,timeout_ms)}};_self.checkIorIsNegative=function(ior){return ior*1>0||ior=="-"?"false":"true"};_self.checkCodeNumber=function(e,btn){e.target.value=e.target.value.replace(/[^0-9]/g,"");if(e.target.value.length>=6)_self.removeClass(btn,"disable");else _self.addClass(btn,"disable")};_self.clickEnter=function(e,btn){if(e.key=="Enter"&&e.target.value.length>=
+6)btn.click()};_self.clickShowCode=function(e,obj){var inputCode=obj["inputCode"];var eye=obj["eye"];if(inputCode.type=="password"){_self.addClass(eye,"off");inputCode.type="text"}else{_self.removeClass(eye,"off");inputCode.type="password"}};_self.inputfocuschk=function(e,param){_self.chkuc(_self.inputFocus,param)};_self.inputFocus=function(param){_self.addClass(param,"on")};_self.inputBlur=function(e,param){if(e.target.value.length==0)_self.removeClass(param,"on")};_self.runTimer=function(datetime){var timeAry=
+[];timeAry=datetime.split(":");for(var i=timeAry.length-1;i>=0;i--){var t=parseInt(timeAry[i]);t++;var isbreak=false;var base=i==0?24:60;if(t>=base)t=0;else isbreak=true;timeAry[i]=_self.checkTime(t);if(isbreak)break}var basetime=timeAry.join(":");return basetime};_self.checkTime=function(val){return parseInt(val)<10?"0"+val:val}};
+
+function parseHTML(html){var _self=this;var divObj=document.createElement("div");divObj.innerHTML="<body>"+html+"</body>";_self.getTag=function(tagID,divobj){if(divobj==undefined)divobj=divObj;var retobj=new Array;var children=divobj.getElementsByTagName("*");for(var i=0;i<children.length;i++)if(children[i].tagName.toUpperCase()==tagID.toUpperCase())retobj.push(children[i]);return retobj};_self.getChildren=function(){return divObj.children};_self.getObj=function(tagID,divobj){if(divobj==undefined)divobj=
+divObj;var obj=null;try{obj=divobj.getElementsByTagName("*")[tagID]}catch(e){obj=null}return obj};_self.remove=function(){divObj=null};_self.removeMC=function(){}};
+
+function xmlNode(root){_self=this;_self.Root=root;parentNode=_self.Root[0];_self.getParentNode=function(){return parentNode};_self.getNode=function(node,auto){retNode=parentNode.getElementsByTagName(node);parentNode=retNode[0];if(auto==false)return retNode;if(retNode.length==1)return retNode[0];else return retNode};_self.Node=function(parentNode,node,auto){if(parentNode.length>1){console.trace("where is XML error");alert("DataNode error!!");return}retNode=parentNode.getElementsByTagName(node);if(auto==
+false)return retNode;if(retNode.length==1)return retNode[0];else return retNode};_self.removeMC=function(){}};
+
+function right_menu(_win,_dom,_post){var _self=this;var win=_win;var dom=_dom;var postHash=_post;var parentClass;var eventHandler=new Object;var util=new win.Util(win,dom);var _mc=new Object;var config_set;var CookieManager=new win.CookieManager;var odds_ary=new Array("H","M","I","E");var langx_ary=new Array("zh-cn","zh-tw","en-us");var timetype_ary=new Array("sysTime","devTime");var _count=0;var Ary=new Array;var savechk="";var firstLoad=false;var chg_lang_sw="Y";var chg_odds_sw="Y";var chg_timetype_sw=
+"Y";var ver_ary="";var classname="right_menu";var myhash={};var noRunCash=false;var oldCredit="";var config_set=new win.config_set;var _set2FAgoPage="";_self.paramHash=new Object;_self.init=function(){config_set.init();top.showCredit=true;_mc["right_creditlogs"]=dom.getElementById("right_creditlogs");_mc["rightM_result"]=dom.getElementById("rightM_result");_mc["rightM_result"].style.display="";_mc["selec_oddstype"]=dom.getElementById("selec_oddstype");_mc["selec_language"]=dom.getElementById("selec_language");
+_mc["selec_timetype"]=dom.getElementById("selec_timetype");_mc["odds_dropdown"]=dom.getElementById("odds_dropdown");_mc["langx_dropdown"]=dom.getElementById("langx_dropdown");_mc["timetype_dropdown"]=dom.getElementById("timetype_dropdown");_mc["acc_show_eye"]=dom.getElementById("acc_show_eye");_mc["acc_currency"]=dom.getElementById("acc_currency");_mc["acc_credit"]=dom.getElementById("acc_credit");_mc["acc_money"]=dom.getElementById("acc_money");_mc["acc_username"]=dom.getElementById("acc_username");
+_mc["iorType_switch"]=dom.getElementById("iorType_switch");_mc["iorType_set"]=dom.getElementById("iorType_set");_mc["right_app"]=dom.getElementById("right_app");_mc["right_tv"]=dom.getElementById("right_tv");_mc["rightM_2fa"]=dom.getElementById("rightM_2fa");util.addEvent(_mc["acc_show_eye"],"click",_self.clickHideCash);util.addEvent(_mc["rightM_result"],"click",_self.goToResult);util.addEvent(dom.getElementById("right_message"),"click",_self.chgPage,{"page":"message"});util.addEvent(dom.getElementById("rightM_history"),
+"click",_self.chgPage,{"page":"history_data"});util.addEvent(_mc["right_creditlogs"],"click",_self.chgPage,{"page":"credit_logs"});util.addEvent(dom.getElementById("right_help_change_pwd"),"click",_self.chgPage,{"page":"help_change_pwd"});util.addEvent(dom.getElementById("right_account_set"),"click",_self.chgPage,{"page":"account_set"});util.addEvent(dom.getElementById("right_help_4pwd_login"),"click",_self.chgPage,{"page":"passcode"});util.addEvent(dom.getElementById("right_set_mail"),"click",_self.chgPage,
+{"page":"help_set_mail"});util.addEvent(dom.getElementById("right_help_faq"),"click",_self.chgPage,{"page":"help_faq"});util.addEvent(dom.getElementById("right_features_new"),"click",_self.chgPage,{"page":"features"});util.addEvent(dom.getElementById("right_help_odds"),"click",_self.chgPage,{"page":"help_odds"});util.addEvent(dom.getElementById("right_help_term"),"click",_self.chgPage,{"page":"help_term"});util.addEvent(dom.getElementById("right_contactus"),"click",_self.chgPage,{"page":"contactus"});
+util.addEvent(_mc["right_tv"],"click",_self.chgPage,{"page":"list_tv"});util.addEvent(dom.getElementById("right_rules_general"),"click",_self.chgPage,{"page":"rules_general"});util.addEvent(dom.getElementById("right_help_sys"),"click",_self.chgPage,{"page":"help_sys"});util.addEvent(_mc["iorType_set"],"click",_self.setIorChgClick);if(top.mem_2FA_sw=="Y")util.addEvent(_mc["rightM_2fa"],"click",_self.chkMem2FA);else _mc["rightM_2fa"].style.display="none";var iorChgSw=CookieManager.get("iorChgSw");if(iorChgSw==
+"N")_mc["iorType_set"].checked=false;else _mc["iorType_set"].checked=true;util.addEvent(dom.getElementById("right_logout"),"click",_self.logout);for(var odd=0;odd<odds_ary.length;odd++)util.addEvent(dom.getElementById(odds_ary[odd]+"_odds"),"click",_self.chgOdds,odds_ary[odd]);for(var ls=0;ls<langx_ary.length;ls++)util.addEvent(dom.getElementById("pc_langx_"+langx_ary[ls]),"click",_self.choice,langx_ary[ls]);for(var t=0;t<timetype_ary.length;t++)util.addEvent(dom.getElementById("selec_"+timetype_ary[t]),
+"click",_self.choiceTime,timetype_ary[t]);top.newWinObj_result=null;if(top.mobile!="Y"){util.addEvent(dom.getElementById("chg_language"),"click",_self.chgLanguage);util.addEvent(dom.getElementById("odds_type"),"click",_self.clickOddBtn);util.addEvent(dom.getElementById("chg_timetype"),"click",_self.chgTimetype)}else{util.addEvent(_mc["langx_dropdown"],"change",_self.chgLangxHandler);util.addEvent(dom.getElementById("odds_dropdown"),"change",_self.chgOddsHandler);util.addEvent(_mc["langx_dropdown"],
+"blur",_self.rightMenuSelectBlur);util.addEvent(dom.getElementById("odds_dropdown"),"blur",_self.rightMenuSelectBlur);util.addEvent(_mc["timetype_dropdown"],"change",_self.chgTimetypeHandler);util.addEvent(_mc["timetype_dropdown"],"blur",_self.rightMenuSelectBlur)}var ios=util.isIOS();if(top.isapp=="N"&&!ios&&top.mobile!="N"){_mc["right_app"].style.display="";util.addEvent(_mc["right_app"],"click",_self.chgdownloadPage)}if(top.impchk=="Y"||top.perchk=="Y")_self.messg(top.impchk,top.perchk);if(top["userData"].enable==
+"S"||top.clean_data_sw=="Y")_self.rightTVoff(true);dom.getElementById(top.langx).style.display="";dom.getElementById("icon_"+top.langx).style.display="";dom.getElementById(top["userData"].odd_f_type).style.display="";if(dom.getElementById(top["userData"].timetype))dom.getElementById(top["userData"].timetype).style.display="";_mc["odds_dropdown"].options.length=0;var oddBox=top["userData"].odd_f.split(",");for(var i=0;i<oddBox.length;i++){var tmpOdd=new Option(LS.get("oddf_"+oddBox[i]),oddBox[i]+"_odds",
+false,false);_mc["odds_dropdown"].options.add(tmpOdd);dom.getElementById("selec_"+oddBox[i]).style.display=""}_mc["odds_dropdown"].value=top["userData"].odd_f_type+"_odds";_mc["langx_dropdown"].value="langx_"+top.userData.langx;_mc["timetype_dropdown"].value="time_"+top.userData.timetype;parentClass.dispatchEvent("auto_update",{})};_self.chgdownloadPage=function(e){headerFrame.closeRightPanel();var urlParams="";urlParams+="uid="+top["userData"].uid;urlParams+="&langx="+top.langx;urlParams="p=guide_HGApp&ver="+
+top.ver+"&"+urlParams;window.open(top.m2_url+"?"+urlParams)};_self.rightMenuSelectBlur=function(){parentClass.dispatchEvent("scrollsetTop")};_self.chgLanguage=function(){util.removeClass(_mc["selec_oddstype"],"on");util.removeClass(_mc["selec_timetype"],"on");dom.getElementById("pc_langx_"+top.userData.langx).checked="true";if(chg_lang_sw=="Y")util.addClass(_mc["selec_language"],"on");else chg_lang_sw="Y";_self.langxOddSelected("selec_language","lang_focus")};_self.chgLangxHandler=function(){var myselect=
+document.getElementById("langx_dropdown");var index=myselect.selectedIndex;var tmp_langx;tmp_langx=myselect.options[index].value.split("_");_self.choice("",tmp_langx[1])};_self.chgTimetypeHandler=function(){var myselect=document.getElementById("timetype_dropdown");var index=myselect.selectedIndex;var tmp_timetype;tmp_timetype=myselect.options[index].value.split("_");_self.choiceTime("",tmp_timetype[1])};_self.choice=function(e,param){if(top["userData"].langx==param){_mc["selec_language"].classList.remove("on");
+chg_lang_sw="N"}else{for(var i=0;i<langx_ary.length;i++){document.getElementById(langx_ary[i]).style.display="none";document.getElementById("icon_"+langx_ary[i]).style.display="none"}document.getElementById("icon_"+param).style.display="";document.getElementById(param).style.display="";_mc["selec_language"].className="box_popup_selec";_history.length=0;top["userData"].langx=param;parentClass.dispatchEvent("clearAllOpenWindow");if(top["userData"].newalertMsg=="Y"){delete top["userData"].newalertMsg;
+top["userData"].four_pwd="new"}util.topGoToUrl(location,top["userData"])}};_self.chgTimetype=function(){util.removeClass(_mc["selec_language"],"on");util.removeClass(_mc["selec_oddstype"],"on");dom.getElementById("pc_"+top.userData.timetype).checked="true";for(var i=0;i<timetype_ary.length;i++)util.removeClass(dom.getElementById("selec_"+timetype_ary[i]),"on");if(chg_timetype_sw=="Y")util.addClass(_mc["selec_timetype"],"on");else chg_timetype_sw="Y";_self.langxOddSelected("selec_timetype","timetype_focus");
+util.addClass(dom.getElementById("selec_"+top.userData.timetype),"on")};_self.choiceTime=function(e,param){if(top["userData"].timetype==param){_mc["selec_timetype"].classList.remove("on");chg_timetype_sw="N"}else{for(var i=0;i<timetype_ary.length;i++)dom.getElementById(timetype_ary[i]).style.display="none";dom.getElementById(param).style.display="";top["userData"].timetype=param;_self.sendTimetype(top["userData"].timetype);echo("[right_menu] \u76ee\u524dTimetype\u662f : "+param);parentClass.dispatchEvent("setFooterTimetype",
+{});parentClass.dispatchEvent("updateTime",{})}};_self.sendTimetype=function(timetype){var action="send";var code='{"timetype":"'+timetype+'"}';var urlParams="p=memSet";urlParams+="&"+top.param;urlParams+="&uid="+top["userData"].uid;urlParams+="&val="+code;urlParams+="&action="+action;var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"memSet",needTimeout:true});getHTML.addEventListener("onError",_self.onError);getHTML.addEventListener("LoadComplete",
+_self.sendTimetypeComplete);getHTML.loadURL(top.m2_url,"POST",urlParams)};_self.sendTimetypeComplete=function(xml){var errorMsg=util.showConnectMsg(xml);if(util.alertConnectMsg(errorMsg))return;top["memSet"].timetype=top["userData"].timetype};_self.chgOddsHandler=function(){var myselect=document.getElementById("odds_dropdown");var index=myselect.selectedIndex;var tmp_langx;tmp_langx=myselect.options[index].value.split("_");_self.chgOdds("",tmp_langx[0])};_self.chgPage=function(e,param){if(top.mem_2FA.setpage==
+"Y"||top.mem_2FA.besetpage=="Y"){var _msg=top.mem_2FA.besetpage=="Y"?"2FA_cancelStop":"2FA_leave";_set2FAgoPage=param;headerFrame.closeRightPanel();parentClass.dispatchEvent("showAlertMsg",{"target":"C_alert_confirm","msg":LS.get(_msg),"confirm":"Y","retFun":_self.set2FAgoPage});document.getElementById("C_popup_checkbox").style.display="none";return}top["lastClickTS"]=util.getTimestamp();util.removeClass(_mc["selec_language"],"on");util.removeClass(_mc["selec_oddstype"],"on");if(param.page=="help_set_mail"){if(!CookieManager.get("out_enabled_lock"))CookieManager.set("out_enabled_lock",
+"N");var obj=win._history[win._history.length-1];if(obj.page=="help_set_mail")win._history.pop()}else if(param.page=="rules_general"||param.page=="features")param.noCache="Y";else if(param.page=="list_tv"){param.type="list_tv";param.specialClick="";param.outrightsClick=""}_self.closeMsg();parentClass.dispatchEvent("closeLeagueSetting");param.retFun=_self.changePageComplete;parentClass.dispatchEvent("bodyGoToPage",param);headerFrame.closeRightPanel()};_self.setParentclass=function(_parentclass){parentClass=
+_parentclass;headerFrame=parentClass.getThis("headerFrame");LS_code=parentClass.getThis("LS_code");config_set=parentClass.getThis("config_set")};_self.getThis=function(varible){if(!myhash[varible]){var msg="no myhash["+varible+"]";util.writeLog(classname,msg)}return myhash[varible]};_self.addEventListener=function(eventname,eventFunction){eventHandler[eventname]=eventFunction};_self.dispatchEvent=function(eventname,param){if(eventHandler[eventname])eventHandler[eventname](param)};_self.messg=function(msgImpchk,
+msgPerchk){if(msgImpchk=="Y"||msgPerchk=="Y")dom.getElementById("right_mess_new").className="dot_red on";else dom.getElementById("right_mess_new").className="dot_red"};_self.logout=function(){util.goToIndex()};_self.clickOddBtn=function(){util.removeClass(_mc["selec_language"],"on");util.removeClass(_mc["selec_timetype"],"on");if(top["userData"].enable!="S"){if(chg_odds_sw=="Y")_mc["selec_oddstype"].classList.add("on");else chg_odds_sw="Y";_self.langxOddSelected("selec_oddstype","parent_selec_odds");
+dom.getElementById(top["userData"].odd_f_type+"_odds").checked="true"}};_self.chgOdds=function(e,param){for(var i=0;i<odds_ary.length;i++)document.getElementById(odds_ary[i]).style.display="none";document.getElementById(param).style.display="";chg_odds_sw="N";top["userData"].odd_f_type=param;_mc["selec_oddstype"].classList.remove("on");parentClass.dispatchEvent("Chg_odds",top["userData"].odd_f_type);_self.sendodd_f_type(top["userData"].odd_f_type)};_self.sendodd_f_type=function(param){var code='{"odd_f_type":"'+
+param+'"}';var urlParams="";urlParams+="uid="+top["userData"].uid;urlParams+="&val="+code;urlParams+="&langx="+top.langx;urlParams+="&action=send";urlParams="p=memSet&ver="+top.ver+"&"+urlParams;var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"memSet",needTimeout:true});getHTML.addEventListener("onError",_self.onError);getHTML.addEventListener("LoadComplete",_self.send_Complete);getHTML.loadURL(top.m2_url,"POST",urlParams)};
+_self.send_Complete=function(xml){var errorMsg=util.showConnectMsg(xml);if(util.alertConnectMsg(errorMsg))return;CookieManager.set("odd_f_type_"+top["userData"].mid,top["userData"].odd_f_type,3650);top["memSet"].odd_f_type=top["userData"].odd_f_type};_self.clickHideCash=function(){_self.hideCash(true)};_self.hideCash=function(isClick){if(_mc["acc_show_eye"].className=="btn_eye"){if(!top.showCredit)top.showCredit=true;_mc["acc_show_eye"].classList.add("off");noRunCash=true;if(isClick)parentClass.dispatchEvent("reloadCredit",
+{"key":"cash"})}else{if(top.showCredit)top.showCredit=false;noRunCash=false;_mc["acc_show_eye"].classList.remove("off");_mc["acc_credit"].innerHTML="\u2022\u2022\u2022\u2022\u2022";_mc["acc_currency"].innerHTML=""}if(isClick)parentClass.dispatchEvent("hideCash",{"from":"right_menu"})};_self.chgcredit=function(nowcredit){var returnObj=new Array;var tmpObj=new Object;if(oldCredit=="")oldCredit=nowcredit!=null?nowcredit:top["userData"].maxcredit;var _oldCash=util.trans_thousand(oldCredit);if(_mc["acc_show_eye"].className==
+"btn_eye off"){if(nowcredit!=null)top["userData"].maxcredit=nowcredit;if(_oldCash!=util.trans_thousand(top["userData"].maxcredit)&&_oldCash!=""&&!noRunCash&&_mc["acc_credit"].innerHTML!="\u2022\u2022\u2022\u2022\u2022"){var tmpCredit=oldCredit.replace(/[,]+/g,"");savechk=util.showTxt(parseFloat(tmpCredit));tmpObj={"savechk":savechk,"maxcredit":parseFloat(top["userData"].maxcredit),"currency":_mc["acc_currency"],"credit":_mc["acc_credit"],"money":"acc_money","Ary":Ary,"count":_count,"removeFun":_self.removeMoneyCss};
+returnObj=util.chgCreditAnimation(tmpObj);Ary=returnObj["Ary"];_count=returnObj["count"]}else{noRunCash=false;_mc["acc_credit"].innerHTML=util.trans_thousand(top["userData"].maxcredit);_mc["acc_currency"].innerHTML=util.showTxt(top["userData"].currency);top["orderinfo"]["date"]=""}oldCredit=top["userData"].maxcredit}};_self.cashdata=function(xml){_self.paramHash["errorMsg"]=util.showConnectMsg(xml);if(util.alertConnectMsg(_self.paramHash["errorMsg"]))return;var xmdObj=new Object;xmlnode=util.parseXml(xml);
+xmdObj["code"]=xmlnode.Node(xmlnode.Root[0],"code");if(xmdObj["code"].innerHTML=="get_credit_data"||xmdObj["code"].innerHTML=="get_all_data"){top["userData"].maxcredit=xmlnode.Node(xmlnode.Root[0],"maxcredit").innerHTML;top["userData"].currency=xmlnode.Node(xmlnode.Root[0],"currency").innerHTML;top["userData"].pay_type=xmlnode.Node(xmlnode.Root[0],"pay_type").innerHTML;if(top["userData"]["oldCredit"]==null)top["userData"]["oldCredit"]=xmlnode.Node(xmlnode.Root[0],"maxcredit").innerHTML;if(_mc["right_creditlogs"])if(top["userData"].pay_type!=
+1&&_mc["right_creditlogs"].parentNode)_mc["right_creditlogs"].parentNode.removeChild(_mc["right_creditlogs"]);else _mc["right_creditlogs"].style.display="";_mc["acc_username"].innerHTML=util.showTxt(top["userData"].passwd_safe);if(savechk=="")savechk=parseFloat(top["userData"].maxcredit);_self.chgcredit()}if(!firstLoad){oldCredit=top["userData"].maxcredit;parentClass.dispatchEvent("checkCount",{});firstLoad=true}};_self.langxOddSelected=function(classId,focusId){dom.getElementById(focusId).tabIndex=
+1;setTimeout(_self.langxOddFocus,300,focusId);util.addEvent(dom.getElementById(focusId),"blur",_self.langxOddBlur,{"id":classId})};_self.langxOddFocus=function(focus_id){dom.getElementById(focus_id).focus()};_self.langxOddBlur=function(e,param){dom.getElementById(param.id).classList.remove("on")};_self.goToResult=function(){var par="";par+="uid="+top["userData"].uid;par+="&langx="+top.langx;par+="&mem_status="+top["userData"].enable;par+="&protocol="+dom.location.protocol.replace(":","");var goUrl=
+"";goUrl=dom.location.protocol+"//"+top.oldSite+"/app/member/account/index.php?"+par;var WHtype="width=900,height=650,status=no,location=no";try{top.newWinObj_result=window.open(goUrl,"account",WHtype)}catch(e){echo(e)}top.newWinObj_result.focus();parentClass.dispatchEvent("closePCResult")};_self.setIorChgClick=function(e){_self.setIorChg(true,"")};_self.setIorChg=function(isClick,iorChgSw){if(isClick){iorChgSw=CookieManager.get("iorChgSw");if(iorChgSw=="N"){_mc["iorType_set"].checked=true;if(isClick)parentClass.dispatchEvent("setIorChg",
+{"from":"right_menu","sw":"Y"})}else{_mc["iorType_set"].checked=false;if(isClick)parentClass.dispatchEvent("setIorChg",{"from":"right_menu","sw":"N"})}}else if(iorChgSw=="N")_mc["iorType_set"].checked=false;else if(iorChgSw=="Y")_mc["iorType_set"].checked=true};_self.removeMoneyCss=function(){util.removeClass(_mc["acc_money"],"ani_credit_add")};_self.rightTVoff=function(is_off){if(is_off)util.addClass(_mc["right_tv"],"off");else util.removeClass(_mc["right_tv"],"off")};_self.chkMem2FA=function(e){_self.get2FA_sw()};
+_self.get2FA_sw=function(){var urlParams="";urlParams+="&uid="+top["userData"].uid;urlParams+="&langx="+top.langx;urlParams+="&action=getMemSW";urlParams="p=set_verify2FA&ver="+top.ver+"&"+urlParams;var getHTML=new HttpRequestRetry({retryLimit:config_set.get("RETRY_LIMIT"),retryTime:config_set.get("RETRY_TIME"),pageName:"set_verify2FA",needTimeout:true});getHTML.addEventListener("onError",_self.onError);getHTML.addEventListener("LoadComplete",_self.get2FASWComplete);getHTML.loadURL(top.m2_url,"POST",
+urlParams)};_self.closeMsg=function(){parentClass.dispatchEvent("hideAlertMsg",{"use":"noPopMainClear"})};_self.get2FASWComplete=function(data){var tmp_data=JSON.parse(data);if(tmp_data["status"]=="success"){top.mem_2FA_sw=tmp_data["mem_2FA_sw"];if(tmp_data["mem_2FA_sw"]!="Y"){headerFrame.closeRightPanel();parentClass.dispatchEvent("showAlertMsg",{"target":"C_alert_ok","msg":LS.get("2FA_sw_close"),"confirm":"N","retFun":_self.closeMsg})}else{util.removeClass(dom.getElementById("main"),"no_2fa");if(tmp_data["data"]!=
+"noData"){var sw_2fa=tmp_data["data"]["2fa_sw"];top.mem_2FA["sw_2fa"]=sw_2fa;if(sw_2fa=="Y")_self.chgPage("",{"page":"unbind2FA_page"});else _self.chgPage("",{"page":"help2FA_page"})}else _self.chgPage("",{"page":"help2FA_page"})}}};_self.set2FAgoPage=function(type){if(type=="yes"){top.mem_2FA.setpage="N";top.mem_2FA.besetpage="N";_self.chgPage("",_set2FAgoPage)}else if(type=="no")parentClass.dispatchEvent("hideAlertMsg",{"use":"noPopAllClear"})}}
+if(typeof autoLogin!="undefined"&&document.getElementById("home_page"))document.getElementById("home_page").onmousedown=function(evt){if(evt.button!=2)return;var copyObj=document.getElementById("copy_div");if(!copyObj){copyObj=document.createElement("div");copyObj.style.display="none";copyObj.id="copy_div";document.body.appendChild(copyObj)}copyObj.innerHTML="";var ret="";try{var json_str=JSON.stringify(myGameHash);ret+=json_str+"<br>"}catch(e){}var cm=new CookieManager;var gtypes=["ft","bk","es",
+"tn","vb","bs","op","sk","bm","tt"];for(var i=0;i<gtypes.length;i++){var gtype_str=cm.get(gtypes[i]+"_myGame_"+top["userData"]["mid"]);ret+=gtypes[i]+":"+gtype_str+"<br>"}echo(ret);copyObj.innerHTML=ret;try{var range=document.createRange();range.selectNode(copyObj);setTimeout(function(){copyObj.style.display="";window.getSelection().addRange(range);var successful=document.execCommand("copy");var msg=successful?"success":"fail";echo("copy "+msg);setTimeout(function(){window.getSelection().removeAllRanges();
+copyObj.style.display="none"},1E3)},500)}catch(e){echo(e.toString())}};
+
+function CookieManager(){var _self=this;var _domain=document.domain;var MainDomain=getDomain(_domain);_self.set=function(cname,cvalue,exdays,path){exdays=exdays||30;path=path||"/";var d=new Date;d.setTime(d.getTime()+exdays*24*60*60*1E3);var expires="expires="+d.toUTCString();var paths="path="+path;if(top.cookieEncode_sw=="Y")try{document.cookie=cname+"="+btoa(cvalue)+"; "+expires+"; "+paths+"; "+MainDomain}catch(e){console.log(e);document.cookie=cname+"='';"+expires+"; "+paths+"; "+MainDomain}else document.cookie=
+cname+"="+cvalue+"; "+expires+"; "+paths+"; "+MainDomain};_self.get=function(cname){var name=cname+"=";var ca=document.cookie.split(";");for(var i=0;i<ca.length;i++){var c=ca[i];while(c.charAt(0)==" ")c=c.substring(1);if(c.indexOf(name)==0){var tmp_val=c.substring(name.length,c.length);if(top.cookieEncode_sw=="Y")try{return atob(tmp_val)}catch(e){console.log("[",cname,"]=>",e);return""}else return tmp_val}}return undefined};_self.del=function(cname){var d=new Date;d.setTime(d.getTime()-1);var cookieVal=
+_self.get(cname);if(cookieVal!=null)document.cookie=cname+"="+cookieVal+";expires="+d.toGMTString()+"; "+MainDomain};function getDomain(_domain){var domainAry=_domain.split(".");var ret="";switch(domainAry.length){case 2:ret="domain=.";ret+=_domain;break;case 3:ret="domain=.";domainAry.shift();ret+=domainAry.join(".");break;default:ret=_domain;break}return ret}};
+
+var artjson = {
+	"ART_acc_history": "STATEMENT",
+	"ART_acc_creditlog": "CREDIT LOGS",
+	"ART_acc_messages": "MESSAGES",
+	"ART_acc_set": "SETTINGS",
+	"ART_acc_2fa": "ACCOUNT SECURITY",
+	"ART_acc_new": "New",
+	"ART_acc_language": "LANGUAGE",
+	"ART_lan_tw": "繁體",
+	"ART_lan_cn": "简体",
+	"ART_lan_en": "English",
+	"ART_acc_market": "ODDS TYPE",
+	"ART_market_hk": "Hong Kong Odds",
+	"ART_market_ml": "Malay Odds",
+	"ART_market_in": "Indo Odds",
+	"ART_market_eu": "Euro Decimal Odds",
+	"ART_acc_oddupdate": "ODDS UPDATE ALERT",
+	"ART_oddupdate_note": "Enable if you want to see when the odds update",
+	"ART_acc_time": "EVENT DISPLAY TIME",
+	"ART_time_sys": "System Time (GMT-4)",
+	"ART_time_dev": "Local Time (Device Time)",
+	"ART_acc_changepwd": "CHANGE PASSWORD",
+	"ART_acc_passcode": "PASSCODE LOGIN",
+	"ART_acc_active": "Active",
+	"ART_acc_pwdrecovery": "PASSWORD RECOVERY",
+	"ART_acc_setting": "BET SETTINGS",
+	"ART_acc_support": "SUPPORT",
+	"ART_acc_faq":"FAQ",
+	"ART_acc_tv":"LIVE TV",
+	"ART_acc_feature": "SPORTSBOOK FEATURES",
+	"ART_acc_odds": "ODDS CONVERSION",
+	"ART_acc_rule": "SPORT RULES",
+	"ART_acc_system": "SYSTEM REQUIREMENTS",
+	"ART_acc_term": "TERMS AND CONDITIONS",
+	"ART_acc_fix": "TROUBLESHOOTING",
+	"ART_acc_contact": "CONTACT US",
+	"ART_acc_result": "RESULTS",
+	"ART_acc_app": "DOWNLOAD ANDROID APP",
+	"ART_acc_logout": "LOG OUT",
+}
+</script>
+	
+	<link href="https://www.hga050.com/style/slide_r.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+	<div class="slide_r on">
+		<div id="right_mask" class="mask_acc"></div>
+
+		<div class="box_acc">
+			<div class="box_title_acc">
+				<div id="acc_show_eye" class="btn_eye off"><i class="icon_eye"></i></div>
+				<div class="box_username">
+					<span id="acc_username" class="text_user"></span>
+					<span id="acc_money" class="text_money">
+						<tt id="acc_currency" class="text_currency"></tt>
+						<tt id="acc_credit" class="text_credit"></tt>
+					</span>
+				</div>
+				<div id="myAcc_close" class="btn_close">
+					<i class="icon_close">
+						<svg><use xlink:href="#icon_close" /></svg>
+					</i>
+				</div>
+			</div>
+
+			<div id="right_box_content" class="box_content">
+				<div id="rightM_history" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_history" /></svg>
+					<span>*ART_acc_history*</span>
+				</div>
+				<div id="right_creditlogs" class="btn_acc_menu" style="display: none;">
+					<svg><use xlink:href="#icon_creditlog" /></svg>
+					<span>*ART_acc_creditlog*</span>
+				</div>
+				<div id="right_message" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_message" /></svg>
+					<span>*ART_acc_messages*</span>
+					<tt id="right_mess_new" class="dot_red"></tt>
+				</div>
+
+				<div class="title_sort">*ART_acc_set*</div>
+
+				<div id="rightM_2fa" class="btn_acc_menu new" data-new="*ART_acc_new*">
+					<svg><use xlink:href="#icon_2fa" /></svg>
+					<span>*ART_acc_2fa*</span>
+				</div>
+
+				<div id="chg_language" class="btn_acc_menu">
+					<i id="icon_zh-tw" class="icon_lang icon_hk" style="display:none;"></i>
+					<i id="icon_zh-cn" class="icon_lang icon_cn" style="display:none;"></i>
+					<i id="icon_en-us" class="icon_lang icon_en" style="display:none;"></i>
+					<span>
+						<tt>*ART_acc_language*</tt>
+						<tt id="zh-cn" class="btn_acc_sub" style="display:none;">*ART_lan_cn*</tt>
+						<tt id="zh-tw" class="btn_acc_sub" style="display:none;">*ART_lan_tw*</tt>
+						<tt id="en-us" class="btn_acc_sub" style="display:none;">*ART_lan_en*</tt>
+					</span>
+					<select id="langx_dropdown" class="" tabindex="-1">
+						<option value="langx_zh-cn">*ART_lan_cn*</option>
+						<option value="langx_zh-tw">*ART_lan_tw*</option>
+						<option value="langx_en-us">*ART_lan_en*</option>
+					</select>
+
+					<!-- 語系選擇 -->
+					<div id="selec_language" class="box_popup_selec"><!-- Show add class="on"-->
+						<div id="lang_focus" class="popup_lange">
+							<label id="selec_zh-cn" class="btn_popup_selec">
+								<i class="icon_lang icon_cn"></i>
+								<input id="pc_langx_zh-cn" value="zh-cn" type="radio" name="selec_lang">
+								<tt>*ART_lan_cn*</tt>
+								<span class="checkmark"></span>
+							</label>
+							<label id="selec_zh-tw" class="btn_popup_selec">
+								<i class="icon_lang icon_hk"></i>
+								<input id="pc_langx_zh-tw" value="zh-tw" type="radio" name="selec_lang">
+								<tt>*ART_lan_tw*</tt>
+								<span class="checkmark"></span>
+							</label>
+							<label id="selec_en-us" class="btn_popup_selec">
+								<i class="icon_lang icon_en"></i>
+								<input id="pc_langx_en-us" value="en-us" type="radio" name="selec_lang">
+								<tt>*ART_lan_en*</tt>
+								<span class="checkmark"></span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<div id="odds_type" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_market" /></svg>
+					<span>
+						<tt>*ART_acc_market*</tt>
+						<tt	id="H" class="btn_acc_sub" style="display:none;">*ART_market_hk*</tt>
+						<tt id="M" class="btn_acc_sub" style="display:none;">*ART_market_ml*</tt>
+						<tt id="I" class="btn_acc_sub" style="display:none;">*ART_market_in*</tt>
+						<tt id="E" class="btn_acc_sub" style="display:none;">*ART_market_eu*</tt>
+					</span>
+					<select id="odds_dropdown" class="" tabindex="-1">
+						<!--
+						<option  id="H_ph" value="H_odds" style="display:none;">*ART_market_hk*</option>
+						<option  id="M_ph" value="M_odds" style="display:none;">*ART_market_ml*</option>
+						<option  id="I_ph" value="I_odds" style="display:none;">*ART_market_in*</option>
+						<option  id="E_ph" value="E_odds" style="display:none;">*ART_market_eu*</option>
+						-->
+					</select>
+
+					<!-- 盤口選擇 -->
+					<div id="selec_oddstype" class="box_popup_selec"><!-- Show add class="on"-->
+						<div id="parent_selec_odds" class="popup_oddtype">
+							<label id="selec_H" class="btn_popup_selec" style="display:none;">
+								<input id="H_odds" value="HK" type="radio" name="selec_market" >
+								<tt>*ART_market_hk*</tt>
+								<span class="checkmark"></span>
+							</label>
+
+							<label id="selec_M" class="btn_popup_selec" style="display:none;">
+								<input id="M_odds" value="Malay" type="radio" name="selec_market" >
+								<tt>*ART_market_ml*</tt>
+								<span class="checkmark"></span>
+							</label>
+
+							<label id="selec_I" class="btn_popup_selec" style="display:none;">
+								<input id="I_odds" value="Indo" type="radio" name="selec_market" >
+								<tt>*ART_market_in*</tt>
+								<span class="checkmark"></span>
+							</label>
+
+							<label id="selec_E" class="btn_popup_selec" style="display:none;">
+								<input id="E_odds" value="Euro" type="radio" name="selec_market" >
+								<tt>*ART_market_eu*</tt>
+								<span class="checkmark"></span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<div id="iorType_switch" class="btn_acc_menu acc_oddupdate">
+					<svg><use xlink:href="#icon_oddupdate" /></svg>
+					<span>
+						<tt>*ART_acc_oddupdate*</tt>
+						<tt class="btn_acc_sub">*ART_oddupdate_note*</tt>
+					</span>
+					<div class="switch_acc_menu">
+						<input type="checkbox" id="iorType_set">
+						<span>
+							<i class="switch"></i>
+						</span>
+					</div>
+					<label id="" for="iorType_set"></label>
+				</div>
+
+				<div id="chg_timetype" class="btn_acc_menu" style="display: ;">
+					<svg><use xlink:href="#icon_displaytime" /></svg>
+					<span>
+						<tt>*ART_acc_time*</tt>
+						<tt	id="sysTime" class="btn_acc_sub" style="display:none;">*ART_time_sys*</tt>
+						<tt id="devTime" class="btn_acc_sub" style="display:none;">*ART_time_dev*</tt>
+					</span>
+					<select id="timetype_dropdown" class="" tabindex="-1">
+						<option value="time_sysTime">*ART_time_sys*</option>
+						<option value="time_devTime">*ART_time_dev*</option>
+					</select>
+
+					<!-- 時間顯示選擇 -->
+					<div id="selec_timetype" class="box_popup_selec"><!-- Show add class="on"-->
+						<div id="timetype_focus" class="popup_oddtype">
+							<label id="selec_sysTime" class="btn_popup_selec">
+								<input id="pc_sysTime" value="sysTime" type="radio" name="selec_timetype" >
+								<tt>*ART_time_sys*</tt>
+								<span class="checkmark"></span>
+							</label>
+							<label id="selec_devTime" class="btn_popup_selec">
+								<input id="pc_devTime" value="devTime" type="radio" name="selec_timetype" >
+								<tt>*ART_time_dev*</tt>
+								<span class="checkmark"></span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<div id="right_help_change_pwd" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_pwdchg" /></svg>
+					<span>*ART_acc_changepwd*</span>
+				</div>
+				<div id="right_help_4pwd_login" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_pwdquick"></use></svg>
+					<span>
+						<tt>*ART_acc_passcode*</tt>
+						<tt id="4pwd_active" class="btn_acc_sub">*ART_acc_active*</tt>
+					</span>
+				</div>
+				<div id="right_set_mail" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_pwdre" /></svg>
+					<span>*ART_acc_pwdrecovery*</span>
+				</div>
+				<div id="right_account_set" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_setting" /></svg>
+					<span>*ART_acc_setting*</span>
+				</div>
+
+
+				<div class="title_sort">*ART_acc_support*</div>
+				<div id="right_tv" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_tv" /></svg>
+					<span>*ART_acc_tv*</span>
+				</div>
+				<div id="right_help_faq" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_faq" /></svg>
+					<span>*ART_acc_faq*</span>
+				</div>
+				<div id="right_features_new" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_new" /></svg>
+					<span>*ART_acc_feature*</span>
+					<tt class="dot_green"></tt>
+				</div>
+				<div id="right_help_odds" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_odd" /></svg>
+					<span>*ART_acc_odds*</span>
+				</div>
+				<div id="right_rules_general" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_rule" /></svg>
+					<span>*ART_acc_rule*</span>
+				</div>
+				<div id="right_help_sys" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_system" /></svg>
+					<span>*ART_acc_system*</span>
+				</div>
+				<div id="right_help_term" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_terms" /></svg>
+					<span>*ART_acc_term*</span>
+				</div>
+				<!--
+				<div class="btn_acc_menu" style="display: none;">
+					<svg><use xlink:href="#icon_qa" /></svg>
+					<span>*ART_acc_fix*</span>
+				</div>
+				-->
+				<div id="right_contactus" class="btn_acc_menu">
+					<svg><use xlink:href="#icon_contact" /></svg>
+					<span>*ART_acc_contact*</span>
+				</div>
+				<div id="rightM_result" class="btn_acc_menu btn_acc_result" style="display: none;">
+					<svg><use xlink:href="#icon_result" /></svg>
+					<span>*ART_acc_result*</span>
+				</div>
+				<div id="right_app" class="btn_acc_menu btn_acc_app" style="display: none;">
+					<svg><use xlink:href="#icon_appdownload" /></svg>
+					<span>*ART_acc_app*</span>
+				</div>
+				<div id="right_logout" class="box_logout">
+					<div class="btn_logout">*ART_acc_logout*</div>
+				</div>
+			</div>
+
+		</div>
+
+
+
+
+
+
+	</div>
+
+</body>
+
+</html>

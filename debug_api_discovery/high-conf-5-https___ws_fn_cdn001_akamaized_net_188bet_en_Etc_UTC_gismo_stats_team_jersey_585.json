@@ -1,0 +1,138 @@
+{
+  "queryUrl": "stats_team_jersey/585807/1342248",
+  "doc": [
+    {
+      "event": "stats_team_jersey",
+      "_dob": 1780839374,
+      "_maxage": 10800,
+      "data": {
+        "team1": {
+          "_doc": "uniqueteam",
+          "_id": 585807,
+          "_rcid": 392,
+          "_sid": 1,
+          "name": "China",
+          "mediumname": "China",
+          "suffix": null,
+          "abbr": "CHI",
+          "nickname": null,
+          "teamtypeid": 0,
+          "iscountry": true,
+          "sex": "m",
+          "haslogo": false,
+          "founded": null,
+          "website": null,
+          "cc": {
+            "_doc": "countrycode",
+            "_id": 44,
+            "a2": "cn",
+            "name": "China",
+            "a3": "CHN",
+            "ioc": "CHN",
+            "continentid": 5,
+            "continent": "Asia",
+            "population": 1339724852
+          },
+          "homejersey": {
+            "base": "D8D8D8",
+            "sleeve": "D8D8D8",
+            "number": "000000",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "selectedjersey": {
+            "base": "D8D8D8",
+            "sleeve": "D8D8D8",
+            "number": "000000",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "awayjersey": {
+            "base": "585858",
+            "sleeve": "585858",
+            "number": "ffffff",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "awayjersey2": {
+            "base": "585858",
+            "sleeve": "585858",
+            "number": "ffffff",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "gkjersey": {
+            "base": "efc131",
+            "sleeve": "333333",
+            "number": "000000",
+            "real": false,
+            "type": "short_sleeves"
+          }
+        },
+        "team2": {
+          "_doc": "uniqueteam",
+          "_id": 1342248,
+          "_rcid": 392,
+          "_sid": 1,
+          "name": "Tunisia Youth",
+          "mediumname": "Tunisia Youth",
+          "suffix": null,
+          "abbr": "TUN",
+          "nickname": null,
+          "teamtypeid": 0,
+          "iscountry": true,
+          "sex": "m",
+          "haslogo": false,
+          "founded": null,
+          "website": null,
+          "cc": {
+            "_doc": "countrycode",
+            "_id": 217,
+            "a2": "tn",
+            "name": "Tunisia",
+            "a3": "TUN",
+            "ioc": "TUN",
+            "continentid": 4,
+            "continent": "Africa",
+            "population": 11299000
+          },
+          "homejersey": {
+            "base": "D8D8D8",
+            "sleeve": "D8D8D8",
+            "number": "000000",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "awayjersey": {
+            "base": "585858",
+            "sleeve": "585858",
+            "number": "ffffff",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "selectedjersey": {
+            "base": "585858",
+            "sleeve": "585858",
+            "number": "ffffff",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "awayjersey2": {
+            "base": "585858",
+            "sleeve": "585858",
+            "number": "ffffff",
+            "real": false,
+            "type": "short_sleeves"
+          },
+          "gkjersey": {
+            "base": "efc131",
+            "sleeve": "333333",
+            "number": "000000",
+            "real": false,
+            "type": "short_sleeves"
+          }
+        }
+      }
+    }
+  ]
+}

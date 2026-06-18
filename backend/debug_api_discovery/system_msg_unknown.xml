@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name='viewport' content='maximum-scale=1, width=device-width, user-scalable=no, minimum-scale=1.0, viewport-fit=cover'/>
+	<title>popup</title>
+	<script id="homeJS">
+top.ver = '96605be0021f52142cf88292a7f55aa8_1780552993656';
+function system_msg(_win,_dom){var _self=this;var win=_win;var dom=_dom;var parentClass;var classname="system_msg";var util;var _mc;var keepStyle={};var popTimer=new Object;var toasttime;var removetime;var poptimer_sec=3E3;var myhash={};_self.init=function(){obj_ids="close_alert_msgsystem,C_alert_ok_system,C_msg_ok_system,C_ok_btn_system,system_popup,";_mc=util.getObjAry(dom.getElementById("system_show"),obj_ids)};_self.setParentclass=function(_parentclass){parentClass=_parentclass;util=parentClass.getThis("util")};
+_self.getThis=function(varible){if(!myhash[varible]){var msg="no myhash["+varible+"]";util.writeLog(classname,msg)}return myhash[varible]};_self.showMsg=function(param){var sb=window.pageYOffset||document.documentElement.scrollTop||document.body.scrollTop||0;parentClass.dispatchEvent("addbodylock");parentClass.dispatchEvent("chkscroll",{"px":sb,"target":param.target});_mc["system_popup"].classList.add("on");if(param.target=="C_alert_ok_system"){_mc["C_alert_ok_system"].classList.add("on");_mc["C_msg_ok_system"].innerHTML=
+util.showTxt(param.msg)}_self.addEvent(param,sb)};_self.initAlert=function(param){_mc["C_msg_ok_system"].innerHTML=""};_self.clearSysMsg=function(param){_self.initAlert(param);_self.removeEvent(param)};_self.clickEvent=function(e,param){_mc["C_alert_ok_system"].classList.remove("on");_mc["system_popup"].classList.remove("on");_self.clearSysMsg("nopopSystem");if(param.retFun)param.retFun(param.type);parentClass.dispatchEvent("removebodylock",{"px":param.px,"type":param.type})};_self.addEvent=function(param,
+px){if(_mc["C_alert_ok_system"])util.addEvent(_mc["C_ok_btn_system"],"click",_self.clickEvent,{"type":"ok","retFun":param.retFun,"px":px})};_self.setPopTimer=function(target){dom.getElementById(target).classList.remove("on");dom.getElementById("msg_toast").classList.remove("on");parentClass.dispatchEvent("removebodylock",{})};_self.removeEvent=function(param){util.removeEvent(_mc["C_ok_btn_system"],"click")}};
+
+var artjson = {
+	"ART_lang": "EN",
+	"ART_msg_btn_no": "NO",
+	"ART_msg_btn_yes": "YES",
+
+	"ART_msg_noshow": "Don’t show me again.",
+
+	"ART_title_kick": "SYSTEM MESSAGE",
+
+	"ART_msg_btn_ok": "OK",
+	"ART_toast_btn_ok": "OK",
+}
+</script>
+	<link href="https://www.hga050.com/style/popup.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+	<div class="popup">
+		<div id="system_popup" class="msg_popup">
+			<div id="C_alert_ok_system" class="popup_bottom pc_center">
+				<div class="popup_content">
+					<span id="C_msg_ok_system"><!-- 文字 --></span>
+				</div>
+				<div class="box_help_btn">
+					<div id="C_ok_btn_system" class="btn_submit">*ART_msg_btn_ok*</div>
+				</div>
+			</div>
+			<div id="close_alert_msgsystem" class="mask_popup"></div>
+		</div>
+	</div>
+</body>
+</html>

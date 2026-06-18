@@ -1,0 +1,134 @@
+node_modules/
+build/
+dist/
+release/
+output/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+database/
+*.db
+# 调试产物
+debug-*.png
+debug-*.json
+debug-*.html
+debug_screenshots/
+debug_screenshot_*.png
+debug/
+demo-*.png
+debug-crawl.js
+test-crawler.js
+test-corner-crawler.js
+test-page.html
+test-raw-data.json
+test-screenshot.png
+
+# 探索/测试脚本
+src/crawler/
+.trae/
+docs/
+build_resources/
+
+# 敏感文件排除
+backend/cookies.json
+backend/credentials.json
+
+# 攻击/逆向/调试脚本排除
+backend/crack_v*.ps1
+backend/decompile_*.ps1
+backend/decrypt_*.ps1
+backend/deep_analysis_v*.ps1
+backend/final_crack_v*.ps1
+backend/capture-*.ps1
+backend/monitor-*.ps1
+backend/probe-*.ps1
+backend/login-and-ws.ps1
+backend/login-and-ws.js
+backend/login-and-ws.cjs
+backend/login-emnu.cjs
+scripts/
+
+# 调试产物排除
+backend/*.png
+backend/debug-*.js
+backend/debug_api_discovery/
+backend/explore-*.js
+backend/find-hga-api.js
+backend/*.txt
+
+# 临时测试文件
+tmp-*.mjs
+temp_*.mjs
+test-ff.mjs
+test-puppeteer.mjs
+test_login_monitor.py
+dev-app-update.yml
+
+# 调试/日志文件
+server_stdout.txt
+srv_err.txt
+srv_out.txt
+check_*.py
+debug_*.py
+verify_*.py
+_gen_report.py
+.git_commit_msg.txt
+
+# 后端调试文件
+backend/capture-wss-*.cjs
+backend/package-lock.json
+
+# 文档/报告（非必要）
+code_review*.md
+CODE_WIKI.md
+PROJECT_STRUCTURE.md
+TASK_STATUS.md
+WINDOWS_ENCODING_FIX.md
+CORNER_SYSTEM_README.md
+*自动投注链路分析报告.md
+*角球系统爬虫机制测试报告.md
+*角球系统_自动投注与监控功能*.md
+
+# Python 爬虫清理脚本
+python/check_*.py
+python/clean_*.py
+python/count_*.py
+python/fix_*.py
+
+# 启动脚本
+scripts/*.bat
+start.bat
+start_local.bat
+启动系统.bat
+
+# 测试报告
+backend/pipeline-test-report.json
+
+# 备份文件
+*.bak
+
+# 外部模型仓库
+world-cup-2026-prediction-model/
+
+# 根目录杂文件
+analyze-hga-ver.js
+find-hga-api.js
+check_braces.cjs
+check_tabs.cjs
+convert-data.cjs
+package-lock.json
+.env.example
+
+# 投注调试/抓包文件
+backend/js_*.js
+backend/capture-credentials.js
+backend/captured_*.json
+backend/fetched_*.html
+backend/services/httpBetExecutor.js
+backend/test-*.js
+capture-bet-request.js
+*_bet_params.*
+test-*.js
+test-browser-fetch.js

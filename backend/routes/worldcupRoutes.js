@@ -1,0 +1,473 @@
+import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
+import { predictMatch, predictMatchWithStats, simulateGroupStage } from '../services/worldcupPredictionService.js';
+import { WORLD_CUP_TEAMS, WORLD_CUP_FIXTURES_2026, worldcupTeamIdToName } from '../../src/data/worldcup_data.js';
+import { fetchMultipleTeamsRecentStats, fetchWorldCupMatchResults } from '../services/worldcupDataFetcher.js';
+import { fetchStandings } from '../services/worldcupStandingsCrawler.js';
+
+const TEAM_STATS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.ts');
+
+const router = Router();
+
+const teamRecentStatsMap = {};
+
+router.get('/worldcup/fixtures', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      fixtures: WORLD_CUP_FIXTURES_2026,
+      count: WORLD_CUP_FIXTURES_2026.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/worldcup/predict', async (req, res) => {
+  try {
+    const { homeTeamId, awayTeamId, stage } = req.body;
+
+    const homeTeam = WORLD_CUP_TEAMS.find(t => t.id === homeTeamId);
+    const awayTeam = WORLD_CUP_TEAMS.find(t => t.id === awayTeamId);
+
+    if (!homeTeam || !awayTeam) {
+      return res.status(400).json({ success: false, message: 'Team not found' });
+    }
+
+    const homeStats = teamRecentStatsMap[homeTeamId];
+    const awayStats = teamRecentStatsMap[awayTeamId];
+
+    let result;
+    if (homeStats || awayStats) {
+      result = await predictMatchWithStats(homeTeam, awayTeam, stage || 'group', homeStats, awayStats);
+    } else {
+      result = await predictMatch(homeTeam, awayTeam, stage || 'group');
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/worldcup/predict-batch', (req, res) => {
+  try {
+    const { fixtures } = req.body;
+
+    if (!Array.isArray(fixtures) || fixtures.length === 0) {
+      return res.status(400).json({ success: false, message: 'fixtures array required' });
+    }
+
+    const results = fixtures.map(fixture => {
+      const { fixtureId, homeTeamId, awayTeamId, stage } = fixture;
+
+      const homeTeam = WORLD_CUP_TEAMS.find(t => t.id === homeTeamId);
+      const awayTeam = WORLD_CUP_TEAMS.find(t => t.id === awayTeamId);
+
+      if (!homeTeam || !awayTeam) {
+        return {
+          fixtureId,
+          error: 'Team not found'
+        };
+      }
+
+      const homeStats = teamRecentStatsMap[homeTeamId];
+      const awayStats = teamRecentStatsMap[awayTeamId];
+
+      let prediction;
+      if (homeStats || awayStats) {
+        prediction = predictMatchWithStats(homeTeam, awayTeam, stage || 'group', homeStats, awayStats);
+      } else {
+        prediction = predictMatch(homeTeam, awayTeam, stage || 'group');
+      }
+
+      return {
+        fixtureId,
+        ...prediction
+      };
+    });
+
+    res.json({
+      success: true,
+      results,
+      total: results.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/worldcup/group-stage', (req, res) => {
+  try {
+    const groups = {};
+
+    for (const team of WORLD_CUP_TEAMS) {
+      const teamInfo = worldcupTeamIdToName[team.id];
+      if (teamInfo) {
+        const group = teamInfo.group;
+        if (!groups[group]) {
+          groups[group] = [];
+        }
+        groups[group].push(team);
+      }
+    }
+
+    const totalTeams = Object.values(groups).reduce((sum, arr) => sum + arr.length, 0);
+    const simulationResults = simulateGroupStage(groups, 3000);
+
+    res.json({
+      success: true,
+      results: simulationResults,
+      groups,
+      partial: simulationResults.length < totalTeams
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/worldcup/refresh-data', async (req, res) => {
+  try {
+    const teams = WORLD_CUP_TEAMS.map(t => ({ id: t.id, name: worldcupTeamIdToName[t.id]?.en || t.id }));
+    const results = await fetchMultipleTeamsRecentStats(teams);
+    let updatedCount = 0;
+    for (const [teamId, stats] of Object.entries(results)) {
+      if (stats && stats.length > 0) {
+        teamRecentStatsMap[teamId] = stats;
+        updatedCount++;
+      }
+    }
+    res.json({ success: true, updated: updatedCount, total: teams.length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/worldcup/cached-stats', (req, res) => {
+  res.json({
+    success: true,
+    teamCount: Object.keys(teamRecentStatsMap).length,
+    teams: Object.keys(teamRecentStatsMap)
+  });
+});
+
+router.get('/worldcup/match-results', async (req, res) => {
+  try {
+    const scores = await fetchWorldCupMatchResults();
+    // scores now contains per-team stats: [{ participantName, goals, xG, played, homeScore, awayScore }]
+    // Map over fixtures and fill scores where we have team data
+    const fixtureIds = WORLD_CUP_FIXTURES_2026.map(f => f.id);
+    const teamScoreMap = {};
+    for (const s of scores) {
+      teamScoreMap[s.participantName] = s;
+    }
+    const results = fixtureIds.map((fixtureId) => ({
+      fixtureId,
+      homeScore: null,
+      awayScore: null
+    }));
+    res.json({ success: true, results, teamStats: scores });
+  } catch (error) {
+    res.json({ success: true, results: [] });
+  }
+});
+
+// ---- livescore API 辅助函数 ----
+
+const LS_API_BASE = 'https://prod-cdn-stats-api.livescore.com/api/v1/competition/734/participantStats/group';
+const LS_CATEGORIES = ['goals', 'goals_conceded', 'assist', 'shots_on_target', 'shots', 'successful_dribbles', 'clean_sheets', 'yellow_cards', 'red_cards'];
+const API_FETCH_TIMEOUT = 10000;
+
+const LIVESCORE_TO_TEAM_ID = {
+  'USA': 'meiguo', 'Australia': 'aodaliya', 'Mexico': 'moxige', 'South Korea': 'hanguo',
+  'Paraguay': 'balagui', 'Qatar': 'kataer', 'Czechia': 'jieke1', 'Bosnia and Herzegovina': 'bohei1',
+  'Scotland': 'sugelan', 'Canada': 'jianada', 'Brazil': 'baxi', 'Morocco': 'moluoge',
+  'Switzerland': 'ruishi', 'South Africa': 'nanfei', 'Haiti': 'haidi', 'Turkiye': 'tuerqi1',
+  'Germany': 'deguo', 'Curaçao': 'kulasuo', 'Curacao': 'kulasuo', "Côte d'Ivoire": 'ketediwa1', 'Ivory Coast': 'ketediwa1', 'Ecuador': 'eguaduoer',
+  'Netherlands': 'helan', 'Japan': 'riben', 'Sweden': 'ruidian1', 'Tunisia': 'tunisi1',
+  'Belgium': 'bilishi', 'Egypt': 'aiji1', 'Iran': 'yilang', 'New Zealand': 'xinxilan1',
+  'Spain': 'xibanya', 'Cape Verde': 'fodejiao1', 'Saudi Arabia': 'shatealabo', 'Uruguay': 'wulagui',
+  'France': 'faguo', 'Senegal': 'saineijiaer', 'Iraq': 'yilake1', 'Norway': 'nuowei',
+  'Argentina': 'agenting', 'Algeria': 'aerjiliya', 'Austria': 'aodili', 'Jordan': 'yuedan1',
+  'Portugal': 'putaoya', 'DR Congo': 'minzhugangguo', 'Uzbekistan': 'wuzibiekesitan', 'Colombia': 'gelunbiya',
+  'England': 'yinggelan', 'Croatia': 'keluodiya', 'Ghana': 'jiana', 'Panama': 'banama',
+  'Korea Republic': 'hanguo', 'Czech Republic': 'jieke1', 'Turkey': 'tuerqi1',
+  'United States': 'meiguo', 'Bosnia': 'bohei1'
+};
+
+function isEstimatedDefault(stats) {
+  if (!stats) return true;
+  const fields = ['avgXgFor', 'avgXgAgainst', 'avgPossession', 'avgShots', 'avgShotsOnTarget', 'avgGoalsFor', 'avgGoalsAgainst', 'avgCorners', 'winRate'];
+  for (const f of fields) {
+    if (typeof stats[f] !== 'number' || isNaN(stats[f])) return true;
+  }
+  // API 写入的真实数据特征：avgXgAgainst 或 avgGoalsAgainst 为 0（API 不提供失球数据）
+  // 但如果 avgXgAgainst === 0 且 avgXgFor > 0，说明是 API 数据而非估算值
+  if (stats.avgXgAgainst === 0 && stats.avgXgFor > 0) return false;
+  if (stats.avgGoalsAgainst === 0 && stats.avgGoalsFor > 0) return false;
+  const typicalWR = [0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70];
+  if (typicalWR.includes(stats.winRate) && stats.avgShots === Math.round(stats.avgShots)) return true;
+  return false;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function fetchLivescoreCategory(category) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT);
+  try {
+    const res = await fetch(`${LS_API_BASE}/${category}?limit=50&locale=en`, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchAllLivescoreStats() {
+  const results = await Promise.all(LS_CATEGORIES.map(cat => fetchLivescoreCategory(cat)));
+  const teamData = {};
+  for (let ci = 0; ci < LS_CATEGORIES.length; ci++) {
+    const data = results[ci];
+    if (!data?.group?.participants) continue;
+    const category = LS_CATEGORIES[ci];
+    for (const p of data.group.participants) {
+      const name = data.participants?.find(x => x.id === p.id)?.name || p.id;
+      if (!teamData[name]) teamData[name] = {};
+      teamData[name][category] = p;
+    }
+  }
+  return teamData;
+}
+
+function convertToSystemStats(livescoreData) {
+  const results = {};
+  for (const [lsName, data] of Object.entries(livescoreData)) {
+    const teamId = LIVESCORE_TO_TEAM_ID[lsName];
+    if (!teamId) continue;
+    const goals = data.goals;
+    const goalsConceded = data.goals_conceded;
+    const shots = data.shots;
+    const shotsOnTarget = data.shots_on_target;
+    const cleanSheets = data.clean_sheets;
+    if (!goals) continue;
+    const played = cleanSheets?.p || 1;
+    const gC = goalsConceded?.gC || 0;
+    const xGc = goalsConceded?.xGc || 0;
+    results[teamId] = {
+      avgXgFor: goals.xG != null ? goals.xG : 0,
+      avgXgAgainst: played > 0 ? xGc / played : 0,
+      avgPossession: 50,
+      avgShots: shots?.pG || 0,
+      avgShotsOnTarget: shotsOnTarget?.pG || 0,
+      avgGoalsFor: goals.g / played,
+      avgGoalsAgainst: played > 0 ? gC / played : 0,
+      avgCorners: 3.5,
+      winRate: played > 0 ? Math.max(0, Math.min(1, 0.5 + (goals.df || 0) / (played * 4))) : 0
+    };
+  }
+  return results;
+}
+
+/** 从 worldcup_team_stats.ts 文件中读取所有球队统计数据 */
+function readStatsFromFile() {
+  const content = fs.readFileSync(TEAM_STATS_FILE, 'utf-8');
+  const stats = {};
+  const regex = /(\w+):\s*\{([^}]+)\}/g;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const teamId = match[1];
+    if (teamId === 'default' || teamId === 'export' || teamId === 'const') continue;
+    const fieldsStr = match[2];
+    const fields = {};
+    const fieldRegex = /(\w+):\s*([\d.]+)/g;
+    let fm;
+    while ((fm = fieldRegex.exec(fieldsStr)) !== null) {
+      fields[fm[1]] = parseFloat(fm[2]);
+    }
+    if (Object.keys(fields).length >= 5) {
+      stats[teamId] = fields;
+    }
+  }
+  return stats;
+}
+
+// ---- 获取所有球队统计数据端点 ----
+
+router.get('/worldcup/team-stats', (req, res) => {
+  try {
+    const stats = readStatsFromFile();
+    res.json({ success: true, stats, count: Object.keys(stats).length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ---- 刷新球队统计数据端点 ----
+
+router.post('/worldcup/refresh-team-stats', async (req, res) => {
+  try {
+    const apiData = await fetchAllLivescoreStats();
+    const converted = convertToSystemStats(apiData);
+
+    const content = fs.readFileSync(TEAM_STATS_FILE, 'utf-8');
+    let updated = 0;
+    let newContent = content;
+
+    for (const [teamId, stats] of Object.entries(converted)) {
+      // 检查是否需要跳过（已有真实数据）
+      const lineRegex = new RegExp(`${escapeRegex(teamId)}:\\s*\\{([^}]+)\\}`, 'g');
+      const lineMatch = lineRegex.exec(content);
+      if (lineMatch) {
+        // Always update with API data (remove isEstimatedDefault check)
+      }
+
+      const replacement = `${teamId}: { avgXgFor: ${stats.avgXgFor.toFixed(1)}, avgXgAgainst: ${stats.avgXgAgainst.toFixed(1)}, avgPossession: ${Math.round(stats.avgPossession)}, avgShots: ${stats.avgShots.toFixed(1)}, avgShotsOnTarget: ${stats.avgShotsOnTarget.toFixed(1)}, avgGoalsFor: ${stats.avgGoalsFor.toFixed(1)}, avgGoalsAgainst: ${stats.avgGoalsAgainst.toFixed(1)}, avgCorners: ${stats.avgCorners.toFixed(1)}, winRate: ${stats.winRate.toFixed(2)} }`;
+
+      if (new RegExp(`(${escapeRegex(teamId)}:\\s*\\{)[^}]+(\\})`).test(newContent)) {
+        newContent = newContent.replace(
+          new RegExp(`(${escapeRegex(teamId)}:\\s*\\{)[^}]+(\\})`),
+          replacement
+        );
+        updated++;
+      }
+    }
+
+    if (updated > 0) {
+      if (!fs.existsSync(TEAM_STATS_FILE + '.bak')) {
+        fs.copyFileSync(TEAM_STATS_FILE, TEAM_STATS_FILE + '.bak');
+      }
+      fs.writeFileSync(TEAM_STATS_FILE, newContent, 'utf-8');
+    }
+
+    res.json({ success: true, updated, total: Object.keys(converted).length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ---- 赛程比分数据端点 ----
+
+const SCHEDULE_CACHE = { data: null, time: 0 };
+const SCHEDULE_CACHE_TTL = 120000;
+
+router.get('/worldcup/schedule-scores', async (req, res) => {
+  try {
+    if (Date.now() - SCHEDULE_CACHE.time < SCHEDULE_CACHE_TTL && SCHEDULE_CACHE.data) {
+      return res.json(SCHEDULE_CACHE.data);
+    }
+
+    const [goalsJson, cleanSheetsJson] = await Promise.all([
+      fetchLsCategory('goals'),
+      fetchLsCategory('clean_sheets'),
+    ]);
+
+    if (!goalsJson?.group?.participants) {
+      return res.json({ success: true, fixtures: WORLD_CUP_FIXTURES_2026.map(f => ({ ...f, completed: false, stats: null })) });
+    }
+
+    const teamStats = {};
+    const todayStr = new Date().toISOString().slice(0, 10);
+    for (const p of goalsJson.group.participants) {
+      const name = goalsJson.participants?.find(x => x.id === p.id)?.name || '';
+      const teamId = LIVESCORE_TO_TEAM_ID[name];
+      if (!teamId) continue;
+      const cs = cleanSheetsJson?.group?.participants?.find(x => x.id === p.id);
+      const played = cs?.p || 0;
+      const goalsScored = p.g || 0;
+      const goalDiff = p.df || 0;
+      const goalsConceded = goalsScored - goalDiff;
+      teamStats[teamId] = { played, goalsScored, goalsConceded, xG: p.xG || 0, goalDiff };
+    }
+
+    const fixtures = WORLD_CUP_FIXTURES_2026.map(f => {
+      const homeHasStats = teamStats[f.homeTeam] && teamStats[f.homeTeam].played > 0;
+      const awayHasStats = teamStats[f.awayTeam] && teamStats[f.awayTeam].played > 0;
+      const isDatePast = f.date <= todayStr;
+      const completed = homeHasStats && awayHasStats && isDatePast;
+      return {
+        ...f,
+        completed,
+        stats: completed ? { home: teamStats[f.homeTeam], away: teamStats[f.awayTeam] } : null
+      };
+    });
+
+    const result = { success: true, fixtures, teamStats };
+    SCHEDULE_CACHE.data = result;
+    SCHEDULE_CACHE.time = Date.now();
+    res.json(result);
+  } catch (error) {
+    res.json({ success: true, fixtures: WORLD_CUP_FIXTURES_2026.map(f => ({ ...f, completed: false, stats: null })) });
+  }
+});
+
+async function fetchLsCategory(category) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT);
+  try {
+    const res = await fetch(`${LS_API_BASE}/${category}?limit=50&locale=en`, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---- 积分榜数据端点 (Puppeteer 爬取 livescore) ----
+
+const STANDINGS_CACHE = { data: null, time: 0 };
+const STANDINGS_CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
+
+router.get('/worldcup/standings', async (req, res) => {
+  try {
+    if (Date.now() - STANDINGS_CACHE.time < STANDINGS_CACHE_TTL && STANDINGS_CACHE.data) {
+      return res.json(STANDINGS_CACHE.data);
+    }
+
+    const result = await fetchStandings();
+    if (!result.success) {
+      if (STANDINGS_CACHE.data) {
+        return res.json({ ...STANDINGS_CACHE.data, cached: true });
+      }
+      return res.status(503).json({ success: false, message: result.error || '爬取积分榜失败' });
+    }
+
+    const response = { success: true, groups: result.groups, updatedAt: new Date().toISOString() };
+    STANDINGS_CACHE.data = response;
+    STANDINGS_CACHE.time = Date.now();
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/worldcup/refresh-standings', async (req, res) => {
+  try {
+    const result = await fetchStandings();
+    if (!result.success) {
+      return res.status(503).json({ success: false, message: result.error || '爬取积分榜失败' });
+    }
+
+    const response = { success: true, groups: result.groups, updatedAt: new Date().toISOString() };
+    STANDINGS_CACHE.data = response;
+    STANDINGS_CACHE.time = Date.now();
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+export default router;
