@@ -2,7 +2,7 @@ import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus, getPollingAnalytics } from "../services/cornerService.js";
 import { getCornerHistory, saveCornerHistory, clearHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet, retryBet, getBetQueueStatus } from "../services/cornerBetService.js";
-import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag } from "../services/cornerCrawler.js";
+import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag, extractBalance } from "../services/cornerCrawler.js";
 import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
@@ -214,6 +214,30 @@ router.get("/corner/status", async (req, res) => {
   } catch (err) {
     console.error("[cornerRoutes] /corner/status error:", err.message);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== GET /api/corner/balance ========================
+router.get("/corner/balance", async (req, res) => {
+  try {
+    // 尝试从浏览器提取真实余额
+    const { getSharedPage } = await import("../services/browserPool.js");
+    const page = getSharedPage();
+    if (page) {
+      const balance = await extractBalance(page);
+      if (balance !== null) {
+        return res.json({ success: true, balance });
+      }
+    }
+    // 浏览器不可用或提取失败，返回缓存余额
+    const cachedBalance = getBalance();
+    if (cachedBalance) {
+      return res.json({ success: true, balance: cachedBalance });
+    }
+    res.json({ success: false, error: "无法获取余额，请确认已登录", balance: 0 });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/balance error:", err.message);
+    res.status(500).json({ success: false, error: err.message, balance: 0 });
   }
 });
 
@@ -567,6 +591,25 @@ router.delete("/corner/history", async (req, res) => {
   } catch (err) {
     console.error("[cornerRoutes] /corner/history DELETE error:", err.message);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== DELETE /api/corner/reset-backtest ========================
+router.delete("/corner/reset-backtest", async (req, res) => {
+  try {
+    const { run } = await import("../dbService.js");
+    await run("DELETE FROM corner_simulation_records");
+    console.log("[cornerRoutes] 回测数据已清除");
+    res.json({ success: true, message: "回测数据已清除" });
+  } catch (err) {
+    const msg = err.message || String(err);
+    // 表不存在等情况下也视为成功（本来就没有数据）
+    if (msg.includes("no such table") || msg.includes("does not exist")) {
+      console.log("[cornerRoutes] 无回测数据表，跳过清理");
+      return res.json({ success: true, message: "无回测数据" });
+    }
+    console.error("[cornerRoutes] /corner/reset-backtest error:", msg);
+    res.status(500).json({ success: false, error: msg });
   }
 });
 

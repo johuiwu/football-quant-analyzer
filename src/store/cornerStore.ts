@@ -135,6 +135,9 @@ export interface CornerStore {
   setHistoryFilterMatchId: (matchId: string | null) => void;
   setBacktestResults: (results: Record<number, BacktestStats>) => void;
   updateBalance: (balance: number) => void;
+  balanceLastUpdated: number | null;
+  isBalanceLoading: boolean;
+  refreshBalance: () => Promise<void>;
   startMonitor: () => Promise<void>;
   stopMonitor: () => void;
   refreshData: () => Promise<void>;
@@ -282,6 +285,8 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   betConfirmRequired: false,
   scheduleFreshLoaded: false,
   autoRefresh: false,
+  balanceLastUpdated: null,
+  isBalanceLoading: false,
 
   setStrategies: (strategies) => { set({ strategies }); syncStrategiesToBackend(strategies); },
   updateStrategy: (id, updates) => {
@@ -356,6 +361,24 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     set((state) => ({
       settings: { ...state.settings, balance }
     })),
+
+  refreshBalance: async () => {
+    set({ isBalanceLoading: true });
+    try {
+      const res = await fetch('/api/corner/balance');
+      const data = await res.json();
+      if (data.success && data.balance != null) {
+        set((state) => ({
+          settings: { ...state.settings, balance: data.balance },
+          balanceLastUpdated: Date.now(),
+        }));
+      }
+    } catch (err) {
+      console.error('[cornerStore] 刷新余额失败:', err);
+    } finally {
+      set({ isBalanceLoading: false });
+    }
+  },
 
   setActiveCornerTab: (tab) => set({ activeCornerTab: tab }),
 
@@ -612,7 +635,8 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     accountConfig: state.accountConfig,
     settings: state.settings,
     autoRefresh: state.autoRefresh,
-    isLoggedIn: state.isLoggedIn
+    isLoggedIn: state.isLoggedIn,
+    balanceLastUpdated: state.balanceLastUpdated,
   })
 }));
 

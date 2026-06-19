@@ -18,7 +18,7 @@ function cacheKey(match, strategies) {
     as: match.awayScore ?? 0,
     hc: match.homeCorners ?? 0,
     ac: match.awayCorners ?? 0,
-    ou: match.cornerOU ? { ro: match.cornerOU.overOdds, ru: match.cornerOU.underOdds } : null,
+    ou: match.cornerOU ? { ro: match.cornerOU.overOdds, ru: match.cornerOU.underOdds, h: match.cornerOU.handicap } : null,
     strats: strategyIds,
   });
   return fingerprint;

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Settings, RotateCcw, ChevronDown, ChevronUp, Power, BarChart3 } from "lucide-react";
+import { Settings, RotateCcw, ChevronDown, ChevronUp, Power, BarChart3, Trash2 } from "lucide-react";
 import { useCornerStore, CornerStrategy, BacktestStats } from "../../store/cornerStore";
 import SettingsPanel from "./SettingsPanel";
 
@@ -15,6 +15,8 @@ export default function StrategyConfigPanel() {
   const setBacktestResults = useCornerStore((s) => s.setBacktestResults);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [backtesting, setBacktesting] = useState(false);
+  const [isSimulated, setIsSimulated] = useState(false);
+  const [simulatedWarning, setSimulatedWarning] = useState("");
 
   const toggleExpand = (id: number) => {
     setExpandedIds((prev) => {
@@ -57,6 +59,23 @@ export default function StrategyConfigPanel() {
     }
   };
 
+  const handleResetBacktest = async () => {
+    if (!window.confirm("确定要清除所有运行回测生成的模拟数据吗？此操作不可恢复！")) return;
+    try {
+      const res = await fetch("/api/corner/reset-backtest", { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setBacktestResults({});
+      } else {
+        console.error("[StrategyConfig] 重置回测失败:", data.error);
+        alert("重置失败: " + (data.error || "未知错误"));
+      }
+    } catch (err) {
+      console.error("[StrategyConfig] 重置回测数据失败:", err);
+      alert("重置请求失败，请检查后端服务是否运行");
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* 头部 */}
@@ -73,6 +92,14 @@ export default function StrategyConfigPanel() {
           >
             <BarChart3 className="w-3 h-3" />
             {backtesting ? "回测中..." : "运行回测"}
+          </button>
+          <button type="button"
+            onClick={handleResetBacktest}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-rose-900/50 hover:bg-rose-800/50 text-rose-400 rounded-lg border border-rose-800/50 transition-colors"
+            title="清除所有回测生成的模拟数据"
+          >
+            <Trash2 className="w-3 h-3" />
+            重置回测数据
           </button>
           <button type="button"
             onClick={handleResetDefaults}

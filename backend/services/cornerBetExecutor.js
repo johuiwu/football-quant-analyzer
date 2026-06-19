@@ -98,11 +98,24 @@ export async function executeBet(betData) {
     return { success: false, error: "未登录，请先登录 hga038.com" };
   }
 
-  // 2. 获取共享页面并验证实际登录状态
-  const page = getSharedPage();
+  // 2. 获取共享页面（增加恢复机制）
+  let page = getSharedPage();
   if (!page) {
-    console.error("[BetExecutor] 浏览器页面不可用");
-    return { success: false, error: "浏览器页面不可用" };
+    // 尝试重新获取或创建页面
+    console.log("[BetExecutor] 共享页面不可用，尝试恢复...");
+    try {
+      const bpModule = await import("./browserPool.js");
+      if (typeof bpModule.ensureSharedPage === "function") {
+        page = await bpModule.ensureSharedPage();
+      }
+    } catch (e) {
+      console.warn("[BetExecutor] 页面恢复失败:", e.message);
+    }
+    if (!page) {
+      console.error("[BetExecutor] 浏览器页面不可用，无法恢复");
+      return { success: false, error: "浏览器页面不可用，请确保已登录" };
+    }
+    console.log("[BetExecutor] 页面恢复成功");
   }
 
   // 验证页面是否确实处于已登录状态
@@ -141,8 +154,8 @@ export async function executeBet(betData) {
     });
 
     if (!hasCornerMatches) {
-      // 角球页面无比赛，回退到让球/大小页面（仅展示，不执行投注）
-      console.log("[BetExecutor] 角球页面无比赛，回退到让球/大小页面");
+      // 角球页面无比赛，回退到让球/大小页面并尝试在该页面执行投注
+      console.log("[BetExecutor] 角球页面无比赛，回退到让球/大小页面尝试投注");
       try {
         await page.evaluate(() => {
           const tabRnou = document.getElementById("tab_rnou");
@@ -158,13 +171,15 @@ export async function executeBet(betData) {
         });
         await sleep(2000);
       } catch (e) {}
-      return { success: false, error: "角球页面无可用比赛" };
+      // 不再直接返回失败，继续执行后续比赛查找+赔率匹配+投注逻辑
+      // 若让球/大小页面也无比赛，后续 match_not_found 会返回失败
     }
 
     // 4+5. 查找比赛并点击匹配方向的赔率
     const betPlaced = await page.evaluate((data) => {
       const { matchName, odds, betDirection } = data;
-      const parts = matchName.split(" vs ");
+      // 支持多种分隔符: " vs ", " v ", " vs.", " v.", " - ", " — "
+      const parts = matchName.split(/\s+(?:vs?\.?|[-—])\s+/i);
       const homeTeam = (parts[0] || "").trim();
       const awayTeam = (parts[1] || "").trim();
 
@@ -180,17 +195,18 @@ export async function executeBet(betData) {
       }
       if (!targetRow) return { success: false, reason: "match_not_found" };
 
-      // 精确选择器：优先 span.text_odds
-      const selectors = ["span.text_odds", "[class*='text_odds']", "[class*='odd']", "[class*='price']", "[class*='ior']"];
+      // 精确选择器：优先 span.text_odds，扩展更多选择器以增强容错
+      const selectors = ["span.text_odds", "[class*='text_odds']", "[class*='odd']", "[class*='price']", "[class*='ior']", "[class*='bet']", "[data-odds]"];
       let allOdds = [];
       for (const sel of selectors) {
         const els = targetRow.querySelectorAll(sel);
         if (els.length > 0) { allOdds = Array.from(els); break; }
       }
       if (allOdds.length === 0) {
+        // 兜底：支持2-3位小数赔率
         allOdds = Array.from(targetRow.querySelectorAll("span, a")).filter(el => {
           const t = (el.textContent || "").trim();
-          return /^\d+\.\d{2}$/.test(t);
+          return /^\d+\.\d{2,3}$/.test(t);
         });
       }
 

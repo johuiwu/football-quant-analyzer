@@ -38,6 +38,9 @@ let lastEmptyLogTime = 0;
 const POLL_INTERVAL = POLL_CONFIG.interval;
 const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
 
+// ★ 自动投注去重锁：防止 Gismo 回调与 pollOnce 同时触发重复投注处理
+const processingMatchIds = new Set();
+
 // ======================== 轮询分析统计 ========================
 const pollingAnalytics = {
   sessionStartMs: Date.now(),
@@ -165,11 +168,8 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
           const strategy = activeStrategies.find(s => s.id === sid);
           const actualOdds = resolveStrategyOdds(match, strategy || {});
           if (actualOdds <= 0) {
-            // 仍保存触发记录，标记赔率缺失，等待下次轮询赔率更新后执行投注
-            console.warn(`[cornerService] 策略${sid}触发但赔率为0，保存触发记录待赔率更新, matchId=${match.matchId}`);
-            saveCornerTrigger(match, sid, 0).catch(e =>
-              console.error("[cornerService] 保存触发记录失败:", e.message)
-            );
+            // 赔率为0时不保存触发记录，仅输出警告日志（与 processAutoBetsForMatches 行为一致）
+            console.warn(`[cornerService] 策略${sid}触发但赔率为0，跳过触发记录和投注, matchId=${match.matchId}`);
             continue;
           }
           saveCornerTrigger(match, sid, actualOdds).catch(e =>
@@ -194,9 +194,19 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
  */
 async function processAutoBetsForMatches(matches) {
   const betConfig = getBetConfig();
+  // ★ 去重锁：过滤掉正在处理中的比赛
+  const matchesToProcess = matches.filter(m => !processingMatchIds.has(m.matchId));
+  if (matchesToProcess.length === 0) return;
+
+  // 注册处理中的比赛
+  for (const m of matchesToProcess) {
+    processingMatchIds.add(m.matchId);
+  }
+
+  try {
   // ★ 不再提前 return：即使 isRealMode=false 或 autoBetEnabled=false，
   // 也要进入投注函数生成 skipped 记录，让用户在投注记录中看到策略触发了但未执行
-  for (const match of matches) {
+  for (const match of matchesToProcess) {
     if (betConfig.trackedMatchIds.length > 0 && !betConfig.trackedMatchIds.includes(match.matchId)) {
       console.log("[cornerService] 比赛不在追踪白名单中: matchId=" + match.matchId);
       continue;
@@ -263,6 +273,12 @@ async function processAutoBetsForMatches(matches) {
     processBetQueue().catch(e =>
       console.error("[cornerService] 投注队列处理失败:", e.message)
     );
+  }
+  } finally {
+    // ★ 清理处理中的比赛（确保即使出错也能释放锁）
+    for (const m of matchesToProcess) {
+      processingMatchIds.delete(m.matchId);
+    }
   }
 }
 
@@ -557,12 +573,12 @@ function mapMatchToCornerFormat(match) {
     awayTeam: match.awayTeam || "",
     league: match.league || "",
     time: match.time || "",
-    elapsedMinutes: match.elapsedMinutes || 0,
-    homeScore: match.homeScore || 0,
-    awayScore: match.awayScore || 0,
-    totalCorners: match.totalCorners || 0,
-    homeCorners: match.homeCorners || 0,
-    awayCorners: match.awayCorners || 0,
+    elapsedMinutes: match.elapsedMinutes ?? 0,
+    homeScore: match.homeScore ?? 0,
+    awayScore: match.awayScore ?? 0,
+    totalCorners: match.totalCorners ?? 0,
+    homeCorners: match.homeCorners ?? 0,
+    awayCorners: match.awayCorners ?? 0,
     cornerHandicap: match.cornerHandicap != null ? parseFloat(match.cornerHandicap) : 0,
     cornerOdds: match.cornerOdds != null ? parseFloat(match.cornerOdds) : 0,
     cornerOU: match.cornerOU || null,

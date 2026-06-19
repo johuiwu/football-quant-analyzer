@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useEffect } from "react";
 import { User, Settings, DollarSign } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
 import { ErrorBoundary } from "../ErrorBoundary";
@@ -6,55 +6,66 @@ import { ErrorBoundary } from "../ErrorBoundary";
 export default function SettingsPanel() {
   const settings = useCornerStore((s) => s.settings);
   const setSettings = useCornerStore((s) => s.setSettings);
-  const updateBalance = useCornerStore((s) => s.updateBalance);
   const isLoggedIn = useCornerStore((s) => s.isLoggedIn);
-  const isMonitoring = useCornerStore((s) => s.isMonitoring);
   const username = useCornerStore((s) => s.settings.hgUsername || s.accountConfig.username);
+  const balance = useCornerStore((s) => s.settings.balance);
+  const isLoadingBalance = useCornerStore((s) => s.isBalanceLoading);
+  const balanceLastUpdated = useCornerStore((s) => s.balanceLastUpdated);
+  const refreshBalance = useCornerStore((s) => s.refreshBalance);
 
   const inputClass = "w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 transition-colors";
   const labelClass = "text-[10px] text-slate-400 mb-1 block";
   const cardClass = "bg-[#0F1424] rounded-xl border border-slate-800/80 p-4";
 
-  // 定期刷新余额
+  // 组件挂载时自动刷新余额（2分钟节流）
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval>;
-    if (isMonitoring) {
-      timer = setInterval(async () => {
-        try {
-          const res = await fetch("/api/corner/status");
-          const data = await res.json();
-          if (data.success && data.data.balance) {
-            updateBalance(data.data.balance);
-          }
-        } catch {}
-      }, 30000);
+    const now = Date.now();
+    if (!balanceLastUpdated || (now - balanceLastUpdated) > 120000) {
+      refreshBalance();
     }
-    return () => { if (timer) clearInterval(timer); };
-  }, [isMonitoring, updateBalance]);
+  }, []);
 
   return (
     <div className="space-y-4">
       {/* ===== 登录状态（只读） ===== */}
       <ErrorBoundary fallback={<div className={cardClass}><div className="text-rose-400 text-xs">状态组件异常</div></div>}>
-        <div className={`${cardClass} flex items-center gap-3`}>
-          <User className="w-4 h-4 text-emerald-400" />
-          <div className="flex-1">
-            <h4 className="text-sm font-semibold text-slate-200 mb-1">登录状态</h4>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${isLoggedIn ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
-              <span className="text-xs text-slate-300">
-                当前账号：{isLoggedIn ? username || "(已登录)" : "未登录"}
-              </span>
-            </div>
+        <div className={cardClass}>
+          <div className="flex items-center gap-2 mb-3">
+            <User className="w-4 h-4 text-emerald-400" />
+            <h4 className="text-sm font-semibold text-slate-200">登录状态</h4>
           </div>
-          {isLoggedIn && settings.balance > 0 && (
-            <div className="flex items-center gap-1 text-right">
-              <DollarSign className="w-3 h-3 text-amber-400" />
-              <span className="text-sm font-mono font-bold text-amber-400">
-                ¥{settings.balance.toFixed(2)}
-              </span>
+          <div className="space-y-2 mb-4">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 text-sm">当前账号</span>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isLoggedIn ? "bg-emerald-400 animate-pulse" : "bg-slate-600"}`} />
+                <span className="text-white text-sm font-medium">{isLoggedIn ? username || "(已登录)" : "未登录"}</span>
+              </div>
             </div>
-          )}
+            {isLoggedIn && (
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400 text-sm">账户余额</span>
+              <div className="flex items-center gap-2">
+                {isLoadingBalance ? (
+                  <div className="w-4 h-4 border-2 border-t-transparent border-green-500 rounded-full animate-spin"></div>
+                ) : balance > 0 ? (
+                  <span className={`text-sm font-mono font-bold ${balance > 100 ? 'text-green-400' : 'text-red-400'}`}>
+                    ¥{balance.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="text-slate-500 text-sm">未加载</span>
+                )}
+                <button
+                  onClick={refreshBalance}
+                  disabled={isLoadingBalance}
+                  className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded text-slate-300 transition"
+                >
+                  刷新
+                </button>
+              </div>
+            </div>
+            )}
+          </div>
         </div>
       </ErrorBoundary>
 

@@ -244,8 +244,8 @@ function mergeByName(rbMatches, rcnMatches, rrnouMatches = []) {
       leagueName: rb?.leagueName || rcn?.leagueName || rrnou?.leagueName || "",
       time: rb?.time || rcn?.time || rrnou?.time || "",
       elapsedMinutes: rb?.elapsedMinutes || rcn?.elapsedMinutes || rrnou?.elapsedMinutes || 0,
-      homeScore: rb?.homeScore || rcn?.homeScore || rrnou?.homeScore || 0,
-      awayScore: rb?.awayScore || rcn?.awayScore || rrnou?.awayScore || 0,
+      homeScore: rb?.homeScore || 0,
+      awayScore: rb?.awayScore || 0,
 
       // 角球数据 (来自 rcn)
       totalCorners: rcn?.totalCorners || 0,
