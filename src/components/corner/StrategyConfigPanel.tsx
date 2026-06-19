@@ -42,6 +42,9 @@ export default function StrategyConfigPanel() {
 
   const runBacktest = async () => {
     setBacktesting(true);
+    setBacktestResults({});
+    setIsSimulated(false);
+    setSimulatedWarning("");
     try {
       const res = await fetch("/api/corner/backtest", {
         method: "POST",
@@ -51,6 +54,8 @@ export default function StrategyConfigPanel() {
       const data = await res.json();
       if (data.success && data.stats) {
         setBacktestResults(data.stats);
+        setIsSimulated(data.simulated !== false);
+        setSimulatedWarning(data.warning || "");
       }
     } catch (err) {
       console.error("回测失败:", err);
@@ -117,8 +122,8 @@ export default function StrategyConfigPanel() {
 
       {/* 左右分栏 */}
       <div className="flex flex-col lg:flex-row gap-4">
-        {/* ===== 左栏：策略卡片 ===== */}
-        <div className="lg:w-2/3 space-y-3">
+        {/* ===== 左栏：策略卡片（两列网格） ===== */}
+        <div className="lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-3">
           {strategies.map((s) => {
             const isExpanded = expandedIds.has(s.id);
             const stats: BacktestStats | undefined = backtestResults[s.id];
@@ -157,6 +162,17 @@ export default function StrategyConfigPanel() {
                 {/* 统计看板（回测后有数据时显示） */}
                 {stats && (
                   <div className="px-3 pb-3">
+                    {isSimulated ? (
+                      <div className="mb-2 px-2 py-1.5 bg-amber-900/30 border border-amber-700/40 rounded text-[10px] text-amber-400 flex items-center gap-1.5">
+                        <span className="font-bold">模拟数据</span>
+                        <span className="text-amber-500/80">— {simulatedWarning || "回测基于随机模拟生成，不代表真实结果"}</span>
+                      </div>
+                    ) : (
+                      <div className="mb-2 px-2 py-1.5 bg-emerald-900/30 border border-emerald-700/40 rounded text-[10px] text-emerald-400 flex items-center gap-1.5">
+                        <span className="font-bold">真实数据</span>
+                        <span className="text-emerald-500/80">— 基于历史投注记录统计</span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div className="bg-slate-800/50 p-2 rounded">
                         <div className="text-slate-500 text-[10px]">触发次数</div>
