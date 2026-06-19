@@ -177,6 +177,7 @@ export default function CornerHistoryChart() {
 
     return (
       <>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-5">
           <h4 className="text-xs font-medium text-slate-300 flex items-center gap-1.5 mb-4">
             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
@@ -215,6 +216,7 @@ export default function CornerHistoryChart() {
               );
             })}
           </div>
+        </div>
         </div>
 
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-hidden">
