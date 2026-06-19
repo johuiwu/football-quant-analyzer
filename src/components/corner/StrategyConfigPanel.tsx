@@ -123,7 +123,7 @@ export default function StrategyConfigPanel() {
       {/* 左右分栏 */}
       <div className="flex flex-col lg:flex-row gap-4">
         {/* ===== 左栏：策略卡片（两列网格） ===== */}
-        <div className="lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+        <div className="lg:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
           {strategies.map((s) => {
             const isExpanded = expandedIds.has(s.id);
             const stats: BacktestStats | undefined = backtestResults[s.id];
