@@ -150,7 +150,7 @@
     },
     "publish": {
       "provider": "generic",
-      "url": "https://cdn.jsdelivr.net/gh/johuiwu/football-quant-analyzer@latest/update"
+      "url": "https://gitee.com/johuiwu/football-quant-analyzer/raw/main/update"
     }
   }
 }
