@@ -186,9 +186,12 @@ async function detectProxy() {
 
 // 先直连检查更新，失败后自动切换代理重试（Gitee 国内通常无需代理）
 let proxyRetryAttempted = false;
+let checkRetryCount = 0;
+const MAX_CHECK_RETRIES = 1; // Gitee Raw 偶发不稳定，失败后重试 1 次
 
-async function checkForUpdatesWithProxyRetry() {
+async function checkForUpdatesWithRetry() {
   try {
+    checkRetryCount = 0;
     await autoUpdater.checkForUpdatesAndNotify();
   } catch (err) {
     // checkForUpdatesAndNotify 可能不抛异常，错误通过 error 事件处理
@@ -201,6 +204,15 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
 
+  // 下载重试配置：ghfast.top 大文件下载可能中断，自动重试
+  const MAX_DOWNLOAD_RETRIES = 3;
+  let downloadRetryCount = 0;
+  let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
+
+  autoUpdater.requestHeaders = {
+    'Cache-Control': 'no-cache',
+  };
+
   // 首次直连检查更新
   autoUpdater.checkForUpdatesAndNotify();
 
@@ -211,6 +223,8 @@ function setupAutoUpdater() {
 
   autoUpdater.on("update-available", (info) => {
     console.log("[autoUpdater] 发现新版本:", info.version);
+    lastUpdateInfo = info; // 缓存更新信息，用于下载重试
+    downloadRetryCount = 0; // 重置下载重试计数
     if (mainWindow) mainWindow.webContents.send('update-available', info);
   });
 
@@ -245,7 +259,38 @@ function setupAutoUpdater() {
     console.error("[autoUpdater] 更新出错:", msg);
 
     const isNetworkError = msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('net::ERR') ||
-      msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED');
+      msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') ||
+      msg.includes('ECONNRESET') || msg.includes('502') || msg.includes('503');
+
+    // 风险二：下载中断自动重试（最多 3 次，间隔 3 秒）
+    const isDownloadError = isNetworkError && lastUpdateInfo &&
+      downloadRetryCount < MAX_DOWNLOAD_RETRIES;
+    if (isDownloadError) {
+      downloadRetryCount++;
+      console.log(`[autoUpdater] 下载中断，${3}s 后重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`);
+      if (mainWindow) mainWindow.webContents.send('update-error', {
+        message: `下载中断，正在自动重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`,
+        isRetrying: true
+      });
+      setTimeout(() => {
+        autoUpdater.downloadUpdate();
+      }, 3000);
+      return;
+    }
+
+    // 风险一：Gitee Raw 偶发不稳定，网络错误时自动重试 1 次（间隔 2 秒）
+    if (isNetworkError && checkRetryCount < MAX_CHECK_RETRIES) {
+      checkRetryCount++;
+      console.log(`[autoUpdater] 网络错误，${2}s 后重试检查更新 (${checkRetryCount}/${MAX_CHECK_RETRIES})...`);
+      if (mainWindow) mainWindow.webContents.send('update-error', {
+        message: `网络连接不稳定，正在自动重试 (${checkRetryCount}/${MAX_CHECK_RETRIES})...`,
+        isRetrying: true
+      });
+      setTimeout(() => {
+        autoUpdater.checkForUpdatesAndNotify();
+      }, 2000);
+      return;
+    }
 
     // 网络错误且尚未尝试过代理重试 → 自动检测代理并重试
     if (isNetworkError && !proxyRetryAttempted) {
@@ -258,9 +303,9 @@ function setupAutoUpdater() {
           await session.defaultSession.setProxy({ proxyRules: proxy });
           console.log(`[autoUpdater] 已设置代理 ${proxy}，重试检查更新...`);
           if (mainWindow) mainWindow.webContents.send('update-error', {
-            message: `网络连接失败，已自动检测到代理 ${proxy}，正在重试...`
+            message: `网络连接失败，已自动检测到代理 ${proxy}，正在重试...`,
+            isRetrying: true
           });
-          // 短暂延迟后重试
           setTimeout(() => {
             autoUpdater.checkForUpdatesAndNotify();
           }, 1000);
@@ -273,16 +318,20 @@ function setupAutoUpdater() {
       }
     }
 
-    // 最终错误提示
+    // 最终错误提示（含手动下载链接）
     let friendlyMsg = msg;
     if (isNetworkError) {
       friendlyMsg = `无法连接更新服务器，请检查网络连接。\n` +
-        `如网络异常，可手动下载最新版本：\n` +
+        `如持续失败，可手动下载最新版本：\n` +
         `  https://github.com/johuiwu/football-quant-analyzer/releases\n` +
         `（原始错误: ${msg}）`;
     }
 
-    if (mainWindow) mainWindow.webContents.send('update-error', { message: friendlyMsg });
+    if (mainWindow) mainWindow.webContents.send('update-error', {
+      message: friendlyMsg,
+      isRetrying: false,
+      canManualDownload: isNetworkError
+    });
   });
 }
 

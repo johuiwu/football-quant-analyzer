@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { RefreshCw, Download, CheckCircle, AlertCircle, XCircle, ArrowRightCircle } from "lucide-react";
+import { RefreshCw, Download, CheckCircle, AlertCircle, XCircle, ArrowRightCircle, ExternalLink } from "lucide-react";
 import type { UpdateInfo, DownloadProgress } from "../types/electron";
 
 type UpdateStatus = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+
+const MANUAL_DOWNLOAD_URL = 'https://github.com/johuiwu/football-quant-analyzer/releases';
 
 export default function UpdateChecker() {
   const [status, setStatus] = useState<UpdateStatus>('idle');
@@ -10,6 +12,8 @@ export default function UpdateChecker() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [canManualDownload, setCanManualDownload] = useState(false);
 
   const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron;
 
@@ -24,6 +28,8 @@ export default function UpdateChecker() {
 
     window.electronAPI.onUpdateChecking(() => {
       setStatus('checking');
+      setIsRetrying(false);
+      setCanManualDownload(false);
     });
 
     window.electronAPI.onUpdateAvailable((info) => {
@@ -37,7 +43,12 @@ export default function UpdateChecker() {
 
     window.electronAPI.onUpdateError((error) => {
       setErrorMessage(error.message);
-      setStatus('error');
+      setIsRetrying(!!error.isRetrying);
+      setCanManualDownload(!!error.canManualDownload);
+      if (!error.isRetrying) {
+        setStatus('error');
+      }
+      // isRetrying=true 时保持 checking 状态，不切换到 error
     });
 
     window.electronAPI.onDownloadProgress((progress) => {
@@ -59,6 +70,8 @@ export default function UpdateChecker() {
     if (!isElectron) return;
     setStatus('checking');
     setErrorMessage('');
+    setIsRetrying(false);
+    setCanManualDownload(false);
     window.electronAPI.checkForUpdates();
   }, [isElectron]);
 
@@ -72,6 +85,10 @@ export default function UpdateChecker() {
     if (!isElectron) return;
     window.electronAPI.installUpdate();
   }, [isElectron]);
+
+  const handleManualDownload = useCallback(() => {
+    window.open(MANUAL_DOWNLOAD_URL, '_blank');
+  }, []);
 
   if (!isElectron) return null;
 
@@ -100,10 +117,10 @@ export default function UpdateChecker() {
           </button>
         )}
 
-        {status === 'checking' && (
+        {(status === 'checking' || isRetrying) && (
           <div className="flex items-center justify-center gap-2 text-slate-300 text-xs py-2">
             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            正在检查更新...
+            {isRetrying ? '网络不稳定，自动重试中...' : '正在检查更新...'}
           </div>
         )}
 
@@ -166,20 +183,31 @@ export default function UpdateChecker() {
           </div>
         )}
 
-        {status === 'error' && (
+        {status === 'error' && !isRetrying && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-rose-400 text-xs">
               <XCircle className="w-3.5 h-3.5" />
               更新出错
             </div>
             <p className="text-[10px] text-slate-500 break-all">{errorMessage}</p>
-            <button
-              onClick={handleCheckForUpdates}
-              className="w-full flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 rounded-lg transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              重试
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCheckForUpdates}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                重试
+              </button>
+              {canManualDownload && (
+                <button
+                  onClick={handleManualDownload}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs py-2 rounded-lg transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  手动下载
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
