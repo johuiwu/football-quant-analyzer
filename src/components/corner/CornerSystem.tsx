@@ -18,8 +18,7 @@ import {
   DollarSign, 
   FileText, 
   HelpCircle, 
-  Flag, 
-  Cpu,
+  Flag,
   Monitor,
   Check,
   Sparkles
@@ -179,6 +178,10 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ strategies: backendStrategies }),
     }).catch(err => console.error('[CornerSystem] 策略同步失败:', err));
+    // ★ 同步更新 cornerStore 中的策略数据，确保双数据源一致
+    try {
+      useCornerStore.getState().setStrategies(backendStrategies);
+    } catch (_) {}
   };
 
   // 同步投注配置到后端
@@ -221,8 +224,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       handicapLine: -1.25,
       soundEnabled: true,
       autoBet: true,
-      isActive: true,
-      simulatedWinrate: 78.5
+      isActive: true
     },
     {
       id: 'strat_2',
@@ -235,8 +237,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       handicapLine: -0.75,
       soundEnabled: true,
       autoBet: true,
-      isActive: true,
-      simulatedWinrate: 72.4
+      isActive: true
     },
     {
       id: 'strat_3',
@@ -249,8 +250,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       handicapLine: 0.0,
       soundEnabled: true,
       autoBet: true,
-      isActive: true,
-      simulatedWinrate: 81.3
+      isActive: true
     },
     {
       id: 'strat_4',
@@ -263,8 +263,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       handicapLine: 0.0,
       soundEnabled: true,
       autoBet: true,
-      isActive: true,
-      simulatedWinrate: 84.6
+      isActive: true
     },
     {
       id: 'strat_5',
@@ -277,8 +276,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       handicapLine: 0.0,
       soundEnabled: true,
       autoBet: true,
-      isActive: true,
-      simulatedWinrate: 86.2
+      isActive: true
     }
   ]);
 
@@ -400,6 +398,26 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
     try {
       useCornerStore.getState().syncAllSettingsToBackend();
     } catch (_) {}
+    // ★ 从 cornerStore 读取持久化的策略参数，初始化 plan1~plan5
+    try {
+      const storeStrategies = useCornerStore.getState().strategies;
+      if (storeStrategies && storeStrategies.length > 0) {
+        for (const s of storeStrategies) {
+          if (s.id === 1) setPlan1(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, leadGoalsOpponent: s.leadGoals, weakLeadGoalsStrong: s.leadGoalsWeak }));
+          if (s.id === 2) setPlan2(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, leadGoalsOpponent: s.leadGoals, weakLeadGoalsStrong: s.leadGoalsWeak }));
+          if (s.id === 3) setPlan3(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, maxDraws: s.leadGoals }));
+          if (s.id === 4) setPlan4(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, noStrengthLeadGoalsOpponent: s.leadGoals }));
+          if (s.id === 5) setPlan5(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, noStrengthLeadGoalsOpponent: s.leadGoals }));
+        }
+        // 同步 strategies state 的 isActive 状态
+        setStrategies(prev => prev.map(s => {
+          const backendId = s.id === 'strat_1' ? 1 : s.id === 'strat_2' ? 2 : s.id === 'strat_3' ? 3 : s.id === 'strat_4' ? 4 : 5;
+          const storeStrat = storeStrategies.find(ss => ss.id === backendId);
+          if (storeStrat) return { ...s, isActive: storeStrat.enabled };
+          return s;
+        }));
+      }
+    } catch (_) {}
   }, []);
 
   // Interval timer for 5s auto-refresh polling (simulation-step)
@@ -442,21 +460,6 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       const updated = prev.map(s => {
         if (s.id === id) {
           const u = { ...s, [field]: val };
-          let score = 80; // baseline midpoint
-          if (id === 'strat_1') {
-            score += (u.minMin - 35) * 0.2;
-          } else if (id === 'strat_2') {
-            score += (u.minMin - 50) * 0.2;
-          } else if (id === 'strat_3') {
-            score += (u.minMin - 70) * 0.2;
-          } else if (id === 'strat_4') {
-            score += (u.minMin - 60) * 0.2;
-          } else if (id === 'strat_5') {
-            score += (u.minMin - 70) * 0.2;
-          }
-          
-          // Boundaries restriction
-          u.simulatedWinrate = parseFloat(Math.max(50, Math.min(96.8, score)).toFixed(1));
           return u;
         }
         return s;
@@ -534,8 +537,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         handicapLine: plan1.minHandicap,
         soundEnabled: soundEnabledGlobal,
         autoBet: realEnabled,
-        isActive: true,
-        simulatedWinrate: 78.5
+        isActive: true
       },
       {
         id: 'strat_2',
@@ -548,8 +550,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         handicapLine: plan2.minHandicap,
         soundEnabled: soundEnabledGlobal,
         autoBet: realEnabled,
-        isActive: true,
-        simulatedWinrate: 72.4
+        isActive: true
       },
       {
         id: 'strat_3',
@@ -562,8 +563,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         handicapLine: plan3.minHandicap,
         soundEnabled: soundEnabledGlobal,
         autoBet: realEnabled,
-        isActive: true,
-        simulatedWinrate: 81.3
+        isActive: true
       },
       {
         id: 'strat_4',
@@ -576,8 +576,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         handicapLine: plan4.minHandicap,
         soundEnabled: soundEnabledGlobal,
         autoBet: realEnabled,
-        isActive: true,
-        simulatedWinrate: 84.6
+        isActive: true
       },
       {
         id: 'strat_5',
@@ -590,8 +589,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         handicapLine: plan5.minHandicap,
         soundEnabled: soundEnabledGlobal,
         autoBet: realEnabled,
-        isActive: true,
-        simulatedWinrate: 86.2
+        isActive: true
       }
     ];
     setStrategies(updatedStrategies);
@@ -2046,7 +2044,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
                                   <div className="text-xs">
                                     <span className="text-emerald-400 font-bold block">[触发预警] {strat.name}</span>
                                     <span className="text-slate-300 text-[11px] font-medium leading-tight font-mono">
-                                      策略匹配几近真实规律 | 期望命中率 {strat.simulatedWinrate}%
+                                      策略条件已满足
                                     </span>
                                   </div>
                                 </div>
@@ -2237,18 +2235,8 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
 
                 </div>
 
-                {/* Simulated Winrate indicator & Auto execution preferences */}
+                {/* Auto execution preferences */}
                 <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-900/85 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
-                  
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-pink-500/10 border border-pink-500/20 text-pink-400 rounded-lg">
-                      <Cpu className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">量化命中仿真概率</span>
-                      <span className="text-white font-bold text-sm tracking-wide">{strat.simulatedWinrate}%</span>
-                    </div>
-                  </div>
 
                   <div className="flex flex-wrap items-center gap-3">
                     {/* Switch: Voice warning */}

@@ -160,4 +160,7 @@ function getMatchesPerSeason(leagueKey) {
   return LEAGUE_PRESETS[leagueKey]?.matchesPerSeason ?? 30;
 }
 
-module.exports = { LEAGUE_PRESETS, getMatchesPerSeason };
+// 爬虫开关：控制全网爬虫是否允许运行（不使用 database/db 管理此开关）
+const ALLOW = process.env.DISABLE_CRAWLER === 'true' ? false : true;
+
+module.exports = { LEAGUE_PRESETS, getMatchesPerSeason, ALLOW };

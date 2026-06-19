@@ -253,8 +253,6 @@ describe('calculateBetsModel', () => {
 
     expect(result.expectedHomeCorners).toBeDefined();
     expect(result.expectedAwayCorners).toBeDefined();
-    expect(result.expectedHomeCards).toBeDefined();
-    expect(result.expectedAwayCards).toBeDefined();
   });
 
   // ===== ???????? =====
@@ -516,6 +514,37 @@ describe('recommendedDirection 不应始终为小球', () => {
     } as BetsModelInput);
     // Elo 差距大时，direction 应为 HOME_WIN
     expect(result.aggregatedDecision.direction).toBe('HOME_WIN');
+  });
+
+  it('aggregatedDecision 应包含 kellySuggestion', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    expect(result.aggregatedDecision.kellySuggestion).toBeDefined();
+    expect(typeof result.aggregatedDecision.kellySuggestion!.homeKelly).toBe('number');
+    expect(typeof result.aggregatedDecision.kellySuggestion!.awayKelly).toBe('number');
+    expect(typeof result.aggregatedDecision.kellySuggestion!.suggestedBetSize).toBe('number');
+    expect(result.aggregatedDecision.kellySuggestion!.suggestedBetSize).toBeGreaterThanOrEqual(0);
+  });
+
+  it('recommendedDirection 与 aggregatedDecision.direction 一致', () => {
+    const result = calculateBetsModel({
+      homeTeam: mockHomeTeam, awayTeam: mockAwayTeam,
+      odds1X2: { home: 2.10, draw: 3.30, away: 3.20 },
+      asianFeatures: defaultAsianFeatures,
+      goalsLine: 2.5,
+    } as BetsModelInput);
+    const dir = result.aggregatedDecision.direction;
+    if (dir === 'HOME_WIN') {
+      expect(result.recommendedDirection).toContain('主胜');
+    } else if (dir === 'AWAY_WIN') {
+      expect(result.recommendedDirection).toContain('客胜');
+    } else {
+      expect(result.recommendedDirection).toContain('平局');
+    }
   });
 });
 

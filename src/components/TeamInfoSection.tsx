@@ -1,6 +1,6 @@
 ﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Search, TrendingUp, Zap, MapPin, Sparkles, Info, Award, Swords, Loader2, Check, Clock } from 'lucide-react';
+import { ShieldCheck, Search, TrendingUp, Zap, MapPin, Sparkles, Info, Award, Swords, Loader2, Check, Clock, Shield } from 'lucide-react';
 import { TeamStats, RankedValue } from '../data/realTeamsData';
 import { ALL_LEAGUES, ALL_LEAGUE_TEAMS, LeagueTeam } from '../data/leagueTeams';
 import { useAppStore } from '../store/useAppStore';
@@ -69,6 +69,11 @@ export default function TeamInfoSection() {
             shotAccuracy: stats.shotAccuracy ?? undefined,
             ...(stats.homeXg ? { homeXg: stats.homeXg } : {}),
             ...(stats.awayXg ? { awayXg: stats.awayXg } : {}),
+            ...(stats.seasonXpts ? { seasonXpts: stats.seasonXpts } : {}),
+            ...(stats.seasonPpda ? { seasonPpda: stats.seasonPpda } : {}),
+            ...(stats.seasonPpdaAllowed ? { seasonPpdaAllowed: stats.seasonPpdaAllowed } : {}),
+            ...(stats.seasonNpxgd ? { seasonNpxgd: stats.seasonNpxgd } : {}),
+            ...(stats.matches ? { matches: stats.matches } : {}),
           });
         }
         setError('');
@@ -180,6 +185,11 @@ export default function TeamInfoSection() {
             shotAccuracy: stats.shotAccuracy ?? undefined,
             ...(stats.homeXg ? { homeXg: stats.homeXg } : {}),
             ...(stats.awayXg ? { awayXg: stats.awayXg } : {}),
+            ...(stats.seasonXpts ? { seasonXpts: stats.seasonXpts } : {}),
+            ...(stats.seasonPpda ? { seasonPpda: stats.seasonPpda } : {}),
+            ...(stats.seasonPpdaAllowed ? { seasonPpdaAllowed: stats.seasonPpdaAllowed } : {}),
+            ...(stats.seasonNpxgd ? { seasonNpxgd: stats.seasonNpxgd } : {}),
+            ...(stats.matches ? { matches: stats.matches } : {}),
           });
         }
         setError('');
@@ -462,7 +472,34 @@ export default function TeamInfoSection() {
 
                 </div>
 
-
+                {/* Understat 高级特征 */}
+                {(safeTeam.seasonXpts > 0 || safeTeam.seasonPpda > 0 || (safeTeam.seasonNpxgd !== 0 && safeTeam.seasonNpxgd !== undefined)) && (
+                <div className="bg-[#151518] rounded-xl border border-[#2a2a30] p-4">
+                  <h3 className="text-sm font-bold mb-3 text-slate-300 flex items-center gap-2"><Shield className="w-4 h-4 text-cyan-400" /> Understat 高级特征</h3>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500 mb-0.5">xPTS 预期积分</div>
+                      <div className="text-xs font-bold text-cyan-400 font-mono">{safeTeam.seasonXpts > 0 ? safeTeam.seasonXpts.toFixed(1) : '无数据'}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500 mb-0.5">场均 xPTS</div>
+                      <div className="text-xs font-bold text-cyan-400 font-mono">{safeTeam.seasonXpts > 0 && safeTeam.matches > 0 ? (safeTeam.seasonXpts / safeTeam.matches).toFixed(2) : '无数据'}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500 mb-0.5">PPDA 压迫强度</div>
+                      <div className="text-xs font-bold text-cyan-400 font-mono">{safeTeam.seasonPpda > 0 ? safeTeam.seasonPpda.toFixed(1) : '无数据'}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500 mb-0.5">PPDA 被压迫度</div>
+                      <div className="text-xs font-bold text-cyan-400 font-mono">{safeTeam.seasonPpdaAllowed > 0 ? safeTeam.seasonPpdaAllowed.toFixed(1) : '无数据'}</div>
+                    </div>
+                    <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+                      <div className="text-[10px] text-slate-500 mb-0.5">NPxGD 非点球xG差</div>
+                      <div className="text-xs font-bold text-cyan-400 font-mono">{safeTeam.seasonNpxgd !== 0 && safeTeam.seasonNpxgd ? safeTeam.seasonNpxgd.toFixed(1) : '无数据'}</div>
+                    </div>
+                  </div>
+                </div>
+                )}
 
               </div>
 

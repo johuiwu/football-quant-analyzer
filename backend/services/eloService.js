@@ -1,7 +1,7 @@
 // ======================== Elo 等级分服务 ========================
 // 负责 Elo 的 DB 读写和基于积分榜数据的动态计算
 
-import { getDb } from '../../database/db.ts';
+import { getDb } from '../../database/db';
 
 /** 联赛基准 Elo */
 const LEAGUE_ELO_BASE = {

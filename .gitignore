@@ -132,3 +132,5 @@ capture-bet-request.js
 *_bet_params.*
 test-*.js
 test-browser-fetch.js
+debug_*.png
+backend/debug_autobet_chain.js

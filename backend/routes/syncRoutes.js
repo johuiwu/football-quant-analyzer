@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import path from 'path';
+import sqlite3 from 'sqlite3';
 import { REAL_TEAMS, REAL_FIXTURES } from '../../src/data/realTeamsData';
 import { LEAGUE_PRESETS } from '../../config/leaguePresets';
 import { saveCompleteTeam } from '../../database/db';
@@ -7,6 +9,7 @@ import { updateAllTeamElos } from '../services/eloService.js';
 import { fetchLeagueStandingsFromQiumiwu } from '../services/crawlerHelper.js';
 
 const router = Router();
+const UNDERSTAT_LEAGUES_GLOBAL = ['英超', '西甲', '意甲', '德甲', '法甲', 'EPL', 'LaLiga', 'SerieA', 'Bundesliga', 'Ligue1'];
 
 // ======================== GET /sync-standings ========================
 router.get('/sync-standings', async (req, res) => {
@@ -133,13 +136,14 @@ router.get('/sync-standings', async (req, res) => {
             // ====== Understat 拦截：从数据库读取 season_xg，计算场均 xG ======
             const UNDERSTAT_LEAGUES = ['英超', '西甲', '意甲', '德甲', '法甲', 'EPL', 'LaLiga', 'SerieA', 'Bundesliga', 'Ligue1'];
             let understatAvgXG = 0, understatAvgXGA = 0;
+            let understatMeta = null;
             if (UNDERSTAT_LEAGUES.includes(team.league)) {
               try {
                 const dbPath = path.resolve('database/football_data.db');
                 const dbRow = await new Promise((resolve, reject) => {
                   const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
                     if (err) { reject(err); return; }
-                    db.get('SELECT season_xg, season_xga, matches FROM teams WHERE team_id = ?', [team.id], (err2, row) => {
+                    db.get('SELECT season_xg, season_xga, season_xpts, season_ppda, season_ppda_allowed, season_npxgd, matches FROM teams WHERE team_id = ?', [team.id], (err2, row) => {
                       db.close();
                       if (err2) reject(err2); else resolve(row);
                     });
@@ -149,6 +153,13 @@ router.get('/sync-standings', async (req, res) => {
                   const played = dbRow.matches || standing.played || 38;
                   understatAvgXG = dbRow.season_xg / played;
                   understatAvgXGA = dbRow.season_xga / played;
+                  understatMeta = {
+                    seasonXpts: dbRow.season_xpts || 0,
+                    seasonPpda: dbRow.season_ppda || 0,
+                    seasonPpdaAllowed: dbRow.season_ppda_allowed || 0,
+                    seasonNpxgd: dbRow.season_npxgd || 0,
+                    matches: dbRow.matches || 0,
+                  };
                   console.log(`✅ [Understat 锁定] ${team.nameCn} 场均 xG: ${understatAvgXG.toFixed(2)} (xGA: ${understatAvgXGA.toFixed(2)})`);
                 }
               } catch (dbErr) {
@@ -189,9 +200,10 @@ router.get('/sync-standings', async (req, res) => {
                   await new Promise((resolve, reject) => {
                     const db2 = new sqlite3.Database(dbPath2, sqlite3.OPEN_READWRITE, (err) => {
                       if (err) { reject(err); return; }
+                      console.log(`[防覆盖验证] 正在更新 ${team.name} 的战术数据，home_xg 将被锁定在当前值: ${team.homeXg}`);
                       db2.run(
-                        'UPDATE teams SET home_xg = ?, away_xg = ? WHERE team_id = ?',
-                        [understatAvgXG, awayXG.xgFor, team.id],
+                        'UPDATE teams SET home_xg = home_xg, away_xg = away_xg WHERE team_id = ?',
+                        [team.id],
                         (err2) => { db2.close(); if (err2) reject(err2); else resolve(); }
                       );
                     });
@@ -203,7 +215,7 @@ router.get('/sync-standings', async (req, res) => {
 
               // Understat 优先，否则用 xgService 推算
               const finalHomeXg = understatAvgXG > 0 ? understatAvgXG : homeXG.xgFor;
-              const finalAwayXg = awayXG.xgFor;
+              const finalAwayXg = understatAvgXG > 0 ? understatAvgXG : awayXG.xgFor;
               const finalXgAgainst = understatAvgXGA > 0 ? understatAvgXGA : homeXG.xgAgainst;
               if (understatAvgXG <= 0) {
                 console.log(`[xgService] 回退到推算 xG: ${homeXG.xgFor.toFixed(2)}`);
@@ -215,6 +227,7 @@ router.get('/sync-standings', async (req, res) => {
                 cleanSheets: team.cleanSheets > 0 ? team.cleanSheets : estCleanSheets,
                 homeXg: finalHomeXg,
                 awayXg: finalAwayXg,
+                ...(understatMeta || {}),
                 homeStats: {
                   ...team.homeStats,
                   played: homePlayed,
@@ -285,6 +298,9 @@ router.get('/sync-standings', async (req, res) => {
       team.form = team.form || ['W','D','L','W','D'];
 
       try {
+        if (team.homeXg > 0 && UNDERSTAT_LEAGUES_GLOBAL.includes(team.league)) {
+          console.log(`[防覆盖验证] saveCompleteTeam 前检查: ${team.nameCn} homeXg=${team.homeXg} awayXg=${team.awayXg}`);
+        }
         await saveCompleteTeam(team);
         savedTeamNames.push(team.nameCn);
       } catch (dbErr) {

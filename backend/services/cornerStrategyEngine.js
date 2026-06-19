@@ -3,6 +3,7 @@ import {
   getSimulationRecords,
   getStrategyStats
 } from './cornerBetService.js';
+import { run, query } from '../dbService.js';
 import { evaluateSingleStrategy } from './cornerEvaluator.js';
 
 // ======================== 模拟比赛名称生成 ========================
@@ -70,17 +71,82 @@ function simulateBetResult(odds) {
  * @returns {Object} { stats: { [strategyId]: { triggered, wins, losses, winRate, totalProfit, roi } } }
  */
 export async function runBacktest(strategies) {
-  const MATCH_COUNT = 80;
-  console.log(`[cornerStrategyEngine] 开始回测，生成 ${MATCH_COUNT} 场模拟比赛...`);
+  // Step 1: 运行前清除历史模拟记录
+  try {
+    await run("DELETE FROM corner_simulation_records");
+    console.log("[cornerStrategyEngine] 已清除历史模拟记录");
+  } catch (e) {
+    console.warn("[cornerStrategyEngine] 清除模拟记录失败（表可能不存在）:", e.message);
+  }
 
-  // 生成模拟比赛数据
+  // Step 2: 查询真实历史投注记录
+  let useRealData = false;
+  let realRecords = [];
+  try {
+    realRecords = await query(
+      "SELECT strategy_id, bet_status, odds, amount FROM corner_history WHERE bet_status IN ('executed', 'failed')"
+    ) || [];
+    useRealData = realRecords.length >= 10;
+    console.log(`[cornerStrategyEngine] 真实历史记录: ${realRecords.length} 条, ${useRealData ? '使用真实数据' : '回退到模拟数据'}`);
+  } catch (e) {
+    console.warn("[cornerStrategyEngine] 查询真实记录失败:", e.message);
+  }
+
+  const statsMap = {};
+
+  if (useRealData) {
+    // 基于真实历史记录计算统计
+    for (const strategy of strategies) {
+      if (!strategy.enabled) continue;
+      const sid = String(strategy.id);
+      const strategyRecords = realRecords.filter(r => String(r.strategy_id) === sid);
+
+      const executed = strategyRecords.filter(r => r.bet_status === 'executed').length;
+      const failed = strategyRecords.filter(r => r.bet_status === 'failed').length;
+      const triggered = executed + failed;
+
+      let totalProfit = 0;
+      for (const r of strategyRecords) {
+        if (r.bet_status === 'executed') {
+          totalProfit += (r.odds - 1) * (r.amount || 100);
+        } else if (r.bet_status === 'failed') {
+          totalProfit -= (r.amount || 100);
+        }
+      }
+
+      const winRate = triggered > 0 ? Math.round((executed / triggered) * 100 * 100) / 100 : 0;
+      const roi = triggered > 0 ? Math.round((totalProfit / (triggered * 100)) * 100 * 100) / 100 : 0;
+
+      statsMap[sid] = {
+        strategyId: sid,
+        strategyName: strategy.name,
+        triggered,
+        executed,
+        failed,
+        successRate: winRate,
+        totalProfit: Math.round(totalProfit * 100) / 100,
+        roi
+      };
+    }
+
+    console.log('[cornerStrategyEngine] 真实数据回测完成，策略数:', Object.keys(statsMap).length);
+    return {
+      success: true,
+      simulated: false,
+      dataSource: 'real',
+      stats: statsMap,
+      totalRecords: realRecords.length
+    };
+  }
+
+  // Fallback: 模拟数据回测
+  const MATCH_COUNT = 80;
+  console.log(`[cornerStrategyEngine] 真实记录不足，生成 ${MATCH_COUNT} 场模拟比赛...`);
+
   const simulatedMatches = [];
   for (let i = 0; i < MATCH_COUNT; i++) {
     simulatedMatches.push(generateSimulatedMatch());
   }
-
-  // 按策略统计
-  const statsMap = {};
 
   for (const strategy of strategies) {
     if (!strategy.enabled) continue;
@@ -96,7 +162,6 @@ export async function runBacktest(strategies) {
         else losses++;
         totalProfit += profitLoss;
 
-        // 写入模拟记录
         await saveSimulationRecord({
           strategy_id: sid,
           match_id: match.matchId,
@@ -127,8 +192,15 @@ export async function runBacktest(strategies) {
     };
   }
 
-  console.log('[cornerStrategyEngine] 回测完成，策略数:', Object.keys(statsMap).length);
-  return { success: true, simulated: true, warning: "回测数据为随机模拟生成，不代表真实比赛结果，仅供策略逻辑验证参考", stats: statsMap, totalMatches: MATCH_COUNT };
+  console.log('[cornerStrategyEngine] 模拟回测完成，策略数:', Object.keys(statsMap).length);
+  return {
+    success: true,
+    simulated: true,
+    dataSource: 'simulated',
+    warning: "回测数据为随机模拟生成，不代表真实比赛结果，仅供策略逻辑验证参考",
+    stats: statsMap,
+    totalMatches: MATCH_COUNT
+  };
 }
 
 // 导出给 routes 使用

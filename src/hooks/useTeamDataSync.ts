@@ -58,7 +58,8 @@ export function useTeamDataSync() {
     setError(null);
     
     try {
-      const data = await syncStandings();
+      // 默认同步英超，用户可在积分榜页面选择其他联赛
+      const data = await syncStandings('EPL');
       
       if (data && data.teams) {
         setTeams(data.teams);

@@ -149,6 +149,22 @@ export default function DashboardPage() {
     return calculateBayesianLiveUpdate(results, bayesianParams, home, away, home?.league || away?.league || 'DEFAULT');
   }, [results, liveMatchState, home, away]);
 
+  // Arbitrated direction derived values (extracted from IIFE for stable rendering)
+  const arbitratedDecision = useMemo(() => {
+    if (!results?.aggregatedDecision) return { direction: undefined, confidence: undefined, modelDirection: undefined };
+    const effectiveDirection = liveResults && liveMatchState.isLive
+      ? (liveResults.liveHomeWin > liveResults.liveAwayWin && liveResults.liveHomeWin > liveResults.liveDraw ? 'HOME_WIN' as const
+         : liveResults.liveAwayWin > liveResults.liveHomeWin && liveResults.liveAwayWin > liveResults.liveDraw ? 'AWAY_WIN' as const
+         : 'DRAW' as const)
+      : results.aggregatedDecision.direction;
+    const arbitrated = calculateFinalDirection(effectiveDirection, asianHandicap.handicap, results.expectedHomeGoals - results.expectedAwayGoals);
+    return {
+      direction: arbitrated?.direction,
+      confidence: arbitrated ? results.aggregatedDecision?.confidence : undefined,
+      modelDirection: results.aggregatedDecision?.direction,
+    };
+  }, [results, liveResults, liveMatchState.isLive, asianHandicap.handicap]);
+
   // ===== Handlers =====
   const handleSelectFixture = (fixtureId: string) => {
     setSelectedFixtureId(fixtureId);
@@ -338,7 +354,7 @@ export default function DashboardPage() {
   }, [teams.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   // ===== Dashboard JSX (migrated from AppNew.tsx L501-L1738) =====
   return (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 notranslate" translate="no">
 
             {/* 左边：物理模型输入与调整 */}
             <div className="lg:col-span-4 flex flex-col gap-6">
@@ -903,7 +919,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {results && (
-                <>
+                <React.Fragment key="results-panel">
                   {/* F. AI 专家推演模块 (DeepSeek API 量化分析) */}
                   <div className="p-6 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-indigo-500 via-purple-500 to-pink-500" />
@@ -955,7 +971,7 @@ export default function DashboardPage() {
                         <div className="h-3 w-5/6 bg-slate-800 rounded" />
                         <div className="h-3 w-4/6 bg-slate-800 rounded" />
                         <div className="h-3 w-2/3 bg-slate-800 rounded" />
-                        <span className="text-[11px] block font-mono text-indigo-400">「正在注入 xG/xGA/攻防指数/凯利公式/市场热度等 10+ 维度量化数据，推导战术草案...」</span>
+                        <span className="text-[11px] block font-mono text-indigo-400">「正在注入 xG/xGA/攻防指数/市场热度等 10+ 维度量化数据，推导战术草案...」</span>
                       </div>
                     )}
 
@@ -1084,45 +1100,30 @@ export default function DashboardPage() {
                   </div>
 
                   {/* C. 聚合决策中枢（新增，最显眼位置） */}
-                  {(() => {
-                    const effectiveDirection = liveResults && liveMatchState.isLive
-                      ? (liveResults.liveHomeWin > liveResults.liveAwayWin && liveResults.liveHomeWin > liveResults.liveDraw ? 'HOME_WIN' as const
-                         : liveResults.liveAwayWin > liveResults.liveHomeWin && liveResults.liveAwayWin > liveResults.liveDraw ? 'AWAY_WIN' as const
-                         : 'DRAW' as const)
-                      : results.aggregatedDecision.direction;
-                    const arbitrated = results?.aggregatedDecision
-                      ? calculateFinalDirection(effectiveDirection, asianHandicap.handicap, results.expectedHomeGoals - results.expectedAwayGoals)
-                      : undefined;
-                    const arbitratedConfidence = arbitrated
-                      ? results.aggregatedDecision?.confidence
-                      : undefined;
-                    return (
-                      <AggregationDecisionCenter
-                        marketOdds={convertedOdds}
-                        results={results}
-                        homeTeamName={home.nameCn}
-                        awayTeamName={away.nameCn}
-                        handicap={asianHandicap.handicap}
-                        homeTeam={home}
-                        awayTeam={away}
-                        payoutRate={results.payoutRate}
-                        riskRating={results.riskRating}
-                        compHomeWin={results.compHomeWin}
-                        compDraw={results.compDraw}
-                        compAwayWin={results.compAwayWin}
-                        recommendedReason={results.recommendedReason}
-                        upsetLevel={results.upsetLevel}
-                        coldUpsetAlert={results.coldUpsetAlert}
-                        zScoreHome={results.zScoreHome}
-                        zScoreAway={results.zScoreAway}
-                        arbitratedDirection={arbitrated?.direction}
-                        arbitratedConfidence={arbitratedConfidence}
-                        arbitratedModelDirection={results?.aggregatedDecision?.direction}
-                        liveResults={liveResults ? { liveHomeWin: liveResults.liveHomeWin, liveDraw: liveResults.liveDraw, liveAwayWin: liveResults.liveAwayWin } : undefined}
-                        isLiveActive={!!(liveResults && liveMatchState.isLive)}
-                      />
-                    );
-                  })()}
+                  <AggregationDecisionCenter
+                    marketOdds={convertedOdds}
+                    results={results}
+                    homeTeamName={home.nameCn}
+                    awayTeamName={away.nameCn}
+                    handicap={asianHandicap.handicap}
+                    homeTeam={home}
+                    awayTeam={away}
+                    payoutRate={results.payoutRate}
+                    riskRating={results.riskRating}
+                    compHomeWin={results.compHomeWin}
+                    compDraw={results.compDraw}
+                    compAwayWin={results.compAwayWin}
+                    recommendedReason={results.recommendedReason}
+                    upsetLevel={results.upsetLevel}
+                    coldUpsetAlert={results.coldUpsetAlert}
+                    zScoreHome={results.zScoreHome}
+                    zScoreAway={results.zScoreAway}
+                    arbitratedDirection={arbitratedDecision.direction}
+                    arbitratedConfidence={arbitratedDecision.confidence}
+                    arbitratedModelDirection={arbitratedDecision.modelDirection}
+                    liveResults={liveResults ? { liveHomeWin: liveResults.liveHomeWin, liveDraw: liveResults.liveDraw, liveAwayWin: liveResults.liveAwayWin } : undefined}
+                    isLiveActive={!!(liveResults && liveMatchState.isLive)}
+                  />
 
                   {/* D. 综合胜平负概率与亚盘隐含概率比对展示面板 */}
                   <div className="p-5 bg-[#0F1424] rounded-2xl border border-slate-800/80 shadow-xl">
@@ -1228,7 +1229,7 @@ export default function DashboardPage() {
                   {/* === PANEL STEP 2: 即时动态仿真沙盘 (Interactive Live Sandbox) === */}
                   {/* 贝叶斯滚球比分即时动态监控台 */}
                   {liveResults && (
-                    <div className="p-6 bg-slate-900/90 rounded-2xl border border-blue-500/20 shadow-2xl relative overflow-hidden">
+                    <div key="live-panel" className="p-6 bg-slate-900/90 rounded-2xl border border-blue-500/20 shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
                         
                         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
@@ -1364,7 +1365,6 @@ export default function DashboardPage() {
                         {/* Live secondary changes */}
                         <div className="mt-3.5 pt-3 border-t border-slate-800/80 flex flex-wrap justify-between gap-4 text-[11px] font-mono text-slate-500 uppercase leading-relaxed">
                           <span>预计剩余角球增幅: <strong className="text-indigo-400">主 {liveResults.liveCornerHomeLeft} | 客 {liveResults.liveCornerAwayLeft} 个</strong></span>
-                          <span>追加红黄牌摩擦倾向率: <strong className="text-yellow-500">主 {liveResults.liveCardsHomeLeft} | 客 {liveResults.liveCardsAwayLeft} 张</strong></span>
                           <span>贝叶斯剩余对攻期望值: <strong className="text-purple-400">主 {liveResults.remainingExpectedHomeGoals.toFixed(1)} | 客 {liveResults.remainingExpectedAwayGoals.toFixed(1)} 球</strong></span>
                         </div>
                       </div>
@@ -1373,124 +1373,45 @@ export default function DashboardPage() {
                   {/* D3 战术角球与进攻强压协动图 */}
                   {results && (
                     <CornerKickStrategyChart
+                      key="corner-chart"
                       home={home}
                       away={away}
                       results={results}
                     />
                   )}
 
-                  {/* === PANEL STEP 3: 二级衍生盘与财务决策 (Stakes & Penalty Cards) === */}
-                  {/* 量化多维高级部分：凯利公式、xPts估值、黄红惩罚界限（职业量化终端级） */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Size 1: Kelly & xPts Valuations */}
+                  {/* === PANEL STEP 3: 球队赛季估值回归 (xPts) === */}
+                  <div className="grid grid-cols-1 gap-6">
+                    {/* xPts Valuation */}
                     <div className="p-5 bg-[#0F1424] rounded-2xl border border-slate-800/80 shadow-xl flex flex-col justify-between">
                       <div>
                         <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-1.5 mb-2.5">
                           <Scale className="w-4 h-4 text-amber-400 font-bold" />
-                          💰 职业凯利资金比例 & 预期估值 (xPts)
+                          📊 球队赛季估值回归 (预期积分 xPts 列)
                         </h3>
                         <p className="text-[11px] text-slate-400 mb-4 font-sans leading-relaxed">
-                          采用标准半凯利准则（Half-Kelly Fraction）将融算概率与市场赔率拟合，直接为投资分配防线比例，防范重仓爆仓风险。
+                          基于赛季 xPts（预期积分）、PPDA（压迫强度）、npxGD（非点球净胜球差）等高级指标，评估球队真实战力与市场定价偏差。
                         </p>
 
-                        {/* Kelly Table */}
-                        <div className="space-y-3 mb-4.5">
-                          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900/50 flex justify-between items-center">
-                            <span className="text-xs text-rose-300 font-semibold">{home.nameCn} 主胜凯利倍率:</span>
-                            <div className="text-right">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${results.kellyHome > 0 ? 'bg-rose-500/15 text-rose-400' : 'bg-slate-900 text-slate-500'}`}>
-                                {results.kellyHome > 0 ? `建议投注 ${results.kellyHome}% 仓位` : '不买入 (无期望收益)'}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">{home.nameCn}:</span>
+                            <span className="font-mono text-slate-300">
+                              期望战力 xPts <strong className="text-rose-400 font-bold">{results.homeXpts}</strong> 点 
+                              <span className={`ml-2 px-1 rounded text-[9px] font-bold ${results.homePtsStatus === 'UNDERVALUED' ? 'bg-emerald-500/15 text-emerald-400' : results.homePtsStatus === 'OVERVALUED' ? 'bg-rose-500/15 text-rose-400' : 'bg-slate-900 text-slate-500'}`}>
+                                {results.homePtsStatus === 'UNDERVALUED' ? '🟢 股价低估/反弹可买' : results.homePtsStatus === 'OVERVALUED' ? '🔴 股价虚高/建议防冷' : '价值平衡'}
                               </span>
-                            </div>
+                            </span>
                           </div>
-                          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900/50 flex justify-between items-center">
-                            <span className="text-xs text-slate-300 font-semibold">双方战平 凯利倍率:</span>
-                            <div className="text-right">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${results.kellyDraw > 0 ? 'bg-slate-500/20 text-slate-300' : 'bg-slate-900 text-slate-500'}`}>
-                                {results.kellyDraw > 0 ? `建议投注 ${results.kellyDraw}% 仓位` : '不建议买入'}
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">{away.nameCn}:</span>
+                            <span className="font-mono text-slate-300">
+                              期望战力 xPts <strong className="text-emerald-400 font-bold">{results.awayXpts}</strong> 点
+                              <span className={`ml-2 px-1 rounded text-[9px] font-bold ${results.awayPtsStatus === 'UNDERVALUED' ? 'bg-emerald-500/15 text-emerald-400' : results.awayPtsStatus === 'OVERVALUED' ? 'bg-rose-500/15 text-rose-400' : 'bg-slate-900 text-slate-500'}`}>
+                                {results.awayPtsStatus === 'UNDERVALUED' ? '🟢 股价低估/反弹可买' : results.awayPtsStatus === 'OVERVALUED' ? '🔴 股价虚高/建议防冷' : '价值平衡'}
                               </span>
-                            </div>
+                            </span>
                           </div>
-                          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-900/50 flex justify-between items-center">
-                            <span className="text-xs text-emerald-300 font-semibold">{away.nameCn} 客胜凯利倍率:</span>
-                            <div className="text-right">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${results.kellyAway > 0 ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-900 text-slate-500'}`}>
-                                {results.kellyAway > 0 ? `建议投注 ${results.kellyAway}% 仓位` : '不买入 (无期望收益)'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* xPts valuation */}
-                        <div className="pt-3 border-t border-slate-800/40">
-                          <h4 className="text-xs font-semibold text-slate-200 mb-2 flex items-center gap-1">
-                            📊 球队赛季估值回归 (预期积分 xPts 列)
-                          </h4>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-400">{home.nameCn}:</span>
-                              <span className="font-mono text-slate-300">
-                                期望战力 xPts <strong className="text-rose-400 font-bold">{results.homeXpts}</strong> 点 
-                                <span className={`ml-2 px-1 rounded text-[9px] font-bold ${results.homePtsStatus === 'UNDERVALUED' ? 'bg-emerald-500/15 text-emerald-400' : results.homePtsStatus === 'OVERVALUED' ? 'bg-rose-500/15 text-rose-400' : 'bg-slate-900 text-slate-500'}`}>
-                                  {results.homePtsStatus === 'UNDERVALUED' ? '🟢 股价低估/反弹可买' : results.homePtsStatus === 'OVERVALUED' ? '🔴 股价虚高/建议防冷' : '价值平衡'}
-                                </span>
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="text-slate-400">{away.nameCn}:</span>
-                              <span className="font-mono text-slate-300">
-                                期望战力 xPts <strong className="text-emerald-400 font-bold">{results.awayXpts}</strong> 点
-                                <span className={`ml-2 px-1 rounded text-[9px] font-bold ${results.awayPtsStatus === 'UNDERVALUED' ? 'bg-emerald-500/15 text-emerald-400' : results.awayPtsStatus === 'OVERVALUED' ? 'bg-rose-500/15 text-rose-400' : 'bg-slate-900 text-slate-500'}`}>
-                                  {results.awayPtsStatus === 'UNDERVALUED' ? '🟢 股价低估/反弹可买' : results.awayPtsStatus === 'OVERVALUED' ? '🔴 股价虚高/建议防冷' : '价值平衡'}
-                                </span>
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Size 2: Penalty Cards prediction exclusively (Removing repetitive Corners block) */}
-                    <div className="p-5 bg-[#0F1424] rounded-2xl border border-slate-800/80 shadow-xl flex flex-col justify-between">
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-1.5 mb-2.5">
-                          <Activity className="w-4 h-4 text-emerald-400" />
-                          📊 犯规热度与惩罚黄红牌模型估值
-                        </h3>
-                        <p className="text-[11px] text-slate-400 mb-4 font-sans leading-relaxed">
-                          基于两队赛季抢断强硬度、侵犯摩擦频率以及历史红黄罚单走势，融合即时对战张力期望，推演最终裁判出牌阻断倾向。
-                        </p>
-
-                        <div className="bg-slate-950 p-4 rounded-xl border border-slate-900">
-                          <span className="text-[11px] font-semibold text-yellow-500 block mb-2.5">🟨 摩擦犯规惩罚期望 (Penalty Cards)</span>
-                          <div className="space-y-2.5 text-xs font-mono">
-                            <div className="flex justify-between text-slate-300">
-                              <span>【主队】{home.nameCn} 惩罚张数:</span>
-                              <strong>{results.expectedHomeCards} 张</strong>
-                            </div>
-                            <div className="flex justify-between text-slate-300">
-                              <span>【客队】{away.nameCn} 惩罚张数:</span>
-                              <strong>{results.expectedAwayCards} 张</strong>
-                            </div>
-                            <div className="h-[1px] bg-slate-800 my-1 font-bold" />
-                            <div className="flex justify-between text-yellow-400 items-center">
-                              <span>总罚单界线预期:</span>
-                              <div className="flex items-center gap-1.5">
-                                <strong className="text-sm">{(results.expectedHomeCards + results.expectedAwayCards).toFixed(1)} 张</strong>
-                                <span className={`px-1 py-0.5 rounded text-[9px] font-bold ${
-                                  (results.expectedHomeCards + results.expectedAwayCards) > 4.2
-                                    ? 'bg-rose-500/15 text-rose-400'
-                                    : 'bg-emerald-500/15 text-emerald-400'
-                                }`}>
-                                  {(results.expectedHomeCards + results.expectedAwayCards) > 4.2 ? '高摩擦对抗' : '温和克制'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 p-2 bg-slate-900 rounded text-[10px] text-slate-400 leading-tight">
-                          * <strong>对抗警告：</strong>出牌期望受天气、德比敌对属性及主裁宽松尺度等非对称噪声干扰，标配标准误差在 &plusmn;1.45 张。
                         </div>
                       </div>
                     </div>
@@ -1610,7 +1531,7 @@ export default function DashboardPage() {
                     </div>
 
                   </div>
-                </>
+                </React.Fragment>
               )}
 
             </div>

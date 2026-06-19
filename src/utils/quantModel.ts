@@ -377,10 +377,6 @@ lowScoreProbability: {
 
   expectedAwayCorners: number;
 
-  expectedHomeCards: number;
-
-  expectedAwayCards: number;
-
   homeXpts: number;
 
   awayXpts: number;
@@ -765,6 +761,28 @@ odds1X2 = odds ?? { home: 2.0, draw: 3.2, away: 3.5 };
   const ck = JSON.stringify({ hi: homeTeam.id, ai: awayTeamVal.id, o: odds1X2, af: asianFeatures, gl: finalGoalsLine, w: finalWeights, ap: finalAdvancedParams, fw: finalFusionWeights, hx: (homeTeam as any).seasonXpts || 0, ax: (awayTeamVal as any).seasonXpts || 0, hp: (homeTeam as any).seasonPpda || 0, ap2: (awayTeamVal as any).seasonPpda || 0, hn: (homeTeam as any).seasonNpxgd || 0, an: (awayTeamVal as any).seasonNpxgd || 0 });
   const ch = mc.get(ck);
   if (ch) return ch;
+
+  // 联赛战术特征权重映射表 (xPTS, PPDA, NPxGD)
+  const LEAGUE_TACTICAL_WEIGHTS: Record<string, { xpts: number; ppda: number; npxgd: number }> = {
+    // 英超：球风硬朗，PPDA 压迫作用较大
+    'EPL': { xpts: 0.02, ppda: 0.015, npxgd: 0.02 },
+    '英超': { xpts: 0.02, ppda: 0.015, npxgd: 0.02 },
+
+    // 西甲：技术流，传控与 xPTS 预期积分关联度高
+    'LaLiga': { xpts: 0.03, ppda: 0.005, npxgd: 0.025 },
+    '西甲': { xpts: 0.03, ppda: 0.005, npxgd: 0.025 },
+
+    // 意甲：防守反击为主，非点球预期净胜球对结果影响大
+    'SerieA': { xpts: 0.02, ppda: 0.01, npxgd: 0.03 },
+    '意甲': { xpts: 0.02, ppda: 0.01, npxgd: 0.03 },
+
+    // 德甲：大开大合，进攻效率权重较高
+    'Bundesliga': { xpts: 0.015, ppda: 0.015, npxgd: 0.02 },
+    '德甲': { xpts: 0.015, ppda: 0.015, npxgd: 0.02 },
+
+    // 法甲/其他联赛：使用默认的基准配置
+    'DEFAULT': { xpts: 0.02, ppda: 0.01, npxgd: 0.02 },
+  };
 
   const baseWeights: ModelWeights = finalWeights || {
     odds: 0.30,
@@ -1379,9 +1397,12 @@ const strengthDiff = homeStrength - awayStrength;
 
   const possessionAdvantage = (homeExt.possessionValue - awayExt.possessionValue) / 100 * 0.04;
 
-  // 高级战术特征条件贡献：仅当差值非零（五大联赛）时生效
+  // 获取当前比赛的联赛权重配置（如果未匹配到，则使用 DEFAULT 兜底）
+  const leagueWeights = LEAGUE_TACTICAL_WEIGHTS[league] || LEAGUE_TACTICAL_WEIGHTS['DEFAULT'];
+
+  // 计算战术外部因子（基于联赛特征动态加权）
   const tacticalExtFactor = (xptsDiff !== 0 || ppdaDiff !== 0 || npxgdDiff !== 0)
-    ? xptsDiff * 0.02 + ppdaDiff * 0.01 + npxgdDiff * 0.02
+    ? xptsDiff * leagueWeights.xpts + ppdaDiff * leagueWeights.ppda + npxgdDiff * leagueWeights.npxgd
     : 0;
   const extFactor = (extMomentumHome - extMomentumAway) + (extDefHome - extDefAway) + possessionAdvantage + tacticalExtFactor;
   const clippedExtFactor = Math.max(-0.15, Math.min(0.15, extFactor));
@@ -1741,21 +1762,7 @@ const strengthDiff = homeStrength - awayStrength;
 
 
 
-  // Yellow/Red cards based on combat severity (proximity in points and fatigue levels)
-
-  const htRank = homeTeam.rank ?? 10;
-
-  const atRank = awayTeamVal.rank ?? 10;
-
-  const duelSeverity = Math.min(2.5, 3.5 / (0.5 + Math.abs(htRank - atRank) * 0.15));
-
-  const expectedHomeCards = parseFloat(Math.min(3.5, Math.max(0.5, 1.4 + (duelSeverity * 0.45) + (adv.homeFatigue * 0.12))).toFixed(1));
-
-  const expectedAwayCards = parseFloat(Math.min(3.5, Math.max(0.5, 1.8 + (duelSeverity * 0.40) + (adv.awayFatigue * 0.15))).toFixed(1));
-
-
-
-  // 14. 预期积分与球队长期估�?(xPts)
+  // 14. 预期积分与球队长期估值值�?(xPts)
 
   const homeXpts = parseFloat(((compHomeWin * 3) + (compDraw * 1)).toFixed(2));
 
@@ -1950,10 +1957,6 @@ const strengthDiff = homeStrength - awayStrength;
 
     expectedAwayCorners,
 
-    expectedHomeCards,
-
-    expectedAwayCards,
-
     homeXpts,
 
     awayXpts,
@@ -2081,8 +2084,6 @@ const strengthDiff = homeStrength - awayStrength;
       compAwayWin: 0,
       expectedHomeCorners: 5,
       expectedAwayCorners: 5,
-      expectedHomeCards: 2,
-      expectedAwayCards: 2,
       homeXpts: 1.5,
       awayXpts: 1.5,
       homeRealPointsRate: 1.0,
@@ -2307,10 +2308,6 @@ export function calculateBayesianLiveUpdate(
   const liveCornerHomeLeft = Math.max(0, Math.round(preMatchResults.expectedHomeCorners * rawRemaining * cornerTimeWeight));
   const liveCornerAwayLeft = Math.max(0, Math.round(preMatchResults.expectedAwayCorners * rawRemaining * cornerTimeWeight));
 
-  const liveCardsHomeLeft = parseFloat((preMatchResults.expectedHomeCards * rawRemaining * redCardHomeDefenseLeak).toFixed(1));
-
-  const liveCardsAwayLeft = parseFloat((preMatchResults.expectedAwayCards * rawRemaining * redCardAwayDefenseLeak).toFixed(1));
-
 
 
   return {
@@ -2324,10 +2321,6 @@ export function calculateBayesianLiveUpdate(
     liveCornerHomeLeft,
 
     liveCornerAwayLeft,
-
-    liveCardsHomeLeft,
-
-    liveCardsAwayLeft,
 
     remainingExpectedHomeGoals,
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { TeamStats, REAL_TEAMS } from '../data/realTeamsData';
 import { PredictionResults } from '../utils/quantModel';
@@ -37,10 +37,10 @@ const getHistoricalAvgCorners = (team: TeamStats, isHome: boolean): number => {
   return parseFloat(Math.max(cfg.MIN_CORNERS, Math.min(cfg.MAX_CORNERS, base + shotsContribution + rankContribution)).toFixed(1));
 };
 
-export function CornerKickStrategyChart({ home, away, results }: CornerKickStrategyChartProps) {
+export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = ({ home, away, results }) => {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
-  const barSvgRef = useRef<SVGSVGElement | null>(null);
-  const scatterSvgRef = useRef<SVGSVGElement | null>(null);
+  const barContainerRef = useRef<HTMLDivElement | null>(null);
+  const scatterContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Home and Away Live parameters
   const homeHistAvg = getHistoricalAvgCorners(home, true);
@@ -51,18 +51,25 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
 
   // D3 Rendering for Part 1: Bar Chart (Expected vs Historical Baseline Corners)
   useEffect(() => {
-    if (!barSvgRef.current) return;
+    if (!barContainerRef.current) return;
     if (!home || !away || !results) return;
 
-    // Clear previous elements
-    const svgElement = d3.select(barSvgRef.current);
-    svgElement.selectAll('*').interrupt().remove();
+    const container = d3.select(barContainerRef.current);
+    // Remove previous D3-created SVG (safe: container is a plain <div> managed by React)
+    container.selectAll('svg').remove();
 
     const width = 360;
     const height = 180;
     const margin = { top: 25, right: 20, bottom: 25, left: 55 };
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
+
+    // D3 creates and owns the entire <svg> element
+    const svgElement = container.append('svg')
+      .attr('width', '100%')
+      .attr('height', '100%')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('class', 'max-w-[340px]');
 
     // Prepare data
     const data = [
@@ -216,23 +223,30 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
     chartGroup.selectAll('line')
       .attr('stroke', 'rgba(148, 163, 184, 0.12)');
 
-    return () => { svgElement.selectAll("*").interrupt().remove(); };
+    return () => { container.selectAll('svg').remove(); };
   }, [home, away, homeHistAvg, awayHistAvg, homeExp, awayExp]);
 
   // D3 Rendering for Part 2: Scatter / Line Plot (Correlation between Attack Index & Corners)
   useEffect(() => {
-    if (!scatterSvgRef.current) return;
+    if (!scatterContainerRef.current) return;
     if (!home || !away || !results) return;
 
-    // Clear previous elements
-    const svgElement = d3.select(scatterSvgRef.current);
-    svgElement.selectAll('*').interrupt().remove();
+    const container = d3.select(scatterContainerRef.current);
+    // Remove previous D3-created SVG (safe: container is a plain <div> managed by React)
+    container.selectAll('svg').remove();
 
     const width = 360;
     const height = 180;
     const margin = { top: 20, right: 25, bottom: 30, left: 45 };
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
+
+    // D3 creates and owns the entire <svg> element
+    const svgElement = container.append('svg')
+      .attr('width', '100%')
+      .attr('height', '100%')
+      .attr('viewBox', `0 0 ${width} ${height}`)
+      .attr('class', 'max-w-[340px]');
 
     const chartGroup = svgElement
       .append('g')
@@ -414,7 +428,7 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
     chartGroup.selectAll('line')
       .attr('stroke', 'rgba(148, 163, 184, 0.12)');
 
-    return () => { svgElement.interrupt(); };
+    return () => { container.selectAll('svg').remove(); };
   }, [home, away, results, homeExp, awayExp]);
 
   const toggleInfo = (key: string) => {
@@ -465,7 +479,7 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
           </div>
           
           <div className="w-full flex justify-center items-center h-[180px]">
-            <svg ref={barSvgRef} className="w-full h-full max-w-[340px]" />
+            <div ref={barContainerRef} className="w-full h-full max-w-[340px]" />
           </div>
 
           <div className="text-[10px] text-slate-400 bg-slate-900/40 p-1.5 rounded border border-slate-850/60 leading-normal mt-2">
@@ -484,7 +498,7 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
           </div>
 
           <div className="w-full flex justify-center items-center h-[180px]">
-            <svg ref={scatterSvgRef} className="w-full h-full max-w-[340px]" />
+            <div ref={scatterContainerRef} className="w-full h-full max-w-[340px]" />
           </div>
 
           <div className="text-[10px] text-slate-400 bg-slate-900/40 p-1.5 rounded border border-slate-850/60 mt-2">
@@ -555,4 +569,4 @@ export function CornerKickStrategyChart({ home, away, results }: CornerKickStrat
 
     </div>
   );
-}
+};

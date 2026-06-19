@@ -79,13 +79,18 @@ router.get('/:id', async (req, res) => {
     // 补充 teams 表中的 rank / home_stats / away_stats / form 等元数据
     if (teamData) {
       const teamMetaSql = `
-        SELECT 
+        SELECT
           rank,
           home_stats as homeStatsJson,
           away_stats as awayStatsJson,
           form,
           home_xg as homeXg,
-          away_xg as awayXg
+          away_xg as awayXg,
+          season_xpts as seasonXpts,
+          season_ppda as seasonPpda,
+          season_ppda_allowed as seasonPpdaAllowed,
+          season_npxgd as seasonNpxgd,
+          matches
         FROM teams
         WHERE team_id = ?
       `;
@@ -97,6 +102,11 @@ router.get('/:id', async (req, res) => {
         teamData.form = meta.form;
         teamData.homeXg = meta.homeXg;
         teamData.awayXg = meta.awayXg;
+        teamData.seasonXpts = meta.seasonXpts || 0;
+        teamData.seasonPpda = meta.seasonPpda || 0;
+        teamData.seasonPpdaAllowed = meta.seasonPpdaAllowed || 0;
+        teamData.seasonNpxgd = meta.seasonNpxgd || 0;
+        teamData.matches = meta.matches || 0;
       }
     } else {
       // 未在 team_stats 中找到，回退到 teams 表
@@ -187,6 +197,11 @@ router.get('/:id', async (req, res) => {
         shotAccuracy: teamData.shotAccuracy || (teamData.shotsOnTarget > 0 && teamData.shots > 0 ? Math.round((teamData.shotsOnTarget / teamData.shots) * 100) : 0),
         homeXg: teamData.homeXg ?? 0,
         awayXg: teamData.awayXg ?? 0,
+        seasonXpts: teamData.seasonXpts ?? 0,
+        seasonPpda: teamData.seasonPpda ?? 0,
+        seasonPpdaAllowed: teamData.seasonPpdaAllowed ?? 0,
+        seasonNpxgd: teamData.seasonNpxgd ?? 0,
+        matches: teamData.matches ?? 0,
       }
     };
 

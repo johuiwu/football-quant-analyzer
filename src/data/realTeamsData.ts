@@ -28,6 +28,12 @@ export interface TeamStats {
   // --- v2.7 新增字段 ---
   homeXg: number;
   awayXg: number;
+  // --- Understat 可选字段 (由 API 实时填充) ---
+  seasonXpts?: number;
+  seasonPpda?: number;
+  seasonPpdaAllowed?: number;
+  seasonNpxgd?: number;
+  matches?: number;
   formLast5?: number[];
   elo?: number; // 动态 Elo 等级分（由后端积分榜同步后计算）
   historicalH2hOdds?: Record<string, { wins: number; draws: number; losses: number }>;

@@ -167,7 +167,7 @@ export function TeamRadarChart({
 
       {/* SVG Canvas Container */}
       <div className="flex items-center justify-center my-1.5 relative">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full max-w-[310px] h-auto drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full max-w-[310px] h-auto drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] notranslate" translate="no">
           {/* Radial Grid lines */}
           {ticks.map((tick) => {
             const pointsStr = Array.from({ length: numAxes }).map((_, i) => {
@@ -197,6 +197,7 @@ export function TeamRadarChart({
                 fill="rgba(148, 163, 184, 0.45)"
                 fontSize="8"
                 fontFamily="monospace"
+                style={{ userSelect: 'none' }}
               >
                 {tick}
               </text>
@@ -239,6 +240,7 @@ export function TeamRadarChart({
                 textAnchor={anchor}
                 className="cursor-pointer hover:fill-indigo-400 transition-colors select-none font-medium"
                 onClick={() => setActiveTooltip(activeTooltip === d.key ? null : d.key)}
+                style={{ userSelect: 'none' }}
               >
                 {d.name.split(' ')[0]} ⓘ
               </text>

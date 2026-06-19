@@ -140,6 +140,11 @@ function buildResponse(team, stats, source) {
       cornersPerGame: stats.corners && stats.corners.total ? parseFloat((stats.corners.total / matchesPlayed).toFixed(1)) : 0,
       homeXg: stats.xgFor && stats.xgFor.home ? parseFloat(stats.xgFor.home.toFixed(1)) : (team.homeXg || 0),
       awayXg: stats.xgFor && stats.xgFor.away ? parseFloat(stats.xgFor.away.toFixed(1)) : (team.awayXg || 0),
+      seasonXpts: team.seasonXpts || 0,
+      seasonPpda: team.seasonPpda || 0,
+      seasonPpdaAllowed: team.seasonPpdaAllowed || 0,
+      seasonNpxgd: team.seasonNpxgd || 0,
+      matches: team.matches || 0,
       homeStats: {
         played: homePlayed,
         wins: homeWins,
@@ -235,6 +240,11 @@ function buildResponseFromDb(team, row, source) {
       shotAccuracy: shotsTotal > 0 ? parseFloat(((shotsOnTargetTotal / shotsTotal) * 100).toFixed(1)) : 0,
       homeXg: row.home_xg != null ? parseFloat(Number(row.home_xg).toFixed(1)) : (team.homeXg || 0),
       awayXg: row.away_xg != null ? parseFloat(Number(row.away_xg).toFixed(1)) : (team.awayXg || 0),
+      seasonXpts: row.seasonXpts ?? row.season_xpts ?? 0,
+      seasonPpda: row.seasonPpda ?? row.season_ppda ?? 0,
+      seasonPpdaAllowed: row.seasonPpdaAllowed ?? row.season_ppda_allowed ?? 0,
+      seasonNpxgd: row.seasonNpxgd ?? row.season_npxgd ?? 0,
+      matches: row.matches ?? 0,
       homeStats: {
         played: homePlayed,
         wins: homeWins, draws: homeDraws, losses: homeLosses,

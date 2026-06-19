@@ -1,19 +1,23 @@
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import { createRequire } from 'module';
 
 // ======================== 爬虫懒加载 (Electron环境下禁用Puppeteer，避免Chromium冲突) ========================
 dotenv.config();
 
-const CRAWLER_DISABLED = process.env.DISABLE_CRAWLER === 'true';
+// 从 config.cjs 读取爬虫开关配置（不使用 database/db 管理爬虫开关）
+const require = createRequire(import.meta.url);
+const config = require('../config.cjs');
+const ALLOW = config.ALLOW !== undefined ? config.ALLOW : (process.env.DISABLE_CRAWLER !== 'true');
 
 let _crawler = null;
 export async function getCrawler() {
-  if (CRAWLER_DISABLED) return null;
+  if (!ALLOW) return null;
   if (!_crawler) {
     try {
       _crawler = await import('../../src/crawler/qiumiwuCrawler.ts');
     } catch (e) {
-      console.warn('[crawlerHelper] 爬虫模块加载失败，禁用联网同步', e?.message?.slice(0, 80));
+      console.warn('[crawlerHelper] 爬虫模块加载失败，禁用联网同步', e?.message?.slice(0, 200));
       return null;
     }
   }
@@ -98,7 +102,7 @@ export function getDeepSeekClient() {
  * [Future] 替换为真实角球数据源（如 hga038.com 的页面抓取逻辑）
  */
 export async function fetchCornerOdds(matchId, league) {
-  if (CRAWLER_DISABLED) {
+  if (!ALLOW) {
     console.warn('[crawlerHelper] 爬虫已禁用，跳过 fetchCornerOdds');
     return null;
   }
