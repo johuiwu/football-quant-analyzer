@@ -165,7 +165,11 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
           const strategy = activeStrategies.find(s => s.id === sid);
           const actualOdds = resolveStrategyOdds(match, strategy || {});
           if (actualOdds <= 0) {
-            console.warn(`[cornerService] 策略${sid}触发但赔率为0，跳过保存触发记录, matchId=${match.matchId}`);
+            // 仍保存触发记录，标记赔率缺失，等待下次轮询赔率更新后执行投注
+            console.warn(`[cornerService] 策略${sid}触发但赔率为0，保存触发记录待赔率更新, matchId=${match.matchId}`);
+            saveCornerTrigger(match, sid, 0).catch(e =>
+              console.error("[cornerService] 保存触发记录失败:", e.message)
+            );
             continue;
           }
           saveCornerTrigger(match, sid, actualOdds).catch(e =>
@@ -310,6 +314,27 @@ async function pollOnce() {
             match.totalCorners = deltaData.totalCorners;
             match.homeCorners = deltaData.homeCorners || 0;
             match.awayCorners = deltaData.awayCorners || 0;
+
+            // ★ 角球数变化时立即触发策略评估和自动投注
+            const triggeredIds = evaluateCornerStrategies(match, activeStrategies);
+            if (triggeredIds.length > 0) {
+              match.triggeredStrategies = triggeredIds;
+              console.log(`[cornerService] gismo 角球变化触发策略评估: matchId=${match.matchId}, 触发策略=[${triggeredIds.join(',')}]`);
+              // 保存触发记录
+              for (const sid of triggeredIds) {
+                const strategy = activeStrategies.find(s => s.id === sid);
+                const actualOdds = resolveStrategyOdds(match, strategy || {});
+                if (actualOdds > 0) {
+                  saveCornerTrigger(match, sid, actualOdds).catch(e =>
+                    console.error("[cornerService] gismo触发保存记录失败:", e.message)
+                  );
+                }
+              }
+              // 触发自动投注
+              processAutoBetsForMatches([match]).catch(e =>
+                console.error("[cornerService] gismo触发自动投注失败:", e.message)
+              );
+            }
           }
           console.log(`[cornerService] gismo 更新: ${match.homeTeam} vs ${match.awayTeam}, ${deltaData.elapsedMinutes}'`);
         }

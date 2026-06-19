@@ -1,7 +1,21 @@
 import { run, query } from "../dbService.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
-import { executeBetViaHttp } from "./httpBetExecutor.js";
 import { loadAndValidate } from "./credentialManager.js";
+
+// 动态加载 httpBetExecutor 模块（文件可能不存在，使用动态 import + catch 兜底）
+let executeBetViaHttp = null;
+let _httpBetModuleLoaded = false;
+async function ensureHttpBetModule() {
+  if (_httpBetModuleLoaded) return;
+  _httpBetModuleLoaded = true;
+  try {
+    const mod = await import("./httpBetExecutor.js");
+    executeBetViaHttp = mod.executeBetViaHttp;
+    console.log("[角球投注] httpBetExecutor 模块加载成功，HTTP投注方式可用");
+  } catch (e) {
+    console.log("[角球投注] httpBetExecutor 模块不可用，将使用浏览器DOM投注");
+  }
+}
 
 // ======================== 投注配置 ========================
 const MAX_BET_AMOUNT = parseInt(process.env.MAX_BET_AMOUNT || "1000", 10);
@@ -186,16 +200,17 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
   }
 
   // 自动重试逻辑
+  await ensureHttpBetModule();
   let result = null;
   let attempt = 0;
   while (attempt <= MAX_AUTO_RETRIES) {
     try {
       const credCheck = await loadAndValidate().catch(() => null);
-      if (credCheck && credCheck.uid) {
+      if (credCheck && credCheck.valid && credCheck.credentials?.uid && executeBetViaHttp) {
         console.log("[角球投注] 使用纯HTTP投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
         result = await executeBetViaHttp(betData);
       } else {
-        console.log("[角球投注] 凭证无效，回退到浏览器DOM投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
+        console.log("[角球投注] 凭证无效或HTTP模块不可用，回退到浏览器DOM投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
         result = await executeBetOnHG(betData);
       }
     } catch (err) {
@@ -272,11 +287,21 @@ let isProcessing = false;
 export async function checkDuplicateBet(matchId, strategyId) {
   await ensureTable();
   try {
-    const rows = await query(
+    // 检查 corner_history 表
+    const historyRows = await query(
       "SELECT id FROM corner_history WHERE match_id = ? AND strategy_id = ? AND bet_status IN ('executed', 'failed')",
       [matchId, String(strategyId)]
     );
-    return rows && rows.length > 0;
+    if (historyRows && historyRows.length > 0) return true;
+
+    // ★ 同时检查 corner_bets 表（任何状态都视为重复，避免 skipped/pending 重复创建）
+    const betRows = await query(
+      "SELECT id FROM corner_bets WHERE match_id = ? AND strategy_id = ?",
+      [matchId, String(strategyId)]
+    );
+    if (betRows && betRows.length > 0) return true;
+
+    return false;
   } catch (err) {
     console.error("[cornerBetService] 查重失败:", err.message);
     return false;
@@ -322,6 +347,15 @@ export async function processBetQueue() {
     if (!task.odds || task.odds <= 0) {
       console.error(`[下注诊断] 赔率无效(odds=${task.odds})，跳过投注, bet#${task.betId}`);
       await run("UPDATE corner_bets SET status = 'failed', error_message = '赔率无效', error_reason = '赔率为0或负数' WHERE id = ?", [task.betId]);
+      // 同步写入历史记录，确保前端可展示
+      await saveCornerHistory({
+        match_id: task.matchId,
+        match_name: task.matchName,
+        strategy_id: String(task.strategyId),
+        bet_status: "failed",
+        odds: task.odds || 0,
+        amount: task.amount || 0
+      }).catch(() => {});
       isProcessing = false;
       return;
     }
@@ -348,15 +382,16 @@ export async function processBetQueue() {
     };
 
     // 自动重试逻辑
+    await ensureHttpBetModule();
     let result = null;
     let attempt = 0;
     while (attempt <= MAX_AUTO_RETRIES) {
       const credCheck = await loadAndValidate().catch(() => null);
-      if (credCheck && credCheck.uid) {
+      if (credCheck && credCheck.valid && credCheck.credentials?.uid && executeBetViaHttp) {
         console.log("[cornerBetService] 使用纯HTTP投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
         result = await executeBetViaHttp(betData);
       } else {
-        console.log("[cornerBetService] 凭证无效，回退到浏览器DOM投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
+        console.log("[cornerBetService] 凭证无效或HTTP模块不可用，回退到浏览器DOM投注方式" + (attempt > 0 ? ` (重试第${attempt}次)` : ""));
         result = await executeBetOnHG(betData);
       }
 
@@ -497,10 +532,15 @@ async function placeBetOnHG(bet) {
     betDirection: bet.bet_direction || "auto"
   };
 
-  // 优先使用纯 HTTP 投注
+  // 优先使用纯 HTTP 投注（增加空值检查和异常保护）
+  await ensureHttpBetModule();
   const credCheck = await loadAndValidate().catch(() => null);
-  if (credCheck && credCheck.valid) {
-    return await executeBetViaHttp(betData);
+  if (credCheck && credCheck.valid && executeBetViaHttp) {
+    try {
+      return await executeBetViaHttp(betData);
+    } catch (err) {
+      console.error("[placeBetOnHG] HTTP投注异常，回退浏览器DOM:", err.message);
+    }
   }
   return await executeBetOnHG(betData);
 }
