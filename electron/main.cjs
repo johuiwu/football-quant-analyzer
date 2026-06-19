@@ -184,7 +184,7 @@ async function detectProxy() {
   return null; // 未检测到代理
 }
 
-// 先直连 GitHub，失败后自动切换代理重试
+// 先直连检查更新，失败后自动切换代理重试（Gitee 国内通常无需代理）
 let proxyRetryAttempted = false;
 
 async function checkForUpdatesWithProxyRetry() {
@@ -276,9 +276,9 @@ function setupAutoUpdater() {
     // 最终错误提示
     let friendlyMsg = msg;
     if (isNetworkError) {
-      friendlyMsg = `无法连接更新服务器(GitHub)，请检查网络连接。\n` +
-        `如在中国大陆，可设置代理环境变量后重启程序：\n` +
-        `  set GHU_PROXY=http://127.0.0.1:7890\n` +
+      friendlyMsg = `无法连接更新服务器，请检查网络连接。\n` +
+        `如网络异常，可手动下载最新版本：\n` +
+        `  https://github.com/johuiwu/football-quant-analyzer/releases\n` +
         `（原始错误: ${msg}）`;
     }
 

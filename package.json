@@ -149,9 +149,8 @@
       "installerHeaderIcon": "public/icon.ico"
     },
     "publish": {
-      "provider": "github",
-      "owner": "johuiwu",
-      "repo": "football-quant-analyzer"
+      "provider": "generic",
+      "url": "https://cdn.jsdelivr.net/gh/johuiwu/football-quant-analyzer@latest/update"
     }
   }
 }
