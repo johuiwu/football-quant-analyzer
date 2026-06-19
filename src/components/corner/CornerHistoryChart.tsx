@@ -20,7 +20,10 @@ interface BetRecord {
   amount: number;
   status: string;
   error_message: string | null;
+  error_reason: string | null;
+  bet_target: string | null;
   executed_at: string | null;
+  retry_count: number;
   created_at: string;
 }
 
@@ -35,6 +38,7 @@ export default function CornerHistoryChart() {
   const [betsData, setBetsData] = useState<BetRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isBackendPolling, setIsBackendPolling] = useState(false);
   const [filterStrategy, setFilterStrategy] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("time-desc");
 
@@ -81,6 +85,33 @@ export default function CornerHistoryChart() {
     if (subTab === "trigger") fetchHistory();
     else fetchBets();
   }, [subTab, historyFilterMatchId]);
+
+  // 检测后端轮询状态
+  useEffect(() => {
+    const checkPolling = async () => {
+      try {
+        const res = await fetch("/api/corner/status");
+        const data = await res.json();
+        if (data.success) {
+          const backend = data.data?.backend || {};
+          setIsBackendPolling(!!(backend.isPolling && !backend.isPaused));
+        }
+      } catch {}
+    };
+    checkPolling();
+    const timer = setInterval(checkPolling, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 监控运行时自动刷新投注记录
+  useEffect(() => {
+    if (!isBackendPolling) return;
+    const timer = setInterval(() => {
+      if (subTab === "trigger") fetchHistory();
+      else fetchBets();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [isBackendPolling, subTab]);
 
   // 按 (match_name + strategy_id) 分组聚合
   function aggregateTriggers(rows: HistoryRow[]): (HistoryRow & { count: number })[] {
@@ -223,6 +254,34 @@ export default function CornerHistoryChart() {
       if (sortBy === "odds-asc") return (a.odds || 0) - (b.odds || 0);
       return 0;
     });
+
+    const handleRetry = async (betId: number) => {
+      try {
+        const resp = await fetch(`/api/corner/retry-bet/${betId}`, { method: "POST" });
+        const json = await resp.json();
+        if (json.success) {
+          fetchBets();
+        } else {
+          setError(json.error || "重试失败");
+        }
+      } catch (err: any) {
+        setError(err.message || "网络错误");
+      }
+    };
+
+    const statusLabel = (status: string, errorMsg: string | null) => {
+      switch (status) {
+        case 'success': return { text: '成功', cls: 'bg-emerald-500/15 text-emerald-400' };
+        case 'executed': return { text: '已执行', cls: 'bg-emerald-500/15 text-emerald-400' };
+        case 'failed': return { text: '失败', cls: 'bg-rose-500/15 text-rose-400', title: errorMsg || '未知错误' };
+        case 'insufficient': return { text: '余额不足', cls: 'bg-orange-500/15 text-orange-400', title: errorMsg || '余额不足' };
+        case 'pending': return { text: '待执行', cls: 'bg-amber-500/15 text-amber-400' };
+        case 'pending_confirm': return { text: '待确认', cls: 'bg-blue-500/15 text-blue-400' };
+        case 'rejected': return { text: '已拒绝', cls: 'bg-slate-500/15 text-slate-400' };
+        default: return { text: status, cls: 'bg-slate-500/15 text-slate-400' };
+      }
+    };
+
     if (filteredBets.length === 0 && !loading) {
       return (
         <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 p-12 text-center">
@@ -235,36 +294,55 @@ export default function CornerHistoryChart() {
 
     return (
       <div className="bg-[#0F1424] rounded-2xl border border-slate-800/80 overflow-hidden">
-        <div className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
+        <div className="grid grid-cols-16 gap-2 px-4 py-2 text-[11px] text-slate-500 border-b border-slate-800 font-medium">
           <div className="col-span-3">比赛</div>
           <div className="col-span-1 text-center">策略</div>
           <div className="col-span-1 text-center">赔率</div>
           <div className="col-span-1 text-center">金额</div>
-          <div className="col-span-1 text-center">状态</div>
+          <div className="col-span-2 text-center">投注盘口</div>
+          <div className="col-span-2 text-center">状态</div>
+          <div className="col-span-1 text-center">重试</div>
           <div className="col-span-2 text-center">执行时间</div>
-          <div className="col-span-3 text-right">创建时间</div>
+          <div className="col-span-1 text-right">创建时间</div>
+          <div className="col-span-2 text-center">操作</div>
         </div>
-        {filteredBets.map((row) => (
-          <div key={row.id} className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
-            <div className="col-span-3 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
-            <div className="col-span-1 text-center text-emerald-400 font-mono">{row.strategy_id}</div>
-            <div className="col-span-1 text-center text-amber-400 font-mono">{(row.odds ?? 0).toFixed(2)}</div>
-            <div className="col-span-1 text-center text-slate-300 font-mono">¥{row.amount || 0}</div>
-            <div className="col-span-1 text-center">
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                row.status === 'executed' ? 'bg-emerald-500/15 text-emerald-400' :
-                row.status === 'failed' ? 'bg-rose-500/15 text-rose-400' :
-                'bg-amber-500/15 text-amber-400'
-              }`}>
-                {row.status === 'executed' ? '已执行' : row.status === 'failed' ? (
-                  <span title={row.error_message || "未知错误"}>失败</span>
-                ) : '待执行'}
-              </span>
+        {filteredBets.map((row) => {
+          const st = statusLabel(row.status, row.error_reason || row.error_message);
+          const canRetry = row.status === 'failed' || row.status === 'insufficient';
+          const showError = (row.status === 'failed' || row.status === 'insufficient') && row.error_reason;
+          return (
+            <div key={row.id} className="grid grid-cols-16 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
+              <div className="col-span-3 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
+              <div className="col-span-1 text-center text-emerald-400 font-mono">{row.strategy_id}</div>
+              <div className="col-span-1 text-center text-amber-400 font-mono">{(row.odds ?? 0).toFixed(2)}</div>
+              <div className="col-span-1 text-center text-slate-300 font-mono">¥{row.amount || 0}</div>
+              <div className="col-span-2 text-center text-cyan-400 text-[10px] truncate">{row.bet_target || "—"}</div>
+              <div className="col-span-2 text-center">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${st.cls}`} title={st.title}>
+                  {st.text}
+                </span>
+                {showError && (
+                  <div className="text-[9px] text-rose-400 mt-0.5 truncate" title={row.error_reason || ""}>
+                    {row.error_reason}
+                  </div>
+                )}
+              </div>
+              <div className="col-span-1 text-center text-slate-500 font-mono">{row.retry_count || 0}</div>
+              <div className="col-span-2 text-center text-slate-500 text-[10px]">{row.executed_at?.slice(0, 19) || "—"}</div>
+              <div className="col-span-1 text-right text-slate-500 text-[10px]">{row.created_at?.slice(0, 16) || "—"}</div>
+              <div className="col-span-2 text-center">
+                {canRetry && (
+                  <button
+                    onClick={() => handleRetry(row.id)}
+                    className="px-2 py-0.5 text-[10px] text-amber-400 hover:text-white bg-amber-500/10 hover:bg-amber-600/30 rounded border border-amber-500/30 hover:border-amber-500/60 transition-all"
+                  >
+                    重试
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="col-span-2 text-center text-slate-500 text-[10px]">{row.executed_at?.slice(0, 19) || "—"}</div>
-            <div className="col-span-3 text-right text-slate-500 text-[10px]">{row.created_at?.slice(0, 19) || "—"}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
