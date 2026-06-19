@@ -262,10 +262,11 @@ async function closeSharedBrowser() {
 
 // ======================== Cookie 文件持久化 ========================
 let COOKIE_PATH;
-try {
+if (import.meta.url) {
   // ESM 模式（原始源码）
-  COOKIE_PATH = fileURLToPath(new URL("../cookies.json", import.meta.url));
-} catch {
+  try { COOKIE_PATH = fileURLToPath(new URL("../cookies.json", import.meta.url)); } catch {}
+}
+if (!COOKIE_PATH) {
   // CJS/bundled 模式（esbuild 打包后 import.meta.url 为空）
   // 优先使用环境变量，否则回退到 cwd
   COOKIE_PATH = process.env.COOKIE_PATH || resolve(process.cwd(), "backend", "cookies.json");

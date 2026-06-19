@@ -10,9 +10,10 @@ import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
 
 // ---- credentials.json 路径 ----
 let CRED_PATH;
-try {
-  CRED_PATH = fileURLToPath(new URL("../credentials.json", import.meta.url));
-} catch {
+if (import.meta.url) {
+  try { CRED_PATH = fileURLToPath(new URL("../credentials.json", import.meta.url)); } catch {}
+}
+if (!CRED_PATH) {
   CRED_PATH = process.env.CRED_PATH || path.resolve(process.cwd(), "backend", "credentials.json");
 }
 

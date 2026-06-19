@@ -1,14 +1,13 @@
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import { createRequire } from 'module';
 
 // ======================== 爬虫懒加载 (Electron环境下禁用Puppeteer，避免Chromium冲突) ========================
 dotenv.config();
 
 // 从 config.cjs 读取爬虫开关配置（不使用 database/db 管理爬虫开关）
-const require = createRequire(import.meta.url);
-const config = require('../config.cjs');
-const ALLOW = config.ALLOW !== undefined ? config.ALLOW : (process.env.DISABLE_CRAWLER !== 'true');
+// 直接 import 而非 createRequire，避免 CJS 打包后路径问题
+import { ALLOW as _ALLOW } from '../config.cjs';
+const ALLOW = _ALLOW !== undefined ? _ALLOW : (process.env.DISABLE_CRAWLER !== 'true');
 
 let _crawler = null;
 export async function getCrawler() {
