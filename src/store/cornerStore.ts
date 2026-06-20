@@ -605,6 +605,24 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       }
 
       set({ liveMatches, isLoading: false });
+
+      // 自动清理已失效的 trackedMatchIds：移除不在当前 liveMatches 中的 ID
+      try {
+        const { useAppStore } = require('./useAppStore');
+        const appState = useAppStore.getState();
+        const currentTracked = appState.trackedMatchIds || [];
+        if (currentTracked.length > 0) {
+          const liveMatchIds = new Set(liveMatches.map((m: any) => String(m.matchId || "")));
+          const staleIds = currentTracked.filter((id: string) => !liveMatchIds.has(id));
+          if (staleIds.length > 0) {
+            for (const id of staleIds) {
+              appState.removeTrackedMatch(id);
+            }
+            console.log(`[cornerStore] 自动清理 ${staleIds.length} 个已结束的追踪比赛`);
+          }
+        }
+      } catch (_) {}
+
       const triggeredCount = liveMatches.reduce((sum, m) => sum + m.triggeredStrategies.length, 0);
       if (triggeredCount > 0) {
         get().addLog({ timestamp: new Date().toLocaleTimeString(), message: `检测到 ${triggeredCount} 个策略触发`, level: "signal" });

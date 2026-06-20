@@ -372,7 +372,12 @@ async function pollOnce() {
           }
           console.log(`[cornerService] gismo 更新: ${match.homeTeam} vs ${match.awayTeam}, ${deltaData.elapsedMinutes}'`);
         }
-      }, sharedPage);
+      }, sharedPage, (endedMatchId) => {
+        // 比赛结束回调：从 cachedMatches 中移除已结束的比赛
+        const before = cachedMatches.length;
+        cachedMatches = cachedMatches.filter(m => m.matchId !== endedMatchId);
+        console.log(`[cornerService] 比赛结束移除: matchId=${endedMatchId}, 缓存 ${before}->${cachedMatches.length}`);
+      });
     }
   }
 
@@ -619,33 +624,36 @@ function mapMatchToCornerFormat(match) {
 export async function getLiveCornerData(filterMatchId) {
   const generatedAt = new Date().toISOString();
 
+  // 过滤已结束的比赛（liveStatus 不为 "live" 的视为已结束）
+  const liveMatches = cachedMatches.filter(m => !m.liveStatus || m.liveStatus === "live");
+
   // 检查缓存是否有效（有数据且未过期）
   const now = Date.now();
-  const isCacheValid = cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_EXPIRE_MS;
+  const isCacheValid = liveMatches.length > 0 && (now - lastFetchTime) < CACHE_EXPIRE_MS;
 
   if (isCacheValid) {
     // ★ 返回前重新评估策略（确保使用最新的 activeStrategies）
-    for (const m of cachedMatches) {
+    for (const m of liveMatches) {
       m.triggeredStrategies = evaluateCornerStrategies(m, activeStrategies);
     }
     const filtered = filterMatchId
-      ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
-      : cachedMatches;
+      ? liveMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
+      : liveMatches;
     console.log(`[cornerService] 返回缓存数据（${filtered.length}场），缓存年龄: ${Math.floor((now - lastFetchTime) / 1000)}秒`);
     return { data: filtered, generatedAt, count: filtered.length, cacheAge: now - lastFetchTime, mainMarkets: cachedMainMarkets };
   }
 
   // 缓存无效或为空，检查是否正在轮询中
-  if (pollingActive && cachedMatches.length > 0) {
+  if (pollingActive && liveMatches.length > 0) {
     // ★ 返回前重新评估策略（确保使用最新的 activeStrategies）
-    for (const m of cachedMatches) {
+    for (const m of liveMatches) {
       m.triggeredStrategies = evaluateCornerStrategies(m, activeStrategies);
     }
     // 轮询正在进行中，返回旧缓存但标记为过期
-    console.log(`[cornerService] 返回即将刷新的缓存数据（${cachedMatches.length}场），等待轮询更新...`);
+    console.log(`[cornerService] 返回即将刷新的缓存数据（${liveMatches.length}场），等待轮询更新...`);
     const filtered = filterMatchId
-      ? cachedMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
-      : cachedMatches;
+      ? liveMatches.filter(m => m.matchId === filterMatchId || m.homeTeam + "_vs_" + m.awayTeam === filterMatchId)
+      : liveMatches;
     return { data: filtered, generatedAt, count: filtered.length, cacheExpired: true, mainMarkets: cachedMainMarkets };
   }
   // 无缓存时直接返回空（不自动触发爬虫，由轮询/即时爬取入口负责）

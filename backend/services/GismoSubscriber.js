@@ -100,8 +100,9 @@ function detectChanges(deltaData) {
  * @param {string[]} matchIds - 比赛 ID 列表
  * @param {Function} callback - 数据回调 (deltaData) => void
  * @param {Page} page - Puppeteer 页面对象
+ * @param {Function} [onMatchEnded] - 比赛结束回调 (matchId) => void
  */
-export function subscribeMatches(matchIds, callback, page) {
+export function subscribeMatches(matchIds, callback, page, onMatchEnded) {
   if (!Array.isArray(matchIds) || matchIds.length === 0) {
     console.log("[GismoSubscriber] matchIds 为空，跳过订阅");
     return;
@@ -172,6 +173,7 @@ export function subscribeMatches(matchIds, callback, page) {
         // 比赛结束自动退订
         if (deltaData.liveStatus !== "live" || !deltaData.isRunning) {
           console.log("[GismoSubscriber] matchId " + matchId + " ended, unsubscribing");
+          if (onMatchEnded) onMatchEnded(matchId);
           unsubscribeMatches([matchId]);
         }
       } catch (e) {
