@@ -154,8 +154,9 @@
       "installerHeaderIcon": "public/icon.ico"
     },
     "publish": {
-      "provider": "generic",
-      "url": "https://gitee.com/johuiwu/football-quant-analyzer/raw/main/update"
+      "provider": "github",
+      "owner": "johuiwu",
+      "repo": "football-quant-analyzer"
     }
   }
 }
