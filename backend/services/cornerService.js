@@ -578,6 +578,7 @@ export function getBackendPollingStatus() {
 
 // ======================== 数据格式映射 ========================
 function mapMatchToCornerFormat(match) {
+  const safeFloat = (v) => { const n = parseFloat(v); return Number.isNaN(n) ? 0 : n; };
   return {
     matchId: match.matchId || "",
     matchName: match.matchName || ((match.homeTeam && match.awayTeam) ? match.homeTeam + " vs " + match.awayTeam : "未知比赛"),
@@ -591,9 +592,15 @@ function mapMatchToCornerFormat(match) {
     totalCorners: match.totalCorners ?? 0,
     homeCorners: match.homeCorners ?? 0,
     awayCorners: match.awayCorners ?? 0,
-    cornerHandicap: match.cornerHandicap != null ? parseFloat(match.cornerHandicap) : 0,
-    cornerOdds: match.cornerOdds != null ? parseFloat(match.cornerOdds) : 0,
+    cornerHandicap: match.cornerHandicap != null ? safeFloat(match.cornerHandicap) : 0,
+    cornerOdds: match.cornerOdds != null ? safeFloat(match.cornerOdds) : 0,
     cornerOU: match.cornerOU || null,
+    nextCorner: match.nextCorner || null,
+    ecid: match.ecid || "",
+    cornerOE: match.cornerOE || null,
+    corner1X2: match.corner1X2 || null,
+    cornerOUHalf: match.cornerOUHalf || null,
+    cornerHDPHalf: match.cornerHDPHalf || null,
     handicaps: match.handicaps || [],
     timestamp: match.timestamp || Date.now(),
     triggeredStrategies: match.triggeredStrategies || [],

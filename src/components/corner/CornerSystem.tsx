@@ -162,7 +162,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         cornerHandicapLower: plan.minHandicap ?? s.handicapLine ?? 0,
         cornerHandicapUpper: plan.maxHandicap != null ? plan.maxHandicap : ((plan.minHandicap ?? s.handicapLine ?? 0) + 3),
         targetOdds: plan.minOdds ?? 0.8,
-        betDirection: s.type === 'spread' ? 'home' : 'over'
+        betDirection: s.betDirection ?? (s.type === 'spread' ? 'home' : 'over')
       };
     });
   };
@@ -420,11 +420,11 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
           if (s.id === 4) setPlan4(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, noStrengthLeadGoalsOpponent: s.leadGoals }));
           if (s.id === 5) setPlan5(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, noStrengthLeadGoalsOpponent: s.leadGoals }));
         }
-        // 同步 strategies state 的 isActive 状态
+        // 同步 strategies state 的 isActive 和 betDirection 状态
         setStrategies(prev => prev.map(s => {
           const backendId = s.id === 'strat_1' ? 1 : s.id === 'strat_2' ? 2 : s.id === 'strat_3' ? 3 : s.id === 'strat_4' ? 4 : 5;
           const storeStrat = storeStrategies.find(ss => ss.id === backendId);
-          if (storeStrat) return { ...s, isActive: storeStrat.enabled };
+          if (storeStrat) return { ...s, isActive: storeStrat.enabled, betDirection: storeStrat.betDirection };
           return s;
         }));
       }

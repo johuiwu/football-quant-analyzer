@@ -10,6 +10,8 @@ const POLL_INTERVAL = 3000; // 轮询间隔 3 秒
 // ---- 订阅状态 ----
 const timers = new Map();       // matchId → interval timer
 const lastState = new Map();    // matchId → { homeScore, awayScore, totalCorners, elapsedMinutes }
+const failCounts = new Map();   // matchId → 连续失败次数
+const MAX_CONSECUTIVE_FAILURES = 10; // 连续失败超过此阈值自动退订
 
 // ======================== 数据解析 ========================
 
@@ -110,9 +112,23 @@ export function subscribeMatches(matchIds, callback, page) {
     if (timers.has(matchId)) continue;
 
     const timer = setInterval(async () => {
+      // 检测 page 是否已关闭
+      if (page && page.isClosed()) {
+        console.log("[GismoSubscriber] page 已关闭，自动退订 matchId=" + matchId);
+        unsubscribeMatches([matchId]);
+        return;
+      }
+
       const token = getToken();
       if (!token) {
-        console.log("[GismoSubscriber] 无可用 token，跳过轮询 matchId=" + matchId);
+        const fails = (failCounts.get(matchId) || 0) + 1;
+        failCounts.set(matchId, fails);
+        if (fails >= MAX_CONSECUTIVE_FAILURES) {
+          console.log("[GismoSubscriber] token 连续不可用 " + fails + " 次，自动退订 matchId=" + matchId);
+          unsubscribeMatches([matchId]);
+        } else {
+          console.log("[GismoSubscriber] 无可用 token (" + fails + "/" + MAX_CONSECUTIVE_FAILURES + ")，跳过轮询 matchId=" + matchId);
+        }
         return;
       }
 
@@ -130,9 +146,19 @@ export function subscribeMatches(matchIds, callback, page) {
         }, url);
 
         if (result.error) {
-          console.log("[GismoSubscriber] matchId=" + matchId + " 请求失败: " + result.error);
+          const fails = (failCounts.get(matchId) || 0) + 1;
+          failCounts.set(matchId, fails);
+          if (fails >= MAX_CONSECUTIVE_FAILURES) {
+            console.log("[GismoSubscriber] matchId=" + matchId + " 连续请求失败 " + fails + " 次，自动退订");
+            unsubscribeMatches([matchId]);
+          } else {
+            console.log("[GismoSubscriber] matchId=" + matchId + " 请求失败: " + result.error + " (" + fails + "/" + MAX_CONSECUTIVE_FAILURES + ")");
+          }
           return;
         }
+
+        // 请求成功，重置失败计数
+        failCounts.set(matchId, 0);
 
         const deltaData = parseTimelineDelta(result);
         if (!deltaData) return;
@@ -149,7 +175,14 @@ export function subscribeMatches(matchIds, callback, page) {
           unsubscribeMatches([matchId]);
         }
       } catch (e) {
-        console.log("[GismoSubscriber] matchId=" + matchId + " 轮询异常: " + e.message);
+        const fails = (failCounts.get(matchId) || 0) + 1;
+        failCounts.set(matchId, fails);
+        if (fails >= MAX_CONSECUTIVE_FAILURES) {
+          console.log("[GismoSubscriber] matchId=" + matchId + " 连续异常 " + fails + " 次，自动退订: " + e.message);
+          unsubscribeMatches([matchId]);
+        } else {
+          console.log("[GismoSubscriber] matchId=" + matchId + " 轮询异常: " + e.message);
+        }
       }
     }, POLL_INTERVAL);
 
@@ -170,6 +203,7 @@ export function unsubscribeMatches(matchIds) {
       clearInterval(timer);
       timers.delete(matchId);
       lastState.delete(matchId);
+      failCounts.delete(matchId);
       console.log("[GismoSubscriber] 已退订 matchId=" + matchId);
     }
   }
@@ -184,6 +218,7 @@ export function unsubscribeAll() {
   }
   timers.clear();
   lastState.clear();
+  failCounts.clear();
   console.log("[GismoSubscriber] 已退订所有比赛");
 }
 
