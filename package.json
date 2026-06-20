@@ -1,7 +1,7 @@
 {
   "name": "football-quant-analyzer",
   "private": true,
-  "version": "2.8.2",
+  "version": "2.8.3",
   "description": "足球竞彩量化分析系统 - Electron 桌面版",
   "author": "Football Quant Team",
   "type": "module",
