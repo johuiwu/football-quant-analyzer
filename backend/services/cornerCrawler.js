@@ -2694,6 +2694,7 @@ async function _crawlViaPureHttp() {
   if (!creds || !creds.uid || !creds.ver || !creds.cookieStr) {
     // 凭证缺失，需要登录
     console.log("[cornerCrawler] 纯HTTP: 凭证缺失，需要登录");
+    return { __specialResult: true, reason: "credentials_missing" };
   }
 
   // 2. 如果有凭证，直接尝试发送请求
@@ -2720,7 +2721,7 @@ async function _crawlViaPureHttp() {
   const now = Date.now();
   if (lastLoginFailureTime > 0 && (now - lastLoginFailureTime) < LOGIN_COOLDOWN_MS) {
     console.log("[cornerCrawler] 纯HTTP: 登录冷却中（距上次失败 " + Math.floor((now - lastLoginFailureTime) / 1000) + "s），跳过登录");
-    return null;
+    return { __specialResult: true, reason: "login_cooldown" };
   }
 
   // 4. 触发 autoLogin（通过登录互斥锁保护，防止与 hgCrawlerService.loginToHG 并发）
@@ -2755,7 +2756,7 @@ async function _crawlViaPureHttp() {
 
   if (!newCreds) {
     lastLoginFailureTime = Date.now();
-    return null;
+    return { __specialResult: true, reason: "login_failed" };
   }
 
   // 5. 用新凭证重试请求
@@ -2768,7 +2769,7 @@ async function _crawlViaPureHttp() {
   if (rcnResult.expired) {
     console.warn("[cornerCrawler] 纯HTTP: 新凭证仍然过期");
     lastLoginFailureTime = Date.now();
-    return null;
+    return { __specialResult: true, reason: "credentials_expired" };
   }
 
   return _processHttpResults(rcnResult, rnouResult, uid, ver, cookieStr);
@@ -2798,20 +2799,32 @@ export async function crawlCornerMatches() {
   try {
     const httpResult = await _crawlViaPureHttp();
     if (httpResult) {
+      // 检查是否为特殊结果标记（凭证缺失/登录失败等）
+      if (httpResult.__specialResult) {
+        crawlingLock = false;
+        clearTimeout(lockTimeout);
+        const reason = httpResult.reason;
+        console.warn("[cornerCrawler] 纯 HTTP 路径特殊结果:", reason);
+        // 凭证相关错误 → 返回 success:false
+        if (["credentials_missing", "login_cooldown", "login_failed", "credentials_expired"].includes(reason)) {
+          return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: reason };
+        }
+        // 未知特殊结果 → 视为无比赛数据（正常空）
+        return { success: true, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, reason: "no_live_matches" };
+      }
       crawlingLock = false;
       clearTimeout(lockTimeout);
       return httpResult;
     }
-    console.log("[cornerCrawler] 纯 HTTP 路径失败，回退到浏览器模式...");
+    console.log("[cornerCrawler] 纯 HTTP 路径返回 null（无比赛数据）");
   } catch (e) {
     console.warn("[cornerCrawler] 纯 HTTP 路径异常:", e.message);
   }
 
-  // 纯 HTTP 路径失败，不再降级到浏览器 DOM 解析
-  console.warn("[cornerCrawler] 纯 HTTP 请求失败，不再降级到 DOM 解析");
+  // 纯 HTTP 返回 null = 凭证有效但无比赛数据（正常情况，不应视为失败）
   crawlingLock = false;
   clearTimeout(lockTimeout);
-  return { success: false, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, error: "pure_http_failed" };
+  return { success: true, data: { matches: [], allText: [], allElements: [] }, count: 0, timestamp: ts, reason: "no_live_matches" };
 }
 
 // ======================== 合并 XHR + DOM 数据 ========================
