@@ -1,11 +1,14 @@
 import { TeamStats } from '../data/realTeamsData';
 import { WORLD_CUP_TEAMS } from '../data/worldcup_data';
 
-// ======================== 世界杯 Elo 查找表 ========================
+// ======================== 世界杯 Elo 查找表（中英文双语映射） ========================
 
 const WORLDCUP_ELO_MAP: Record<string, number> = {};
 for (const t of WORLD_CUP_TEAMS) {
+  // 同时配置 id、英文名、中文名作为键，确保任何命名方式都能查到
   WORLDCUP_ELO_MAP[t.id] = t.elo;
+  WORLDCUP_ELO_MAP[t.name] = t.elo;
+  WORLDCUP_ELO_MAP[t.nameCn] = t.elo;
 }
 
 // ======================== 联赛基准 Elo ========================
@@ -95,15 +98,21 @@ export function getTeamElo(team: TeamStats): number {
   // 防御性编程
   if (!team) return LEAGUE_ELO_BASE.DEFAULT;
 
-  // 世界杯球队：优先从 WORLD_CUP_TEAMS 查找精确 Elo
+  // 世界杯球队：优先从 WORLD_CUP_TEAMS 查找精确 Elo（中英文双语匹配）
   if (team.league === 'WorldCup' || team.league === '世界杯') {
-    const worldCupElo = WORLDCUP_ELO_MAP[team.id];
-    if (worldCupElo && worldCupElo > 0) {
+    // 同时检测 id、中文名、英文名，确保任何命名方式都能匹配
+    const rawElo = WORLDCUP_ELO_MAP[team.id] || WORLDCUP_ELO_MAP[team.name] || WORLDCUP_ELO_MAP[team.nameCn] || null;
+
+    if (rawElo && rawElo > 0) {
       // 归一化：世界杯 Elo 整体偏高约 200，需向五大联赛标准基数靠拢
-      const normalizedElo = worldCupElo > 1800 ? worldCupElo - 200 : worldCupElo;
-      console.log(`[Elo 映射] 为 世界杯球队 ${team.nameCn || team.id} 分配精确 Elo: ${worldCupElo} (归一化后: ${normalizedElo})`);
+      const normalizedElo = rawElo > 1800 ? rawElo - 200 : rawElo;
+      console.log(`[Elo 世界杯] ${team.nameCn || team.name || team.id} 读取到 Elo: ${rawElo} (归一化后: ${normalizedElo})`);
       return normalizedElo;
     }
+
+    // 映射表里没查到，绝对不能返回 0，给保底值 1550
+    console.warn(`[Elo 安全兜底] 未在映射表中找到 ${team.nameCn || team.name || team.id} 的 Elo，使用保底值 1550`);
+    return 1550;
   }
 
   // 优先使用已存储的动态 Elo
