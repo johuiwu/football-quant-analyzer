@@ -1,4 +1,4 @@
-﻿import { run, query } from "../dbService.js";
+import { run, query } from "../dbService.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 import { loadAndValidate } from "./credentialManager.js";
 
@@ -86,6 +86,8 @@ export async function ensureBetTable() {
       ];
       for (const col of missingCols) {
         if (!existingCols.has(col.name)) {
+          // 安全守卫：列名仅允许字母数字下划线（来源为硬编码常量，禁止外部化）
+          if (!/^[a-z_]+$/i.test(col.name)) continue;
           try {
             await run(`ALTER TABLE corner_bets ADD COLUMN ${col.name} ${col.def}`);
           } catch (alterErr) {
