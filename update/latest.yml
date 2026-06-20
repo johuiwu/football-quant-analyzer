@@ -1,11 +1,11 @@
-version: 2.8.1
+version: 2.8.2
 files:
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.1/football-quant-analyzer-setup-2.8.1.exe
-    sha512: 4NgPUWRmcLjg9uIgmlrmUR5FHgRYPd3kFvsdLnZBaRFnUhtqNqpbpyMum3EtGSYjS9UY9aC14T8qJWqONPRg7w==
-    size: 268184934
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.1/football-quant-analyzer-setup-2.8.1.exe.blockmap
-    sha512: +gCg2BjTITzkGEgssmGaL1oY7731w8EOuCGbBSPNo6zRgiQpQ4G8ph5CzVFAc/dSPL2saEA3xfttKjVpMCxjaQ==
-    size: 278408
-path: football-quant-analyzer-setup-2.8.1.exe
-sha512: 4NgPUWRmcLjg9uIgmlrmUR5FHgRYPd3kFvsdLnZBaRFnUhtqNqpbpyMum3EtGSYjS9UY9aC14T8qJWqONPRg7w==
-releaseDate: '2026-06-20T10:45:06.403Z'
+  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.2/football-quant-analyzer-setup-2.8.2.exe
+    sha512: 2EE/KUXk0r6XbN5xpnJJsTr07u0fR8lxknUN/pMsLdjbffX7xzs3rZ6+8jStrCNoyUFnZsGRPIQ6zrWy/f5ksw==
+    size: 268184863
+  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.2/football-quant-analyzer-setup-2.8.2.exe.blockmap
+    sha512: d/1DKRXMP6FFZlVc1bF+lpgpXnbuaDZaRONTuuw8ugnAKKqV7H3FKScP8Nzq5kC8uJhLdTQbDoDE8UJxEZ167A==
+    size: 278269
+path: football-quant-analyzer-setup-2.8.2.exe
+sha512: 2EE/KUXk0r6XbN5xpnJJsTr07u0fR8lxknUN/pMsLdjbffX7xzs3rZ6+8jStrCNoyUFnZsGRPIQ6zrWy/f5ksw==
+releaseDate: '2026-06-20T17:21:55.049Z'
