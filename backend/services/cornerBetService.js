@@ -1,4 +1,4 @@
-import { run, query } from "../dbService.js";
+﻿import { run, query } from "../dbService.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 import { loadAndValidate } from "./credentialManager.js";
 
@@ -75,6 +75,27 @@ export async function ensureBetTable() {
       await run("CREATE TABLE IF NOT EXISTS corner_bets (id INTEGER PRIMARY KEY AUTOINCREMENT, match_id TEXT NOT NULL, match_name TEXT, strategy_id TEXT, odds REAL, amount INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', error_message TEXT, executed_at TEXT, retry_count INTEGER DEFAULT 0, bet_target TEXT DEFAULT NULL, error_reason TEXT DEFAULT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
       await run("CREATE INDEX IF NOT EXISTS idx_corner_bets_status ON corner_bets(status)");
       await run("CREATE INDEX IF NOT EXISTS idx_corner_bets_match ON corner_bets(match_id)");
+
+      // 列补齐：ALTER TABLE 兜底，确保旧表也能获得新列
+      const columns = await query("PRAGMA table_info(corner_bets)");
+      const existingCols = new Set(columns.map(c => c.name));
+      const missingCols = [
+        { name: "retry_count", def: "INTEGER DEFAULT 0" },
+        { name: "bet_target", def: "TEXT DEFAULT NULL" },
+        { name: "error_reason", def: "TEXT DEFAULT NULL" },
+      ];
+      for (const col of missingCols) {
+        if (!existingCols.has(col.name)) {
+          try {
+            await run(`ALTER TABLE corner_bets ADD COLUMN ${col.name} ${col.def}`);
+          } catch (alterErr) {
+            // 列已存在时 SQLite 会报 duplicate column 错误，安全忽略
+            if (!alterErr.message.includes("duplicate column")) {
+              console.warn(`[cornerBetService] ALTER TABLE ADD COLUMN ${col.name} failed:`, alterErr.message);
+            }
+          }
+        }
+      }
     } catch (err) { console.warn("[cornerBetService] corner_bets table error:", err.message); }
   })();
   return betTablePromise;

@@ -1,6 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import { createRequire } from 'module';
 import apiRoutes from './routes/index.js';
+
+const require = createRequire(import.meta.url);
+const knex = require('knex');
+const knexConfig = require('../knexfile.cjs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -96,9 +101,23 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: true, message: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log(`API documentation: http://localhost:${PORT}/api`);
-});
+async function startServer() {
+  // 执行数据库迁移
+  try {
+    const db = knex(knexConfig.development);
+    await db.migrate.latest();
+    console.log('[migration] 数据库迁移执行完成');
+    await db.destroy();
+  } catch (err) {
+    console.warn('[migration] 数据库迁移失败（非致命）:', err.message);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`API documentation: http://localhost:${PORT}/api`);
+  });
+}
+
+startServer();
 
 export default app;
