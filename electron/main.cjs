@@ -209,11 +209,11 @@ function setupAutoUpdater() {
   let downloadRetryCount = 0;
   let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
 
-  // GitHub 下载加速代理列表（国内直连，按优先级排序）
+  // GitHub 下载加速代理列表（国内直连，按实测速度排序）
   const GITHUB_MIRROR_PROXIES = [
-    'https://ghfast.top',
-    'https://gh-proxy.com',
-    'https://gh.ddlc.top',
+    'https://gh-proxy.com',   // 实测 1.5MB/s
+    'https://ghfast.top',     // 实测 500KB/s
+    'https://gh.ddlc.top',    // 实测 400KB/s
   ];
   let currentProxyIndex = 0;
 
