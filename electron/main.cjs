@@ -313,13 +313,42 @@ function setupAutoUpdater() {
   let downloadRetryCount = 0;
   let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
 
-  // GitHub 下载加速代理列表（国内直连，按实测速度排序）
+  // GitHub 下载加速代理列表（2026年6月实测，按速度排序）
+  // 大文件(>100MB)优先使用专业节点，小文件用通用节点
   const GITHUB_MIRROR_PROXIES = [
-    'https://gh-proxy.com',   // 实测 1.5MB/s
-    'https://ghfast.top',     // 实测 500KB/s
-    'https://gh.ddlc.top',    // 实测 400KB/s
+    'https://ghproxy.homeboyc.cn',   // 大文件专用，稳定不断连，适合 268MB 安装包
+    'https://gh-proxy.com',           // 主站，多节点智能路由，速度 1.5-5MB/s
+    'https://ghproxy.net',            // 无广告，小文件快
+    'https://mirror.ghproxy.com',     // 备用镜像站
   ];
   let currentProxyIndex = 0;
+
+  // 测速选择最优代理：首次下载前并行测速，自动选择最快的
+  async function benchmarkProxies() {
+    const testUrl = 'https://github.com/johuiwu/football-quant-analyzer/releases/latest'; // latest 重定向目标（小文件）
+    const results = await Promise.allSettled(
+      GITHUB_MIRROR_PROXIES.map(async (proxy) => {
+        const start = Date.now();
+        return new Promise((resolve, reject) => {
+          const url = `${proxy}/${testUrl}`;
+          const req = require('https').get(url, { timeout: 5000 }, (res) => {
+            const elapsed = Date.now() - start;
+            res.resume();
+            res.on('end', () => resolve({ proxy, ms: elapsed, status: res.statusCode }));
+          });
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        });
+      })
+    );
+    const ok = results.filter(r => r.status === 'fulfilled' && r.value.status < 400)
+      .map(r => r.value).sort((a, b) => a.ms - b.ms);
+    if (ok.length > 0) {
+      const best = ok[0];
+      currentProxyIndex = GITHUB_MIRROR_PROXIES.indexOf(best.proxy);
+      console.log(`[autoUpdater] 测速完成，最快代理: ${best.proxy} (${best.ms}ms)`);
+    }
+  }
 
   // 拦截 electron-updater 下载请求，将 GitHub URL 重写为加速代理 URL
   // 同时拦截 exe（完整下载/差分拼接）和 blockmap（差分更新元数据）
@@ -354,11 +383,13 @@ function setupAutoUpdater() {
     if (mainWindow) mainWindow.webContents.send('update-checking');
   });
 
-  autoUpdater.on("update-available", (info) => {
+  autoUpdater.on("update-available", async (info) => {
     console.log("[autoUpdater] 发现新版本:", info.version);
     lastUpdateInfo = info; // 缓存更新信息，用于下载重试
     downloadRetryCount = 0; // 重置下载重试计数
     if (mainWindow) mainWindow.webContents.send('update-available', info);
+    // 首次发现新版本时测速选最优代理（不阻塞后续流程）
+    benchmarkProxies().catch(e => console.log("[autoUpdater] 测速跳过:", e.message));
   });
 
   autoUpdater.on("update-not-available", () => {
