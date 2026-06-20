@@ -139,6 +139,8 @@ router.get('/:id', async (req, res) => {
 
     let homeStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
     let awayStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
+    let homeEstimated = false;
+    let awayEstimated = false;
 
     if (teamData.homeStatsJson) {
       try {
@@ -147,28 +149,47 @@ router.get('/:id', async (req, res) => {
         console.warn('[teamStats] 解析 homeStatsJson 失败:', e.message);
       }
     } else if (teamData.goals != null) {
-      const totalPlayed = 38;
+      homeEstimated = true;
+      // 基于总胜场按比例分配（更保守的估算策略）
+      const totalPlayed = teamData.matches || 38;
+      const totalGoals = teamData.goals || 0;
+      const totalConceded = teamData.conceded || 0;
+      // 估算总胜场：简化假设 - 胜场 ≈ 总进球 / (总进球 + 总失球) * 总场次
+      const totalWins = Math.round(totalGoals / Math.max(totalGoals + totalConceded, 1) * totalPlayed);
+      const totalDraws = Math.max(0, totalPlayed - totalWins - Math.round(totalConceded / Math.max(totalGoals + totalConceded, 1) * totalPlayed));
+      const totalLosses = totalPlayed - totalWins - totalDraws;
+
       const homePlayed = Math.round(totalPlayed / 2);
       const awayPlayed = totalPlayed - homePlayed;
+      // 主场胜场按 55% 比例分配，平局和负场按 50% 分配
+      const homeWins = Math.round(totalWins * 0.55);
+      const homeDraws = Math.round(totalDraws * 0.5);
+      const homeLosses = Math.max(0, homePlayed - homeWins - homeDraws);
+      const awayWins = totalWins - homeWins;
+      const awayDraws = totalDraws - homeDraws;
+      const awayLosses = Math.max(0, awayPlayed - awayWins - awayDraws);
+
       homeStats = {
         played: homePlayed,
-        wins: Math.round((teamData.goals / totalPlayed) * homePlayed * 0.5),
-        draws: Math.round((teamData.goals / totalPlayed) * homePlayed * 0.3),
-        losses: homePlayed - Math.round((teamData.goals / totalPlayed) * homePlayed * 0.5) - Math.round((teamData.goals / totalPlayed) * homePlayed * 0.3),
-        goalsFor: Math.round(teamData.goals * 0.55),
-        goalsAgainst: Math.round(teamData.conceded * 0.5),
+        wins: homeWins,
+        draws: homeDraws,
+        losses: homeLosses,
+        goalsFor: Math.round(totalGoals * 0.55),
+        goalsAgainst: Math.round(totalConceded * 0.45),
         xgFor: teamData.avgGoals ? parseFloat((teamData.avgGoals * 0.95).toFixed(2)) : 0,
         xgAgainst: teamData.avgConceded ? parseFloat((teamData.avgConceded * 1.05).toFixed(2)) : 0,
+        estimated: true,
       };
       awayStats = {
         played: awayPlayed,
-        wins: Math.round((teamData.goals / totalPlayed) * awayPlayed * 0.4),
-        draws: Math.round((teamData.goals / totalPlayed) * awayPlayed * 0.3),
-        losses: awayPlayed - Math.round((teamData.goals / totalPlayed) * awayPlayed * 0.4) - Math.round((teamData.goals / totalPlayed) * awayPlayed * 0.3),
-        goalsFor: Math.round(teamData.goals * 0.45),
-        goalsAgainst: Math.round(teamData.conceded * 0.5),
+        wins: awayWins,
+        draws: awayDraws,
+        losses: awayLosses,
+        goalsFor: Math.round(totalGoals * 0.45),
+        goalsAgainst: Math.round(totalConceded * 0.55),
         xgFor: teamData.avgGoals ? parseFloat((teamData.avgGoals * 0.85).toFixed(2)) : 0,
         xgAgainst: teamData.avgConceded ? parseFloat((teamData.avgConceded * 1.1).toFixed(2)) : 0,
+        estimated: true,
       };
     }
 
@@ -178,11 +199,37 @@ router.get('/:id', async (req, res) => {
       } catch (e) {
         console.warn('[teamStats] 解析 awayStatsJson 失败:', e.message);
       }
+    } else if (!homeEstimated && teamData.goals != null) {
+      // homeStatsJson 存在但 awayStatsJson 不存在，单独估算 awayStats
+      awayEstimated = true;
+      const totalPlayed = teamData.matches || 38;
+      const totalGoals = teamData.goals || 0;
+      const totalConceded = teamData.conceded || 0;
+      const awayPlayed = totalPlayed - (homeStats.played || Math.round(totalPlayed / 2));
+      // 从总胜场中减去主场胜场，剩余分配给客场
+      const totalWins = Math.round(totalGoals / Math.max(totalGoals + totalConceded, 1) * totalPlayed);
+      const awayWins = Math.max(0, totalWins - (homeStats.wins || 0));
+      const totalDraws = Math.max(0, totalPlayed - totalWins - Math.round(totalConceded / Math.max(totalGoals + totalConceded, 1) * totalPlayed));
+      const awayDraws = Math.max(0, totalDraws - (homeStats.draws || 0));
+      const awayLosses = Math.max(0, awayPlayed - awayWins - awayDraws);
+
+      awayStats = {
+        played: awayPlayed,
+        wins: awayWins,
+        draws: awayDraws,
+        losses: awayLosses,
+        goalsFor: Math.round(totalGoals * 0.45),
+        goalsAgainst: Math.round(totalConceded * 0.55),
+        xgFor: teamData.avgGoals ? parseFloat((teamData.avgGoals * 0.85).toFixed(2)) : 0,
+        xgAgainst: teamData.avgConceded ? parseFloat((teamData.avgConceded * 1.1).toFixed(2)) : 0,
+        estimated: true,
+      };
     }
 
     const response = {
       success: true,
       source: source,
+      estimated: homeEstimated || awayEstimated,
       stats: {
         teamId: teamData.teamId,
         teamName: teamData.teamName,

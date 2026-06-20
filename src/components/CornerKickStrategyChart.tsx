@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { TeamStats, REAL_TEAMS } from '../data/realTeamsData';
+import { TeamStats } from '../data/realTeamsData';
 import { PredictionResults } from '../utils/quantModel';
 import { Info, HelpCircle, X, BarChart3, Snowflake, TrendingUp, Flag, Shield, Activity } from 'lucide-react';
 

@@ -1,16 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import teamRoutes from './routes/teamRoutes.js';
-import teamStatsRoutes from './routes/teamStatsRoutes.js';
-import playerRoutes from './routes/playerRoutes.js';
-import matchRoutes from './routes/matchRoutes.js';
-import featureRoutes from './routes/featureRoutes.js';
-import strengthRoutes from './routes/strength.js';
-import predictRoutes from './routes/predict.js';
-// import fixtureRoutes from './routes/fixtureRoutes.js'; // 需要 TypeScript 编译，暂时禁用
-// import aiRoutes from './routes/aiRoutes.js'; // 需要 TypeScript 编译，暂时禁用
-import cornerRoutes from './routes/cornerRoutes.js';
-import crawlerRoutes from './routes/crawlerRoutes.js';
+import apiRoutes from './routes/index.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -79,17 +69,7 @@ app.get('/api', (req, res) => {
   });
 });
 
-app.use('/api/teams', teamRoutes);
-app.use('/api/team-stats', teamStatsRoutes);
-app.use('/api/players', playerRoutes);
-app.use('/api/matches', matchRoutes);
-app.use('/api/features', featureRoutes);
-app.use('/api', strengthRoutes);
-app.use('/api', predictRoutes);
-// app.use('/api', fixtureRoutes); // 需要 TypeScript 编译，暂时禁用
-// app.use('/api', aiRoutes); // 需要 TypeScript 编译，暂时禁用
-app.use('/api', cornerRoutes);
-app.use('/api', crawlerRoutes);
+app.use('/api', apiRoutes);
 
 // 根路由 — 重定向到 API 文档
 app.get('/', (req, res) => {

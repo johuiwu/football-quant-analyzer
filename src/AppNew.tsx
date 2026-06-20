@@ -32,6 +32,7 @@ function AppNewContent() {
   const setFixtureSyncMsg = useAppStore((s) => s.setFixtureSyncMsg);
   const setFixtureSyncSource = useAppStore((s) => s.setFixtureSyncSource);
   const setLoadRealTimeFixtures = useAppStore((s) => s.setLoadRealTimeFixtures);
+  const setLoadRealTimeStandings = useAppStore((s) => s.setLoadRealTimeStandings);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
 
   const navigate = useNavigate();
@@ -91,6 +92,7 @@ function AppNewContent() {
   useEffect(() => { setFixtureSyncMsg(fixtureSyncMsg); }, [fixtureSyncMsg, setFixtureSyncMsg]);
   useEffect(() => { setFixtureSyncSource(fixtureSyncSource); }, [fixtureSyncSource, setFixtureSyncSource]);
   useEffect(() => { setLoadRealTimeFixtures(loadRealTimeFixtures); }, [loadRealTimeFixtures, setLoadRealTimeFixtures]);
+  useEffect(() => { setLoadRealTimeStandings(loadRealTimeStandings); }, [loadRealTimeStandings, setLoadRealTimeStandings]);
 
 
   return (

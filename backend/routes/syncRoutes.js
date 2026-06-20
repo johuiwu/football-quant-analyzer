@@ -170,28 +170,22 @@ router.get('/sync-standings', async (req, res) => {
             updateTasks.push((async () => {
               const totalPlayed = standing.played;
 
-              // 统一使用均分估算主客场数据（仅使用 qiumiwu.com 爬虫）
-              const haData = null;
+              // 统一为总胜平负，不再估算主客场分配
+              const homePlayed = totalPlayed;
+              const awayPlayed = 0;
+              const homeWins = standing.wins;
+              const homeDraws = standing.draws;
+              const homeLosses = standing.losses;
+              const awayWins = 0;
+              const awayDraws = 0;
+              const awayLosses = 0;
+              const homeGoalsFor = standing.goalsFor;
+              const homeGoalsAgainst = standing.goalsAgainst;
+              const awayGoalsFor = 0;
+              const awayGoalsAgainst = 0;
 
-              const homePlayed = haData?.home?.played ?? Math.ceil(totalPlayed / 2);
-              const awayPlayed = haData?.away?.played ?? Math.floor(totalPlayed / 2);
-
-              const homeWins = haData?.home?.wins ?? Math.ceil(standing.wins * 0.55);
-              const homeDraws = haData?.home?.draws ?? Math.ceil(standing.draws * 0.5);
-              const homeLosses = haData?.home?.losses ?? Math.max(0, homePlayed - homeWins - homeDraws);
-              const awayWins = haData?.away?.wins ?? (standing.wins - homeWins);
-              const awayDraws = haData?.away?.draws ?? (standing.draws - homeDraws);
-              const awayLosses = haData?.away?.losses ?? Math.max(0, awayPlayed - awayWins - awayDraws);
-
-              const homeGoalsFor = haData?.home?.goalsFor ?? Math.ceil(standing.goalsFor * 0.55);
-              const homeGoalsAgainst = haData?.home?.goalsAgainst ?? Math.ceil(standing.goalsAgainst * 0.45);
-              const awayGoalsFor = haData?.away?.goalsFor ?? (standing.goalsFor - homeGoalsFor);
-              const awayGoalsAgainst = haData?.away?.goalsAgainst ?? (standing.goalsAgainst - homeGoalsAgainst);
-
-              const estCleanSheets = Math.max(0, Math.round(totalPlayed * 0.35 - (standing.goalsAgainst) * 0.18));
-
-              const homeXG = computeTeamXGSplit({ ...team, shotsPerGame: team.shotsPerGame || 12, shotAccuracy: team.shotAccuracy || 40, league: team.league, homeStats: { ...team.homeStats, played: homePlayed, goalsFor: homeGoalsFor, goalsAgainst: homeGoalsAgainst }, awayStats: { ...team.awayStats, played: awayPlayed, goalsFor: awayGoalsFor, goalsAgainst: awayGoalsAgainst } }, true);
-              const awayXG = computeTeamXGSplit({ ...team, shotsPerGame: team.shotsPerGame || 12, shotAccuracy: team.shotAccuracy || 40, league: team.league, homeStats: { ...team.homeStats, played: homePlayed, goalsFor: homeGoalsFor, goalsAgainst: homeGoalsAgainst }, awayStats: { ...team.awayStats, played: awayPlayed, goalsFor: awayGoalsFor, goalsAgainst: awayGoalsAgainst } }, false);
+              const homeXG = computeTeamXGSplit({ ...team, shotsPerGame: team.shotsPerGame || 12, shotAccuracy: team.shotAccuracy || 40, league: team.league, homeStats: { played: homePlayed, goalsFor: homeGoalsFor, goalsAgainst: homeGoalsAgainst }, awayStats: { played: awayPlayed, goalsFor: awayGoalsFor, goalsAgainst: awayGoalsAgainst } }, true);
+              const awayXG = computeTeamXGSplit({ ...team, shotsPerGame: team.shotsPerGame || 12, shotAccuracy: team.shotAccuracy || 40, league: team.league, homeStats: { played: homePlayed, goalsFor: homeGoalsFor, goalsAgainst: homeGoalsAgainst }, awayStats: { played: awayPlayed, goalsFor: awayGoalsFor, goalsAgainst: awayGoalsAgainst } }, false);
 
               // Understat 数据写入数据库，保留主客场差异
               if (understatAvgXG > 0) {
@@ -215,7 +209,7 @@ router.get('/sync-standings', async (req, res) => {
 
               // Understat 优先，否则用 xgService 推算
               const finalHomeXg = understatAvgXG > 0 ? understatAvgXG : homeXG.xgFor;
-              const finalAwayXg = understatAvgXG > 0 ? understatAvgXG : awayXG.xgFor;
+              const finalAwayXg = understatAvgXG > 0 ? understatAvgXGA : awayXG.xgFor;
               const finalXgAgainst = understatAvgXGA > 0 ? understatAvgXGA : homeXG.xgAgainst;
               if (understatAvgXG <= 0) {
                 console.log(`[xgService] 回退到推算 xG: ${homeXG.xgFor.toFixed(2)}`);
@@ -224,12 +218,11 @@ router.get('/sync-standings', async (req, res) => {
               updatedTeams[idx] = {
                 ...team,
                 rank: standing.rank,
-                cleanSheets: team.cleanSheets > 0 ? team.cleanSheets : estCleanSheets,
+                cleanSheets: 0,
                 homeXg: finalHomeXg,
                 awayXg: finalAwayXg,
                 ...(understatMeta || {}),
                 homeStats: {
-                  ...team.homeStats,
                   played: homePlayed,
                   wins: homeWins,
                   draws: homeDraws,
@@ -240,15 +233,9 @@ router.get('/sync-standings', async (req, res) => {
                   xgAgainst: finalXgAgainst,
                 },
                 awayStats: {
-                  ...team.awayStats,
-                  played: awayPlayed,
-                  wins: awayWins,
-                  draws: awayDraws,
-                  losses: awayLosses,
-                  goalsFor: awayGoalsFor,
-                  goalsAgainst: awayGoalsAgainst,
-                  xgFor: finalAwayXg,
-                  xgAgainst: finalXgAgainst,
+                  played: 0, wins: 0, draws: 0, losses: 0,
+                  goalsFor: 0, goalsAgainst: 0,
+                  xgFor: 0, xgAgainst: 0,
                 },
               };
             })());

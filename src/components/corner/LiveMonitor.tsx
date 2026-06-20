@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
-import { REAL_TEAMS } from "../../data/realTeamsData";
 
 // ==================== 盘口分组配置 ====================
 
@@ -294,6 +293,7 @@ const MatchCard = React.memo(function MatchCard({
 
 export default function LiveMonitor() {
   const navigate = useNavigate();
+  const teams = useAppStore((s) => s.teams);
   const selectedMatchId = useAppStore((s) => s.selectedMatchId);
   const trackedMatchIds = useAppStore((s) => s.trackedMatchIds);
   const addTrackedMatch = useAppStore((s) => s.addTrackedMatch);
@@ -321,7 +321,7 @@ export default function LiveMonitor() {
   }, []);
 
   const findTeamInfo = (nameCn: string) => {
-    const team = REAL_TEAMS.find((t) => t.nameCn === nameCn);
+    const team = teams.find((t) => t.nameCn === nameCn);
     return team ? { id: team.id, league: team.league } : { id: "", league: "" };
   };
 

@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { REAL_TEAMS } from '../data/realTeamsData';
 import { TeamStats } from '../data/realTeamsData';
 import { getTeams, syncStandings } from '../services/apiService';
 
 export function useTeamDataSync() {
-  const [teams, setTeams] = useState<TeamStats[]>(REAL_TEAMS);
+  const [teams, setTeams] = useState<TeamStats[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [syncMessage, setSyncMessage] = useState<string>('离线载入：已配置 2026 赛季五大联赛门阀真实多维战绩矩阵');
-  const [syncSource, setSyncSource] = useState<string>('preset');
+  const [syncMessage, setSyncMessage] = useState<string>('正在从服务器加载球队数据...');
+  const [syncSource, setSyncSource] = useState<string>('loading');
   const [error, setError] = useState<Error | null>(null);
 
   const loadTeamsFromApi = useCallback(async () => {
@@ -32,22 +31,22 @@ export function useTeamDataSync() {
           setSyncSource('database');
           console.log(`[useTeamDataSync] 从 /api/teams 加载了 ${teamsData.length} 支球队数据`);
         } else {
-          // API 数据格式不兼容（如缺少 id/league 字段），保留 REAL_TEAMS
-          setSyncMessage('⚠️ API数据格式不兼容，已使用内置预设数据');
-          setSyncSource('preset');
-          console.warn('[useTeamDataSync] API数据格式不兼容，缺少 id/league 字段，回退到 REAL_TEAMS');
+          // API 数据格式不兼容（如缺少 id/league 字段）
+          setSyncMessage('API 数据格式异常，请检查后端服务');
+          setSyncSource('error');
+          console.warn('[useTeamDataSync] API数据格式不兼容，缺少 id/league 字段');
         }
       } else {
-        setSyncMessage('⚠️ 数据库为空，使用内置预设数据');
-        setSyncSource('preset');
+        setSyncMessage('数据库为空，请先同步积分榜数据');
+        setSyncSource('empty');
       }
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '加载失败';
       console.error("[useTeamDataSync] 加载球队数据失败:", err);
       setError(err instanceof Error ? err : new Error(errorMessage));
-      setSyncMessage('⚠️ API连接失败，已安全回退至内置高保真名门战势库');
-      setSyncSource('preset');
+      setSyncMessage('数据加载失败，请检查后端服务是否正常运行');
+      setSyncSource('error');
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +74,7 @@ export function useTeamDataSync() {
       const errorMessage = err instanceof Error ? err.message : '同步失败';
       console.error("[useTeamDataSync] 同步积分榜失败:", err);
       setError(err instanceof Error ? err : new Error(errorMessage));
-      setSyncMessage("⚠️ 同步异常：已安全回退至内置高保真名门战势库");
+      setSyncMessage("积分榜同步失败，请检查网络连接");
     } finally {
       setIsLoading(false);
     }

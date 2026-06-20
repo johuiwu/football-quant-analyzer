@@ -25,8 +25,8 @@ function ensureAdvancedFields(team) {
   const estimatedNpxgd = Math.round((seasonXg - seasonXga) * 0.95 * 10) / 10;
 
   // 2. xPTS = 实际积分 * 0.7 + max(0, 实际积分 + NPxGD) * 0.3
-  const wins = (team.homeStats?.wins || 0) + (team.awayStats?.wins || 0);
-  const draws = (team.homeStats?.draws || 0) + (team.awayStats?.draws || 0);
+  const wins = team.homeStats?.wins || 0;
+  const draws = team.homeStats?.draws || 0;
   const points = wins * 3 + draws;
   const estimatedXpts = Math.round((points * 0.7 + Math.max(0, points + estimatedNpxgd) * 0.3) * 10) / 10;
 
@@ -57,7 +57,36 @@ router.get('/teams', async (req, res) => {
       const dbMap = new Map(dbTeams.map((t) => [t.id, t]));
       const merged = REAL_TEAMS.map((rt) => {
         const dbTeam = dbMap.get(rt.id);
-        const base = dbTeam ? { ...rt, ...dbTeam, homeStats: dbTeam.homeStats || rt.homeStats || { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 }, awayStats: dbTeam.awayStats || rt.awayStats || { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 } } : rt;
+        if (!dbTeam) return ensureAdvancedFields(rt);
+
+        // DB 数据优先，但检查 homeStats 是否有真实数据（总胜场 > 0）
+        const dbHasRealData = dbTeam.homeStats && (dbTeam.homeStats.wins + dbTeam.homeStats.draws + dbTeam.homeStats.losses) > 0;
+
+        // 兼容旧数据：如果 DB 的 awayStats 有非零值（旧格式主客场分配），合并到 homeStats
+        let normalizedHomeStats = dbTeam.homeStats;
+        let normalizedAwayStats = dbTeam.awayStats;
+        if (dbHasRealData && dbTeam.awayStats && (dbTeam.awayStats.wins + dbTeam.awayStats.draws + dbTeam.awayStats.losses) > 0) {
+          // 旧格式：主客场分开存储，合并为总数据
+          normalizedHomeStats = {
+            played: (dbTeam.homeStats.played || 0) + (dbTeam.awayStats.played || 0),
+            wins: (dbTeam.homeStats.wins || 0) + (dbTeam.awayStats.wins || 0),
+            draws: (dbTeam.homeStats.draws || 0) + (dbTeam.awayStats.draws || 0),
+            losses: (dbTeam.homeStats.losses || 0) + (dbTeam.awayStats.losses || 0),
+            goalsFor: (dbTeam.homeStats.goalsFor || 0) + (dbTeam.awayStats.goalsFor || 0),
+            goalsAgainst: (dbTeam.homeStats.goalsAgainst || 0) + (dbTeam.awayStats.goalsAgainst || 0),
+            xgFor: Math.round(((dbTeam.homeStats.xgFor || 0) + (dbTeam.awayStats.xgFor || 0)) * 10) / 10,
+            xgAgainst: Math.round(((dbTeam.homeStats.xgAgainst || 0) + (dbTeam.awayStats.xgAgainst || 0)) * 10) / 10,
+          };
+          normalizedAwayStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
+        }
+
+        const base = {
+          ...rt,
+          ...dbTeam,
+          // DB 有真实胜平负数据时使用 DB 的 homeStats（已归一化），否则保留 REAL_TEAMS
+          homeStats: dbHasRealData ? normalizedHomeStats : rt.homeStats,
+          awayStats: dbHasRealData ? normalizedAwayStats : rt.awayStats,
+        };
         return ensureAdvancedFields(base);
       });
       // 追加 DB 中有但 REAL_TEAMS 中没有的球队

@@ -1,11 +1,63 @@
 import { Router } from 'express';
 import { REAL_TEAMS } from '../../src/data/realTeamsData';
 import { ALL_LEAGUE_TEAMS } from '../../src/data/leagueTeams';
-import { getDb, upsertTeamStats, getTeamStatsFromDb } from '../../database/db';
+import { getDb, upsertTeamStats, getTeamStatsFromDb, getAllCompleteTeams } from '../../database/db';
 import { LEAGUE_PRESETS } from '../../config/leaguePresets';
 import { fetchTeamStatsFromQiumiwu } from '../services/crawlerHelper.js';
 
 const router = Router();
+
+// 球队数据缓存（与 /api/teams 返回一致）
+let teamsCache = null;
+let teamsCacheTime = 0;
+const TEAMS_CACHE_TTL = 60_000; // 60秒缓存
+
+async function getTeamsMerged() {
+  const now = Date.now();
+  if (teamsCache && (now - teamsCacheTime) < TEAMS_CACHE_TTL) return teamsCache;
+  try {
+    const dbTeams = await getAllCompleteTeams();
+    const dbMap = new Map(dbTeams.map((t) => [t.id, t]));
+    const merged = REAL_TEAMS.map((rt) => {
+      const dbTeam = dbMap.get(rt.id);
+      if (!dbTeam) return rt;
+      const dbHasRealData = dbTeam.homeStats && (dbTeam.homeStats.wins + dbTeam.homeStats.draws + dbTeam.homeStats.losses) > 0;
+      // 兼容旧数据：如果 DB 的 awayStats 有非零值（旧格式主客场分配），合并到 homeStats
+      let normalizedHomeStats = dbTeam.homeStats;
+      let normalizedAwayStats = dbTeam.awayStats;
+      if (dbHasRealData && dbTeam.awayStats && (dbTeam.awayStats.wins + dbTeam.awayStats.draws + dbTeam.awayStats.losses) > 0) {
+        normalizedHomeStats = {
+          played: (dbTeam.homeStats.played || 0) + (dbTeam.awayStats.played || 0),
+          wins: (dbTeam.homeStats.wins || 0) + (dbTeam.awayStats.wins || 0),
+          draws: (dbTeam.homeStats.draws || 0) + (dbTeam.awayStats.draws || 0),
+          losses: (dbTeam.homeStats.losses || 0) + (dbTeam.awayStats.losses || 0),
+          goalsFor: (dbTeam.homeStats.goalsFor || 0) + (dbTeam.awayStats.goalsFor || 0),
+          goalsAgainst: (dbTeam.homeStats.goalsAgainst || 0) + (dbTeam.awayStats.goalsAgainst || 0),
+          xgFor: Math.round(((dbTeam.homeStats.xgFor || 0) + (dbTeam.awayStats.xgFor || 0)) * 10) / 10,
+          xgAgainst: Math.round(((dbTeam.homeStats.xgAgainst || 0) + (dbTeam.awayStats.xgAgainst || 0)) * 10) / 10,
+        };
+        normalizedAwayStats = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 };
+      }
+      return {
+        ...rt,
+        ...dbTeam,
+        homeStats: dbHasRealData ? normalizedHomeStats : rt.homeStats,
+        awayStats: dbHasRealData ? normalizedAwayStats : rt.awayStats,
+      };
+    });
+    for (const dbTeam of dbTeams) {
+      if (!REAL_TEAMS.find((rt) => rt.id === dbTeam.id)) {
+        merged.push(dbTeam);
+      }
+    }
+    teamsCache = merged;
+    teamsCacheTime = now;
+    return merged;
+  } catch (err) {
+    console.warn('[statsRoutes] getTeamsMerged failed, using REAL_TEAMS:', err.message);
+    return REAL_TEAMS;
+  }
+}
 
 // ======================== request throttle ========================
 const requestThrottle = new Map();
@@ -20,6 +72,7 @@ function buildFallbackStats(team) {
   return {
     basic: null,
     advanced: null,
+    estimated: true,
     teamId: team.id,
     teamName: team.nameCn,
     league: team.leagueCn,
@@ -36,12 +89,14 @@ function buildFallbackStats(team) {
       wins: 0, draws: 0, losses: 0,
       goalsFor: 0, goalsAgainst: 0,
       xgFor: 0, xgAgainst: 0,
+      estimated: true,
     },
     awayStats: {
       played: awayPlayed,
       wins: 0, draws: 0, losses: 0,
       goalsFor: 0, goalsAgainst: 0,
       xgFor: 0, xgAgainst: 0,
+      estimated: true,
     },
   };
 }
@@ -55,9 +110,10 @@ function buildResponse(team, stats, source) {
   const totalGoals = stats.goals ? (stats.goals.total || 0) : 0;
   const totalConceded = stats.conceded ? (stats.conceded.total || 0) : 0;
 
-  const realTotalWins = (team.homeStats ? (team.homeStats.wins || 0) : 0) + (team.awayStats ? (team.awayStats.wins || 0) : 0);
-  const realTotalDraws = (team.homeStats ? (team.homeStats.draws || 0) : 0) + (team.awayStats ? (team.awayStats.draws || 0) : 0);
-  const realTotalLosses = (team.homeStats ? (team.homeStats.losses || 0) : 0) + (team.awayStats ? (team.awayStats.losses || 0) : 0);
+  // 统一为总胜平负检查（homeStats 存储总数据，awayStats 全零）
+  const realTotalWins = team.homeStats?.wins || 0;
+  const realTotalDraws = team.homeStats?.draws || 0;
+  const realTotalLosses = team.homeStats?.losses || 0;
   const hasRealWDL = (realTotalWins + realTotalDraws + realTotalLosses) > 0;
 
   const totalWins = hasRealWDL ? realTotalWins : Math.round(totalGoals / 2.5) || 0;
@@ -146,25 +202,22 @@ function buildResponse(team, stats, source) {
       seasonNpxgd: team.seasonNpxgd || 0,
       matches: team.matches || 0,
       homeStats: {
-        played: homePlayed,
-        wins: homeWins,
-        draws: homeDraws,
-        losses: homeLosses,
-        goalsFor: homeGoals,
-        goalsAgainst: homeConceded,
-        xgFor: parseFloat(((homeGoals * 0.95) / homePlayed).toFixed(2)),
-        xgAgainst: parseFloat(((homeConceded * 1.05) / homePlayed).toFixed(2)),
+        played: matchesPlayed,
+        wins: realTotalWins,
+        draws: realTotalDraws,
+        losses: realTotalLosses,
+        goalsFor: totalGoals,
+        goalsAgainst: totalConceded,
+        xgFor: matchesPlayed > 0 ? parseFloat((totalGoals * 0.95 / matchesPlayed).toFixed(2)) : 0,
+        xgAgainst: matchesPlayed > 0 ? parseFloat((totalConceded * 1.05 / matchesPlayed).toFixed(2)) : 0,
       },
       awayStats: {
-        played: awayPlayed,
-        wins: awayWins,
-        draws: awayDraws,
-        losses: awayLosses,
-        goalsFor: awayGoals,
-        goalsAgainst: awayConceded,
-        xgFor: parseFloat(((awayGoals * 0.95) / awayPlayed).toFixed(2)),
-        xgAgainst: parseFloat(((awayConceded * 1.05) / awayPlayed).toFixed(2)),
+        played: 0, wins: 0, draws: 0, losses: 0,
+        goalsFor: 0, goalsAgainst: 0,
+        xgFor: 0, xgAgainst: 0,
+        ...(hasRealWDL ? {} : { estimated: true }),
       },
+      estimated: !hasRealWDL,
     },
   };
 }
@@ -179,9 +232,10 @@ function buildResponseFromDb(team, row, source) {
   const totalGoals = row.goals || 0;
   const totalConceded = row.conceded || 0;
 
-  const realTotalWins = (team.homeStats ? (team.homeStats.wins || 0) : 0) + (team.awayStats ? (team.awayStats.wins || 0) : 0);
-  const realTotalDraws = (team.homeStats ? (team.homeStats.draws || 0) : 0) + (team.awayStats ? (team.awayStats.draws || 0) : 0);
-  const realTotalLosses = (team.homeStats ? (team.homeStats.losses || 0) : 0) + (team.awayStats ? (team.awayStats.losses || 0) : 0);
+  // 统一为总胜平负检查（homeStats 存储总数据，awayStats 全零）
+  const realTotalWins = team.homeStats?.wins || 0;
+  const realTotalDraws = team.homeStats?.draws || 0;
+  const realTotalLosses = team.homeStats?.losses || 0;
   const hasRealWDL = (realTotalWins + realTotalDraws + realTotalLosses) > 0;
 
   const totalWins = hasRealWDL ? realTotalWins : Math.round(totalGoals / 2.5) || 0;
@@ -246,19 +300,22 @@ function buildResponseFromDb(team, row, source) {
       seasonNpxgd: row.seasonNpxgd ?? row.season_npxgd ?? 0,
       matches: row.matches ?? 0,
       homeStats: {
-        played: homePlayed,
-        wins: homeWins, draws: homeDraws, losses: homeLosses,
-        goalsFor: homeGoals, goalsAgainst: homeConceded,
-        xgFor: parseFloat((homeGoals * 0.95).toFixed(1)),
-        xgAgainst: parseFloat((homeConceded * 1.05).toFixed(1)),
+        played: matchesPlayed,
+        wins: realTotalWins,
+        draws: realTotalDraws,
+        losses: realTotalLosses,
+        goalsFor: totalGoals,
+        goalsAgainst: totalConceded,
+        xgFor: matchesPlayed > 0 ? parseFloat((totalGoals * 0.95 / matchesPlayed).toFixed(1)) : 0,
+        xgAgainst: matchesPlayed > 0 ? parseFloat((totalConceded * 1.05 / matchesPlayed).toFixed(1)) : 0,
       },
       awayStats: {
-        played: awayPlayed,
-        wins: awayWins, draws: awayDraws, losses: awayLosses,
-        goalsFor: awayGoals, goalsAgainst: awayConceded,
-        xgFor: parseFloat((awayGoals * 0.95).toFixed(1)),
-        xgAgainst: parseFloat((awayConceded * 1.05).toFixed(1)),
+        played: 0, wins: 0, draws: 0, losses: 0,
+        goalsFor: 0, goalsAgainst: 0,
+        xgFor: 0, xgAgainst: 0,
+        ...(hasRealWDL ? {} : { estimated: true }),
       },
+      estimated: !hasRealWDL,
     },
   };
 }
@@ -269,32 +326,38 @@ router.get('/team-stats/:teamId', async (req, res) => {
   const isRefresh = req.query.refresh === 'true';
   const now = Date.now();
 
-  // Find team in REAL_TEAMS, then ALL_LEAGUE_TEAMS
-  let team = REAL_TEAMS.find((t) => t.id === teamId);
+  // Find team in mergedTeams (DB + REAL_TEAMS), then ALL_LEAGUE_TEAMS
+  const mergedTeams = await getTeamsMerged();
+  let team = mergedTeams.find((t) => t.id === teamId);
   const leagueTeam = ALL_LEAGUE_TEAMS.find((t) => t.id === teamId);
   if (!team && leagueTeam && leagueTeam.realTeamId) {
-    team = REAL_TEAMS.find((t) => t.id === leagueTeam.realTeamId);
+    team = mergedTeams.find((t) => t.id === leagueTeam.realTeamId);
   }
   if (!team && !leagueTeam) {
     return res.status(404).json({ success: false, error: 'Team \'' + teamId + '\' not found.' });
   }
-  // For teams in ALL_LEAGUE_TEAMS not in REAL_TEAMS, construct fallback team
+  // For teams in ALL_LEAGUE_TEAMS not in mergedTeams, construct fallback team
   if (!team && leagueTeam) {
     const realTeamData = leagueTeam.realTeamId
-      ? REAL_TEAMS.find(t => t.id === leagueTeam.realTeamId)
-      : REAL_TEAMS.find(t => t.nameCn === leagueTeam.name || t.name === leagueTeam.englishName);
+      ? mergedTeams.find(t => t.id === leagueTeam.realTeamId)
+      : mergedTeams.find(t => t.nameCn === leagueTeam.name || t.name === leagueTeam.englishName);
+    // 最终 fallback：仍从 REAL_TEAMS 查找
+    const fallbackReal = !realTeamData
+      ? (REAL_TEAMS.find(t => t.id === leagueTeam.realTeamId) || REAL_TEAMS.find(t => t.nameCn === leagueTeam.name || t.name === leagueTeam.englishName))
+      : null;
+    const usedRealData = realTeamData || fallbackReal;
     const preset = LEAGUE_PRESETS[leagueTeam.leagueKey];
-    const totalPlayed = realTeamData
-      ? (realTeamData.homeStats.played + realTeamData.awayStats.played)
+    const totalPlayed = usedRealData
+      ? (usedRealData.homeStats.played + usedRealData.awayStats.played)
       : (preset ? preset.matchesPerSeason : 30);
     const halfPlayed = Math.round(totalPlayed / 2);
 
     team = {
       id: leagueTeam.id, name: leagueTeam.englishName, nameCn: leagueTeam.name,
       league: leagueTeam.leagueKey, leagueCn: leagueTeam.league,
-      rank: realTeamData ? (realTeamData.rank || 0) : 0,
-      homeStats: (realTeamData && realTeamData.homeStats) || { played: halfPlayed, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 },
-      awayStats: (realTeamData && realTeamData.awayStats) || { played: totalPlayed - halfPlayed, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 },
+      rank: usedRealData ? (usedRealData.rank || 0) : 0,
+      homeStats: (usedRealData && usedRealData.homeStats) || { played: halfPlayed, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 },
+      awayStats: (usedRealData && usedRealData.awayStats) || { played: totalPlayed - halfPlayed, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, xgFor: 0, xgAgainst: 0 },
     };
   }
 
@@ -327,6 +390,7 @@ router.get('/team-stats/:teamId', async (req, res) => {
     console.log('[team-stats] no data, waiting for manual refresh');
     return res.json({
       success: true, teamId, stats: null, source: 'empty',
+      estimated: true,
       teamName: team.nameCn, league: team.leagueCn,
       rank: team.rank,
       matchesPlayed: team.homeStats.played + team.awayStats.played,
@@ -391,6 +455,7 @@ router.get('/team-stats/:teamId', async (req, res) => {
     success: true,
     teamId,
     source: 'fallback',
+    estimated: true,
     stats: buildFallbackStats(team),
   });
 });
