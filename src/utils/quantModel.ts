@@ -1267,17 +1267,17 @@ const lowScoreProbability = {
 
 
   // 8. xG 实力 - 优先读 homeXg（场均预期进球），回退到 homeStats.xgFor
-  const safeHomeXg = homeTeam.homeXg > 0 ? homeTeam.homeXg : homeTeam.homeStats.xgFor;
+  const safeHomeXg = homeTeam.homeXg > 0 ? homeTeam.homeXg : (homeTeam.homeStats.xgFor || 1.4);
   const safeHomeXgAgainst = homeTeam.homeStats.xgAgainst > 0
     ? homeTeam.homeStats.xgAgainst
-    : computeTeamXGSplit(homeTeam, true).xgAgainst;
-  // 客队预期进球：读取 awayXg（客场场均预期进球），兜底用 computeTeamXGSplit(team, false)
+    : (homeTeam.homeStats.xgFor || 1.4);
+  // 客队预期进球：读取 awayXg（客场场均预期进球），兜底使用 xgFor
   const safeAwayXg = awayTeamVal.awayXg > 0
     ? awayTeamVal.awayXg
-    : computeTeamXGSplit(awayTeamVal, false).xgFor;
+    : (awayTeamVal.awayStats.xgFor || 1.2);
   const safeAwayXgAgainst = awayTeamVal.awayStats.xgAgainst > 0
     ? awayTeamVal.awayStats.xgAgainst
-    : computeTeamXGSplit(awayTeamVal, false).xgAgainst;
+    : (awayTeamVal.awayStats.xgFor || 1.2);
 
   const homeXgDiff = (safeHomeXg - safeHomeXgAgainst) / homeHPlayed;
   const awayXgDiff = (safeAwayXg - safeAwayXgAgainst) / awayAPlayed;
