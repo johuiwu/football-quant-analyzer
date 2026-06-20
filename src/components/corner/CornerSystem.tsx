@@ -160,7 +160,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         leadGoals: plan.leadGoalsOpponent ?? 99,
         leadGoalsWeak: plan.weakLeadGoalsStrong ?? (plan.noStrengthLeadGoalsOpponent ?? 0),
         cornerHandicapLower: plan.minHandicap ?? s.handicapLine ?? 0,
-        cornerHandicapUpper: plan.maxHandicap ?? (plan.minHandicap ?? s.handicapLine ?? 0) + 3,
+        cornerHandicapUpper: plan.maxHandicap != null ? plan.maxHandicap : ((plan.minHandicap ?? s.handicapLine ?? 0) + 3),
         targetOdds: plan.minOdds ?? 0.8,
         betDirection: s.type === 'spread' ? 'home' : 'over'
       };
@@ -180,15 +180,17 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
     }).catch(err => console.error('[CornerSystem] 策略同步失败:', err));
     // ★ 同步更新 cornerStore 中的策略数据，确保双数据源一致
     try {
-      useCornerStore.getState().setStrategies(backendStrategies);
+      useCornerStore.getState().setStrategies(backendStrategies, true);
     } catch (_) {}
   };
 
   // 同步投注配置到后端
   const syncBetConfigToBackend = (amount: number, isRealMode: boolean, autoBetEnabled: boolean) => {
     let trackedMatchIds: string[] = [];
+    let autoBetConfirmRequired = false;
     try {
       trackedMatchIds = useAppStore.getState().trackedMatchIds || [];
+      autoBetConfirmRequired = useCornerStore.getState().settings.autoBetConfirmRequired ?? false;
     } catch (_) {}
     fetch('/api/corner/bet-config', {
       method: 'POST',
@@ -197,7 +199,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         amount,
         isRealMode,
         autoBetEnabled,
-        autoBetConfirmRequired: false,
+        autoBetConfirmRequired,
         trackedMatchIds,
       }),
     }).catch(err => console.error('[CornerSystem] 投注配置同步失败:', err));

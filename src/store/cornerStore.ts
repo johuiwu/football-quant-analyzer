@@ -123,7 +123,7 @@ export interface CornerStore {
   betConfirmRequired: boolean;
   scheduleFreshLoaded: boolean;
   autoRefresh: boolean;
-  setStrategies: (strategies: CornerStrategy[]) => void;
+  setStrategies: (strategies: CornerStrategy[], skipBackendSync?: boolean) => void;
   updateStrategy: (id: number, updates: Partial<CornerStrategy>) => void;
   setAccountConfig: (config: Partial<AccountConfig>) => void;
   login: () => Promise<boolean>;
@@ -288,7 +288,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   balanceLastUpdated: null,
   isBalanceLoading: false,
 
-  setStrategies: (strategies) => { set({ strategies }); syncStrategiesToBackend(strategies); },
+  setStrategies: (strategies, skipBackendSync) => { set({ strategies }); if (!skipBackendSync) syncStrategiesToBackend(strategies); },
   updateStrategy: (id, updates) => {
     set((state) => ({
       strategies: state.strategies.map((s) =>
