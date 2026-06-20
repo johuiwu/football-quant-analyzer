@@ -291,15 +291,28 @@ async function pollOnce() {
   const result = await crawlCornerMatches();
 
   if (!result.success) {
-    consecutiveFailures++;
-    console.warn("[cornerService] 单次爬取失败 (" + consecutiveFailures + "次), 错误: " + (result.error || "unknown"));
-    // 连续失败 ≥2 且缓存为空才暂停（避免频繁无意义爬取）
-    if (consecutiveFailures >= 2 && cachedMatches.length === 0) {
-      console.log("[cornerService] 连续失败且无缓存，轮询已暂停");
+    // 区分"无比赛数据"（正常情况）和真正的"请求失败"
+    const isNormalEmpty = result.reason === 'no_live_matches';
+    if (!isNormalEmpty) {
+      consecutiveFailures++;
+      console.warn("[cornerService] 单次爬取失败 (" + consecutiveFailures + "次), 错误: " + (result.error || result.reason || "unknown"));
+    } else {
+      console.log("[cornerService] 当前无进行中的角球比赛（正常）");
+    }
+
+    // 首次启动前 3 次失败不暂停（给 API 预热时间）
+    const isWarmup = !pollingFirstDone && consecutiveFailures < 3;
+
+    // 暂停阈值从 2 提高到 5，避免过早暂停
+    if (!isWarmup && !isNormalEmpty && consecutiveFailures >= 5 && cachedMatches.length === 0) {
+      console.log("[cornerService] 连续 " + consecutiveFailures + " 次失败且无缓存，轮询已暂停");
       pauseCornerBackendPolling();
     }
     return;
   }
+  // 成功时标记首次数据已获取并重置失败计数
+  pollingFirstDone = true;
+  consecutiveFailures = 0;
 
   const rawMatches = result.data?.matches || [];
   const mainMarkets = result.mainMarkets || {};
@@ -311,7 +324,6 @@ async function pollOnce() {
   cachedMatches = matches;
   cachedMainMarkets = mainMarkets;
   lastFetchTime = Date.now();
-  consecutiveFailures = 0;
 
   // gismo 订阅：提取 matchId 列表并订阅实时数据
   const matchIds = cachedMatches.map(m => m.matchId).filter(Boolean);
