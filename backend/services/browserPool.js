@@ -107,6 +107,7 @@ async function launchBrowser() {
       const vp = getRandomViewport();
     const bi = await puppeteer.launch({
       headless,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       slowMo: process.env.CRAWLER_DEBUG === "1" ? 100 : 0,
       args: [
         "--no-sandbox",

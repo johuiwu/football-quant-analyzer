@@ -14,6 +14,7 @@ if (import.meta.url) {
   try { CRED_PATH = fileURLToPath(new URL("../credentials.json", import.meta.url)); } catch {}
 }
 if (!CRED_PATH) {
+  // CJS/bundled 模式：优先使用环境变量（Electron main.cjs 设置），再 fallback 到 cwd
   CRED_PATH = process.env.CRED_PATH || path.resolve(process.cwd(), "backend", "credentials.json");
 }
 

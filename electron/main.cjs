@@ -11,17 +11,12 @@ const isDev = !app.isPackaged;
 let startServer = null;
 let stopServer = null;
 
-function loadServerModule() {
+async function loadServerModule() {
   try {
     // 设置数据库路径（必须在 require 之前设置）
-    const dbPath = isDev
+    let dbPath = isDev
       ? path.join(__dirname, "..", "database")
       : path.join(process.resourcesPath, "database");
-
-    // 确保数据库目录存在
-    if (!fs.existsSync(dbPath)) {
-      fs.mkdirSync(dbPath, { recursive: true });
-    }
 
     // Cookie 文件路径（必须是可写目录）
     const userDataPath = path.join(process.env.APPDATA || process.env.HOME || '.', '足球竞彩量化分析系统');
@@ -29,10 +24,119 @@ function loadServerModule() {
       ? path.join(__dirname, "..", "backend", "cookies.json")
       : path.join(userDataPath, "cookies.json");
 
-    const staticDir = path.join(__dirname, "..", "dist");
+    // credentials.json 路径（必须是可写目录）
+    const credPath = isDev
+      ? path.join(__dirname, "..", "backend", "credentials.json")
+      : path.join(userDataPath, "credentials.json");
+
+    // 确保用户数据目录存在
+    if (!fs.existsSync(userDataPath)) {
+      fs.mkdirSync(userDataPath, { recursive: true });
+    }
+
+    // ── 数据库目录可写性检测 ──
+    // 如果安装到 Program Files 等只读目录，SQLite 无法写 WAL 文件
+    // 自动迁移到 %APPDATA%/足球竞彩量化分析系统/database/
+    if (!isDev) {
+      if (!fs.existsSync(dbPath)) {
+        fs.mkdirSync(dbPath, { recursive: true });
+      }
+      const testFile = path.join(dbPath, '.write-test');
+      try {
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+      } catch (_e) {
+        // 数据库目录不可写，迁移到 APPDATA
+        const appdataDbPath = path.join(userDataPath, 'database');
+        if (!fs.existsSync(appdataDbPath)) {
+          fs.mkdirSync(appdataDbPath, { recursive: true });
+        }
+        // 如果 APPDATA 下没有 .db 文件，从 resources/database/ 复制
+        const dbFile = path.join(appdataDbPath, 'football_data.db');
+        if (!fs.existsSync(dbFile)) {
+          const srcDb = path.join(dbPath, 'football_data.db');
+          if (fs.existsSync(srcDb)) {
+            fs.copyFileSync(srcDb, dbFile);
+            console.log("[electron] 数据库已迁移到可写目录:", appdataDbPath);
+          }
+        }
+        // 同样处理 worldcup.db
+        const wcFile = path.join(appdataDbPath, 'worldcup.db');
+        if (!fs.existsSync(wcFile)) {
+          const srcWc = path.join(dbPath, 'worldcup.db');
+          if (fs.existsSync(srcWc)) {
+            fs.copyFileSync(srcWc, wcFile);
+          }
+        }
+        dbPath = appdataDbPath;
+        console.log("[electron] 数据库目录不可写，已切换到:", dbPath);
+      }
+    }
+
+    // ── 首次启动自动建表 ──
+    // 检测 teams 表是否存在，不存在则执行 init-tables.sql
+    if (!isDev) {
+      const dbFile = path.join(dbPath, 'football_data.db');
+      let needInit = false;
+
+      if (!fs.existsSync(dbFile)) {
+        needInit = true;
+        console.log("[electron] 数据库文件不存在，需要初始化");
+      } else {
+        // 检测 teams 表是否存在
+        try {
+          const sqlite3 = require('sqlite3');
+          const checkDb = new sqlite3.Database(dbFile);
+          const hasTeams = await new Promise((resolve) => {
+            checkDb.get("SELECT name FROM sqlite_master WHERE type='table' AND name='teams'", (err, row) => {
+              checkDb.close();
+              resolve(!!row);
+            });
+          });
+          if (!hasTeams) {
+            needInit = true;
+            console.log("[electron] teams 表不存在，需要初始化");
+          }
+        } catch (_e) {
+          needInit = true;
+          console.log("[electron] 数据库检测失败，需要初始化:", _e.message);
+        }
+      }
+
+      if (needInit) {
+        // 定位 init-tables.sql
+        const initSqlPath = path.join(process.resourcesPath, 'init-tables.sql');
+        if (fs.existsSync(initSqlPath)) {
+          console.log("[electron] 执行 init-tables.sql 初始化数据库...");
+          const sql = fs.readFileSync(initSqlPath, 'utf-8');
+          const sqlite3 = require('sqlite3');
+          const initDb = new sqlite3.Database(dbFile);
+          // 先移除注释行，再按分号分割
+          const sqlNoComments = sql.split('\n').filter(line => {
+            const t = line.trim();
+            return t.length > 0 && !t.startsWith('--');
+          }).join('\n');
+          const statements = sqlNoComments.split(';').map(s => s.trim()).filter(s => s.length > 0);
+          for (const stmt of statements) {
+            await new Promise((resolve, reject) => {
+              initDb.run(stmt, (err) => {
+                if (err) console.warn("[electron] 建表警告:", err.message);
+                resolve();
+              });
+            });
+          }
+          initDb.close();
+          console.log("[electron] 数据库初始化完成");
+        } else {
+          console.warn("[electron] init-tables.sql 未找到，跳过自动建表");
+        }
+      }
+    }
 
     process.env.DB_DIR = dbPath;
     process.env.COOKIE_PATH = cookiePath;
+    process.env.CRED_PATH = credPath;
+    const staticDir = path.join(__dirname, "..", "dist");
     process.env.STATIC_DIR = staticDir;
     process.env.DISABLE_HMR = "true";
     process.env.NODE_ENV = "production";
@@ -460,7 +564,7 @@ app.whenReady().then(async () => {
     } catch (e) { return { success: false, error: e.message }; }
   });
 
-  if (!loadServerModule()) {
+  if (!await loadServerModule()) {
     console.error("[electron] 无法加载后端，退出");
     app.quit();
     return;

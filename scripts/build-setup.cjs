@@ -67,11 +67,17 @@ if (fs.existsSync(chromeCacheDir)) {
       console.warn(`[build-setup] Chrome-win64 not found at: ${chromeSrc}`);
     }
   } else {
-    console.warn('[build-setup] No Chrome versions found in Puppeteer cache');
+    console.error('[build-setup] No Chrome versions found in Puppeteer cache!');
+    console.error('[build-setup] Chromium is required for the corner crawler system.');
+    console.error('[build-setup] Please run: npm install puppeteer');
+    process.exit(1);
   }
 } else {
-  console.warn('[build-setup] Puppeteer Chrome cache not found, skipping Chromium bundling');
-  console.warn('[build-setup] Note: Corner crawler will use system Chrome if available');
+  console.error('[build-setup] Puppeteer Chrome cache not found!');
+  console.error('[build-setup] Chromium is required for the corner crawler system.');
+  console.error('[build-setup] Please run: npm install puppeteer');
+  console.error('[build-setup] Or set PUPPETEER_CACHE_DIR to a directory with Chrome.');
+  process.exit(1);
 }
 
 // 3. Copy icon to build_resources
@@ -81,6 +87,15 @@ if (fs.existsSync(iconSrc)) {
   fs.copyFileSync(iconSrc, iconDest);
   console.log('[build-setup] Icon copied to build_resources');
 }
+
+// 4. Verify init-tables.sql exists (needed for first-start auto-init)
+const initSqlSrc = path.join(ROOT, 'database', 'init-tables.sql');
+if (!fs.existsSync(initSqlSrc)) {
+  console.error('[build-setup] database/init-tables.sql not found!');
+  console.error('[build-setup] This file is required for database auto-initialization.');
+  process.exit(1);
+}
+console.log('[build-setup] init-tables.sql verified');
 
 console.log('[build-setup] Build resources ready!');
 
