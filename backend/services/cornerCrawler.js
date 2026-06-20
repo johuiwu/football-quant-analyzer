@@ -259,10 +259,10 @@ async function ensureLogin() {
   if (loginInProgress) {
     console.log("[cornerCrawler] 登录正在进行中，等待...");
     const _waitStart = Date.now();
-    const MAX_WAIT = 60000;
+    const MAX_WAIT = 15000;
     while (loginInProgress) {
       if (Date.now() - _waitStart > MAX_WAIT) {
-        console.warn("[cornerCrawler] loginInProgress 超时(60s)，强制释放锁");
+        console.warn("[cornerCrawler] loginInProgress 超时(15s)，强制释放锁");
         loginInProgress = false;
         break;
       }
@@ -385,9 +385,9 @@ async function ensureLogin() {
   }
 
   
-  // ========== 完整登录（含 3 次重试，30s 间隔） ==========
+  // ========== 完整登录（含 3 次重试，5s 间隔） ==========
   const MAX_LOGIN_RETRIES = 3;
-  const LOGIN_RETRY_DELAY = 30000;
+  const LOGIN_RETRY_DELAY = 5000;
 
   for (let loginAttempt = 1; loginAttempt <= MAX_LOGIN_RETRIES; loginAttempt++) {
     if (loginAttempt > 1) {

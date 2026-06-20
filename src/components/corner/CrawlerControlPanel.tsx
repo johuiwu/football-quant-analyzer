@@ -232,6 +232,8 @@ export default function CrawlerControlPanel() {
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    // ★ 前端超时保护：90s 后自动 abort（与后端路由层超时对齐）
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
     let wasAborted = false;
     try {
       const res = await fetch("/api/corner/login", {
@@ -268,6 +270,7 @@ export default function CrawlerControlPanel() {
       const errMsg = err.message || "登录请求失败";
       showMessage("error", "登录失败：" + errMsg + "（请确认后端服务已启动）");
     } finally {
+      clearTimeout(timeoutId);
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }

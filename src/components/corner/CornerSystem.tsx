@@ -329,25 +329,34 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       const response = await fetch('/api/corner/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: inputUser })
+        body: JSON.stringify({ username: inputUser, password: inputPass })
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setIsLoggedIn(true);
-          setUsername(data.username);
-          setShowLoginModal(false);
-          setInputUser('');
-          setInputPass('');
-          // Append success log
-          setSimulationLogs(prev => [
-            `【账户】🎉 系统管理员 [${data.username}] 成功接入爬虫高等级量化网关端口。`,
-            ...prev
-          ]);
-        }
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setIsLoggedIn(true);
+        setUsername(data.username || inputUser);
+        setShowLoginModal(false);
+        setInputUser('');
+        setInputPass('');
+        // Append success log
+        setSimulationLogs(prev => [
+          `【账户】🎉 系统管理员 [${data.username || inputUser}] 成功接入爬虫高等级量化网关端口。`,
+          ...prev
+        ]);
+      } else {
+        // 显示后端返回的错误信息
+        const errorMsg = data.error || data.suggestion || '登录失败，请重试';
+        setSimulationLogs(prev => [
+          `【账户】❌ 登录失败: ${errorMsg}`,
+          ...prev
+        ]);
       }
     } catch (e) {
       console.error("Login failed:", e);
+      setSimulationLogs(prev => [
+        `【账户】❌ 登录请求失败，请确认后端服务已启动`,
+        ...prev
+      ]);
     }
   };
 
