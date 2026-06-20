@@ -204,10 +204,36 @@ function setupAutoUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
 
-  // 下载重试配置：ghfast.top 大文件下载可能中断，自动重试
+  // 下载重试配置：大文件下载可能中断/限速，自动重试并切换代理
   const MAX_DOWNLOAD_RETRIES = 3;
   let downloadRetryCount = 0;
   let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
+
+  // GitHub 下载加速代理列表（国内直连，按优先级排序）
+  const GITHUB_MIRROR_PROXIES = [
+    'https://ghfast.top',
+    'https://gh-proxy.com',
+    'https://gh.ddlc.top',
+  ];
+  let currentProxyIndex = 0;
+
+  // 拦截 electron-updater 下载请求，将 GitHub URL 重写为加速代理 URL
+  const { session } = require('electron');
+  session.defaultSession.webRequest.onBeforeRequest(
+    { urls: ['https://github.com/*/releases/download/*', 'https://objects.githubusercontent.com/*'] },
+    (details, callback) => {
+      const originalUrl = details.url;
+      // 跳过非 exe 下载请求（如 blockmap）
+      if (!originalUrl.endsWith('.exe') && !originalUrl.includes('.exe?')) {
+        callback({});
+        return;
+      }
+      const proxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
+      const rewrittenUrl = `${proxy}/${originalUrl}`;
+      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}个代理)`);
+      callback({ redirectURL: rewrittenUrl });
+    }
+  );
 
   autoUpdater.requestHeaders = {
     'Cache-Control': 'no-cache',
@@ -262,14 +288,17 @@ function setupAutoUpdater() {
       msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') ||
       msg.includes('ECONNRESET') || msg.includes('502') || msg.includes('503');
 
-    // 风险二：下载中断自动重试（最多 3 次，间隔 3 秒）
+    // 风险二：下载中断/限速自动重试并切换代理（最多 3 次，间隔 3 秒）
     const isDownloadError = isNetworkError && lastUpdateInfo &&
       downloadRetryCount < MAX_DOWNLOAD_RETRIES;
     if (isDownloadError) {
       downloadRetryCount++;
-      console.log(`[autoUpdater] 下载中断，${3}s 后重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`);
+      // 切换到下一个加速代理
+      currentProxyIndex = (currentProxyIndex + 1) % GITHUB_MIRROR_PROXIES.length;
+      const nextProxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
+      console.log(`[autoUpdater] 下载中断，${3}s 后切换代理 ${nextProxy} 重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`);
       if (mainWindow) mainWindow.webContents.send('update-error', {
-        message: `下载中断，正在自动重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`,
+        message: `下载中断，切换加速线路重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`,
         isRetrying: true
       });
       setTimeout(() => {
