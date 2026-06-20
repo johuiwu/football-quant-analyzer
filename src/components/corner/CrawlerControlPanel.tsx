@@ -35,10 +35,17 @@ export default function CrawlerControlPanel() {
   const [activeTab, setActiveTab] = useState<"matches" | "settings">("matches");
   const storeAccount = useCornerStore((s) => s.accountConfig);
   const storeSettings = useCornerStore((s) => s.settings);
-  const [credentials, setCredentials] = useState(() => ({
-    username: storeAccount.username || storeSettings.hgUsername || "",
-    password: storeAccount.password || storeSettings.hgPassword || "",
-  }));
+  const [credentials, setCredentials] = useState(() => {
+    const saved = localStorage.getItem("hg_credentials");
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore */ }
+    }
+    return {
+      username: storeAccount.username || storeSettings.hgUsername || "",
+      password: storeAccount.password || storeSettings.hgPassword || "",
+    };
+  });
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem("hg_credentials") !== null);
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [expandedMatches, setExpandedMatches] = useState<Set<string>>(new Set());
   const setLoginStatus = useCornerStore((s) => s.setLoginStatus);
@@ -238,6 +245,11 @@ export default function CrawlerControlPanel() {
         showMessage("success", "登录成功！");
         setStatus(prev => ({ ...prev, isLoggedIn: true }));
         setLoginStatus(true, credentials.username);
+        if (rememberMe) {
+          localStorage.setItem("hg_credentials", JSON.stringify({ username: credentials.username, password: credentials.password }));
+        } else {
+          localStorage.removeItem("hg_credentials");
+        }
         await fetchStatus();
       } else {
         // 显示详细错误原因和建议
@@ -1023,6 +1035,16 @@ export default function CrawlerControlPanel() {
               onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
               className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="rememberMe"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500/50 cursor-pointer"
+            />
+            <label htmlFor="rememberMe" className="text-xs text-slate-400 cursor-pointer select-none">记住账号密码</label>
           </div>
           <div className="pt-2">
             <p className="text-xs text-slate-500 mb-2">
