@@ -3,7 +3,7 @@ import { TeamStats, REAL_H2H_RECORDS, LEAGUE_AVGS } from '../data/realTeamsData'
 import { LRUCache } from 'lru-cache';
 import { calculateBaseOdds } from './oddsCalculator';
 import { poisson, dixonColesAdjustment } from '../models/poisson';
-import { getTeamElo } from '../models/elo';
+import { getTeamElo, getLeagueHomeAdvantage } from '../models/elo';
 import { exactAsianTo1X2, exact1X2ToAsian } from '../models/odds';
 import { calculateLeagueTimeDecay } from '../models/bayesian';
 import { getLeagueRho, getLeagueAvgGoals, getLeagueHomeAdv } from '../config/leagueParams';
@@ -780,6 +780,9 @@ odds1X2 = odds ?? { home: 2.0, draw: 3.2, away: 3.5 };
     'Bundesliga': { xpts: 0.015, ppda: 0.015, npxgd: 0.02 },
     '德甲': { xpts: 0.015, ppda: 0.015, npxgd: 0.02 },
 
+    // 世界杯：中立场大赛，战术特征偏保守均衡
+    'WorldCup': { xpts: 0.015, ppda: 0.01, npxgd: 0.015 },
+
     // 法甲/其他联赛：使用默认的基准配置
     'DEFAULT': { xpts: 0.02, ppda: 0.01, npxgd: 0.02 },
   };
@@ -868,9 +871,10 @@ const homeExt = extractExtendedFeatures(homeTeam, league);
 
   const awayElo = getTeamElo(awayTeamVal);
 
-  // Expected home win index based on Elo rating differences (with home court 100 points bump)
+  // Expected home win index based on Elo rating differences (with league-specific home advantage)
 
-  const eloDiff = (homeElo + 95) - awayElo;
+  const homeAdvantage = getLeagueHomeAdvantage(league);
+  const eloDiff = (homeElo + homeAdvantage) - awayElo;
 
   const eloHomeWinExpectancy = 1 / (1 + Math.pow(10, -eloDiff / 400));
 

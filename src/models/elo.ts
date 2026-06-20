@@ -1,4 +1,12 @@
 import { TeamStats } from '../data/realTeamsData';
+import { WORLD_CUP_TEAMS } from '../data/worldcup_data';
+
+// ======================== 世界杯 Elo 查找表 ========================
+
+const WORLDCUP_ELO_MAP: Record<string, number> = {};
+for (const t of WORLD_CUP_TEAMS) {
+  WORLDCUP_ELO_MAP[t.id] = t.elo;
+}
 
 // ======================== 联赛基准 Elo ========================
 
@@ -81,11 +89,22 @@ export function calculateEloUpdate(
 }
 
 /**
- * 获取球队 Elo（优先读 team.elo，无值则用联赛基准兜底）
+ * 获取球队 Elo（世界杯球队优先从精确映射查找，否则读 team.elo，最后用联赛基准兜底）
  */
 export function getTeamElo(team: TeamStats): number {
   // 防御性编程
   if (!team) return LEAGUE_ELO_BASE.DEFAULT;
+
+  // 世界杯球队：优先从 WORLD_CUP_TEAMS 查找精确 Elo
+  if (team.league === 'WorldCup' || team.league === '世界杯') {
+    const worldCupElo = WORLDCUP_ELO_MAP[team.id];
+    if (worldCupElo && worldCupElo > 0) {
+      // 归一化：世界杯 Elo 整体偏高约 200，需向五大联赛标准基数靠拢
+      const normalizedElo = worldCupElo > 1800 ? worldCupElo - 200 : worldCupElo;
+      console.log(`[Elo 映射] 为 世界杯球队 ${team.nameCn || team.id} 分配精确 Elo: ${worldCupElo} (归一化后: ${normalizedElo})`);
+      return normalizedElo;
+    }
+  }
 
   // 优先使用已存储的动态 Elo
   if (typeof team.elo === 'number' && team.elo > 0) {
