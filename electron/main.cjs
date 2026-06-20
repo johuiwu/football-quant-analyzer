@@ -218,19 +218,22 @@ function setupAutoUpdater() {
   let currentProxyIndex = 0;
 
   // 拦截 electron-updater 下载请求，将 GitHub URL 重写为加速代理 URL
+  // 同时拦截 exe（完整下载/差分拼接）和 blockmap（差分更新元数据）
   const { session } = require('electron');
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['https://github.com/*/releases/download/*', 'https://objects.githubusercontent.com/*'] },
     (details, callback) => {
       const originalUrl = details.url;
-      // 跳过非 exe 下载请求（如 blockmap）
-      if (!originalUrl.endsWith('.exe') && !originalUrl.includes('.exe?')) {
+      // 只拦截 exe 和 blockmap 下载请求
+      const isExe = originalUrl.endsWith('.exe') || originalUrl.includes('.exe?');
+      const isBlockmap = originalUrl.endsWith('.blockmap') || originalUrl.includes('.blockmap?');
+      if (!isExe && !isBlockmap) {
         callback({});
         return;
       }
       const proxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
       const rewrittenUrl = `${proxy}/${originalUrl}`;
-      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}个代理)`);
+      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}个代理) [${isBlockmap ? 'blockmap' : 'exe'}]`);
       callback({ redirectURL: rewrittenUrl });
     }
   );
