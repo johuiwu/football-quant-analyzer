@@ -405,6 +405,7 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
     const headless = true;
     bi = await puppeteer.launch({
       headless,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1920,1400"],
       timeout: 60000
     });

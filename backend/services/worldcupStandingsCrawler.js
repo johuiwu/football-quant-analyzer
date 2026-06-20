@@ -68,6 +68,7 @@ export async function fetchStandings() {
 
     browser = await puppeteer.launch({
       headless,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       args,
     });
 

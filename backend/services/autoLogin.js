@@ -436,6 +436,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
 
       browser = await puppeteer.launch({
         headless: process.env.PUPPETEER_HEADLESS !== "false",
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: launchArgs,
       });
       page = await browser.newPage();
