@@ -99,6 +99,8 @@ export default function CrawlerControlPanel() {
       if (data.success) {
         setIsBackendPolling(true);
         setAutoRefresh(true);
+        // 同步 cornerStore 的 isMonitoring 状态，确保其他组件可正确判断监控状态
+        try { useCornerStore.getState().set({ isMonitoring: true }); } catch (_) {}
         showMessage("success", "启动成功，后台将自动获取数据");
         // 等待 8 秒后触发首次数据获取（先尝试即时爬取，失败则从缓存读取）
         if (startMonitorTimeoutRef.current) {

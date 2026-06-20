@@ -31,12 +31,18 @@ let cachedMatches = [];
 let cachedMainMarkets = {};
 let pollingInterval = null;
 let pollingActive = false;
+let pollingPaused = false;
+let pollingFirstDone = false;
 let consecutiveNoChanges = 0;
+let consecutiveFailures = 0;
+let pauseTime = null;
 let immediatePollLock = false;
 let lastFetchTime = 0;
 let lastEmptyLogTime = 0;
+let lastAlertTime = null;
 const POLL_INTERVAL = POLL_CONFIG.interval;
 const CACHE_EXPIRE_MS = 30000; // 缓存过期时间：30秒
+const ALERT_THRESHOLD = 5;
 
 // ★ 自动投注去重锁：防止 Gismo 回调与 pollOnce 同时触发重复投注处理
 const processingMatchIds = new Set();
@@ -469,9 +475,17 @@ export function startCornerBackendPolling() {
   }
 
   console.log("[cornerService] 启动后端轮询 (间隔=" + POLL_INTERVAL + "ms)...");
+  // 完整重置所有轮询状态变量
   pollingActive = true;
   pollingPaused = false;
+  pollingFirstDone = false;
   consecutiveFailures = 0;
+  consecutiveNoChanges = 0;
+  pauseTime = null;
+  lastAlertTime = null;
+  cachedMatches = [];
+  cachedMainMarkets = {};
+  lastFetchTime = 0;
 
   scheduleNextPoll();
   return { success: true, interval: POLL_INTERVAL };
@@ -494,14 +508,6 @@ export function stopCornerBackendPolling() {
 }
 
 // ======================== 暂停/恢复轮询 ========================
-let pollingPaused = false;
-let pollingFirstDone = false;
-let pauseTime = null;
-
-// ======================== 告警状态 ========================
-let consecutiveFailures = 0;
-const ALERT_THRESHOLD = 5;
-let lastAlertTime = null;
 
 export function getAlertStatus() {
   return {
