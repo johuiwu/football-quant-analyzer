@@ -19,15 +19,12 @@ async function loadServerModule() {
       : path.join(process.resourcesPath, "database");
 
     // Cookie 文件路径（必须是可写目录）
-    const userDataPath = path.join(process.env.APPDATA || process.env.HOME || '.', '足球竞彩量化分析系统');
-    const cookiePath = isDev
-      ? path.join(__dirname, "..", "backend", "cookies.json")
-      : path.join(userDataPath, "cookies.json");
+    // ★ 统一使用 Electron app.getPath('userData')，与打包后路径一致
+    const userDataPath = app.getPath('userData');
+    const cookiePath = path.join(userDataPath, "cookies.json");
 
     // credentials.json 路径（必须是可写目录）
-    const credPath = isDev
-      ? path.join(__dirname, "..", "backend", "credentials.json")
-      : path.join(userDataPath, "credentials.json");
+    const credPath = path.join(userDataPath, "credentials.json");
 
     // 确保用户数据目录存在
     if (!fs.existsSync(userDataPath)) {

@@ -4,21 +4,50 @@
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import axios from "axios";
 import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL } from "./browserPool.js";
 import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
 
 // ---- credentials.json 路径 ----
-let CRED_PATH;
-if (process.env.CRED_PATH) {
-  CRED_PATH = process.env.CRED_PATH;
-} else if (import.meta.url) {
-  try { CRED_PATH = fileURLToPath(new URL("../credentials.json", import.meta.url)); } catch {}
+// ★ 禁止使用 import.meta.url / __dirname 推导路径
+// 统一使用 process.env.CRED_PATH（由 Electron main.cjs 或 server.ts 设置）
+// 回退到 APPDATA 等价路径（与 Electron app.getPath('userData') 一致）
+function _resolveCredPath() {
+  if (process.env.CRED_PATH) return process.env.CRED_PATH;
+
+  // 等价于 Electron app.getPath('userData')：APPDATA/<productName>
+  const appName = '足球竞彩量化分析系统';
+  const userDataDir = path.join(process.env.APPDATA || process.env.HOME || '.', appName);
+  return path.join(userDataDir, 'credentials.json');
 }
-if (!CRED_PATH) {
-  CRED_PATH = path.resolve(process.cwd(), "backend", "credentials.json");
+
+let CRED_PATH = _resolveCredPath();
+
+// 旧路径（import.meta.url 时代）— 用于自动迁移
+const _OLD_CRED_PATHS = [
+  // 开发模式旧路径：backend/credentials.json（相对于项目根目录）
+  path.resolve(process.cwd(), 'backend', 'credentials.json'),
+];
+
+// 自动迁移：如果新路径不存在但旧路径存在，复制过来
+function _migrateCredFile() {
+  if (fs.existsSync(CRED_PATH)) return; // 新路径已有文件，无需迁移
+  for (const oldPath of _OLD_CRED_PATHS) {
+    try {
+      if (fs.existsSync(oldPath)) {
+        // 确保新路径的目录存在
+        const dir = path.dirname(CRED_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.copyFileSync(oldPath, CRED_PATH);
+        console.log('[credentialManager] 已自动迁移凭证文件: ' + oldPath + ' → ' + CRED_PATH);
+        return;
+      }
+    } catch (e) {
+      console.warn('[credentialManager] 凭证文件迁移失败:', e.message);
+    }
+  }
 }
+_migrateCredFile();
 
 // ---- 内存缓存 ----
 let cachedCookieStr = null;

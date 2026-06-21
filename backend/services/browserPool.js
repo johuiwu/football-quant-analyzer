@@ -1,8 +1,7 @@
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
-import { fileURLToPath } from "url";
-import { resolve } from "path";
+import path from "path";
 
 puppeteer.use(StealthPlugin());
 
@@ -262,15 +261,45 @@ async function closeSharedBrowser() {
 }
 
 // ======================== Cookie 文件持久化 ========================
-let COOKIE_PATH;
-if (process.env.COOKIE_PATH) {
-  COOKIE_PATH = process.env.COOKIE_PATH;
-} else if (import.meta.url) {
-  try { COOKIE_PATH = fileURLToPath(new URL("../cookies.json", import.meta.url)); } catch {}
+// ★ 禁止使用 import.meta.url / __dirname 推导路径
+// 统一使用 process.env.COOKIE_PATH（由 Electron main.cjs 或 server.ts 设置）
+// 回退到 APPDATA 等价路径（与 Electron app.getPath('userData') 一致）
+function _resolveCookiePath() {
+  if (process.env.COOKIE_PATH) return process.env.COOKIE_PATH;
+
+  // 等价于 Electron app.getPath('userData')：APPDATA/<productName>
+  const appName = '足球竞彩量化分析系统';
+  const userDataDir = path.join(process.env.APPDATA || process.env.HOME || '.', appName);
+  return path.join(userDataDir, 'cookies.json');
 }
-if (!COOKIE_PATH) {
-  COOKIE_PATH = resolve(process.cwd(), "backend", "cookies.json");
+
+let COOKIE_PATH = _resolveCookiePath();
+
+// 旧路径（import.meta.url 时代）— 用于自动迁移
+const _OLD_COOKIE_PATHS = [
+  // 开发模式旧路径：backend/cookies.json（相对于项目根目录）
+  path.resolve(process.cwd(), 'backend', 'cookies.json'),
+];
+
+// 自动迁移：如果新路径不存在但旧路径存在，复制过来
+function _migrateCookieFile() {
+  if (fs.existsSync(COOKIE_PATH)) return; // 新路径已有文件，无需迁移
+  for (const oldPath of _OLD_COOKIE_PATHS) {
+    try {
+      if (fs.existsSync(oldPath)) {
+        // 确保新路径的目录存在
+        const dir = path.dirname(COOKIE_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.copyFileSync(oldPath, COOKIE_PATH);
+        console.log('[browserPool] 已自动迁移 Cookie 文件: ' + oldPath + ' → ' + COOKIE_PATH);
+        return;
+      }
+    } catch (e) {
+      console.warn('[browserPool] Cookie 文件迁移失败:', e.message);
+    }
+  }
 }
+_migrateCookieFile();
 
 function saveCookiesToDisk(cookies) {
   try {

@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import cors from "cors";
@@ -9,6 +10,23 @@ import rateLimit from "express-rate-limit";
 import apiRoutes from "./backend/routes/index.js";
 
 dotenv.config({ quiet: true });
+
+// ==================== 统一配置文件路径 ====================
+// ★ 开发模式也使用与 Electron app.getPath('userData') 等价的路径
+// 确保开发模式与打包后路径一致，避免凭证/cookie 文件分散
+if (!process.env.CRED_PATH || !process.env.COOKIE_PATH) {
+  const appName = '足球竞彩量化分析系统';
+  const userDataDir = path.join(process.env.APPDATA || process.env.HOME || '.', appName);
+  if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
+  if (!process.env.CRED_PATH) {
+    process.env.CRED_PATH = path.join(userDataDir, 'credentials.json');
+    console.log('[server] CRED_PATH 未设置，使用等价 userData 路径: ' + process.env.CRED_PATH);
+  }
+  if (!process.env.COOKIE_PATH) {
+    process.env.COOKIE_PATH = path.join(userDataDir, 'cookies.json');
+    console.log('[server] COOKIE_PATH 未设置，使用等价 userData 路径: ' + process.env.COOKIE_PATH);
+  }
+}
 
 // ==================== 环境变量校验 ====================
 const recommendedEnvVars = [
