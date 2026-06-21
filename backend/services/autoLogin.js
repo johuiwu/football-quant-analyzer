@@ -791,11 +791,14 @@ export async function autoLoginAndGetCredentials(options = {}) {
  * 供 hgCrawlerService 等外部模块在登录成功后复用，避免重复编写提取逻辑
  *
  * 提取策略（按优先级）：
- *   1. 从 frame 的 window.uid 提取
- *   2. 从 DOM 全局变量 (top.uid / window.uid) 提取
- *   3. 主动 fetch transform.php?p=home 触发 ver 获取
- *   4. 从 DOM 全局变量 (top.ver / window.ver) 提取 ver
- *   5. 从 Cookie 提取 uid（最终回退）
+ *   1. 响应拦截器捕获 transform.php 中的 ver
+ *   1.5. 从 _CHDomain 对象提取 uid/ver/domain（首要来源）
+ *   2. 从 frame 的 window.uid 提取
+ *   3. 从 DOM 全局变量 (top.uid / window.uid) 提取
+ *   4. 主动 fetch transform.php?p=home 触发 ver 获取
+ *   5. 从 DOM 全局变量 (top.ver / window.ver) 提取 ver
+ *   5.5. 从内联 script 标签解析 uid（回退）
+ *   6. 从 Cookie 提取 uid（最终回退）
  *
  * @param {import('puppeteer').Page} page - 已登录的 Puppeteer 页面
  * @param {object} [options] - 可选参数
