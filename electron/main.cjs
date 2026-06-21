@@ -19,8 +19,12 @@ async function loadServerModule() {
       : path.join(process.resourcesPath, "database");
 
     // Cookie 文件路径（必须是可写目录）
-    // ★ 统一使用 Electron app.getPath('userData')，与打包后路径一致
-    const userDataPath = app.getPath('userData');
+    // ★ 统一使用 Electron app.getPath('userData')
+    // 注意：app.getPath('userData') 默认使用 package.json 的 name 字段 (football-quant-analyzer)
+    // 但旧版已用 "足球竞彩量化分析系统" 作为目录名，必须用 app.setPath 保持一致
+    const appDataDir = app.getPath('appData'); // %APPDATA%
+    const userDataPath = path.join(appDataDir, '足球竞彩量化分析系统');
+    app.setPath('userData', userDataPath); // 覆盖默认值，确保 app.getPath('userData') 返回正确路径
     const cookiePath = path.join(userDataPath, "cookies.json");
 
     // credentials.json 路径（必须是可写目录）
