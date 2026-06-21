@@ -107,10 +107,9 @@ export async function runBacktest(strategies) {
 
       let totalProfit = 0;
       for (const r of strategyRecords) {
+        // 仅 executed 状态影响盈亏计算，failed 状态排除在外（既不算盈也不算亏）
         if (r.bet_status === 'executed') {
           totalProfit += (r.odds - 1) * (r.amount || 100);
-        } else if (r.bet_status === 'failed') {
-          totalProfit -= (r.amount || 100);
         }
       }
 

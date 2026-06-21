@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { TeamStats } from "../data/realTeamsData";
 import { ModelWeights } from "../utils/quantModel";
 
@@ -196,7 +197,7 @@ function syncTrackedMatchesToBackend(ids: string[]) {
   }).catch(() => {});
 }
 
-export const useAppStore = create<AppStore>((set) => ({
+export const useAppStore = create<AppStore>()(persist((set) => ({
   ...defaultState,
 
   setHomeTeam: (teamId, league) => set({ selectedHomeId: teamId, selectedHomeLeague: league }),
@@ -240,6 +241,14 @@ export const useAppStore = create<AppStore>((set) => ({
 
   dispatchLiveMatch: (action) => set((state) => ({ liveMatch: liveMatchReducer(state.liveMatch, action) })),
   resetLiveMatch: () => set({ liveMatch: initialLiveMatch }),
+}), {
+  name: "app-store",
+  storage: createJSONStorage(() => localStorage),
+  partialize: (state) => ({
+    trackedMatchIds: state.trackedMatchIds,
+    selectedHomeId: state.selectedHomeId,
+    selectedAwayId: state.selectedAwayId,
+  }),
 }));
 
 export const useActiveTab = () => useAppStore((s) => s.activeTab);

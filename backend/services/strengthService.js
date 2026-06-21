@@ -48,7 +48,8 @@ export async function historicalWeightedScore(teamId, weights = {
   score += features.winRate * weights.recentWinRate;
   score += Math.max(0, Math.min(1, (features.goalDifference + 2) / 4)) * weights.goalDifference;
   score += (1 - Math.max(0, Math.min(1, features.opponentXGLimit / 1.5))) * weights.opponentStrength;
-  score += Math.max(0, Math.min(1, features.goalDifference)) * weights.tournamentPerformance;
+  // tournamentPerformance: 实际赛事表现数据暂不可用，使用中性值 0.5 作为占位符
+  score += 0.5 * weights.tournamentPerformance;
   
   return Math.max(0, Math.min(1, score));
 }

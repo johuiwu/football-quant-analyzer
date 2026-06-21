@@ -6,6 +6,7 @@
 
 const evaluationCache = new Map();
 const EVALUATION_CACHE_MAX = 500;
+const EVALUATION_CACHE_TTL = 60000; // 60秒缓存过期
 
 function cacheKey(match, strategies) {
   const strategyIds = strategies.map(s => s.id + ":" + (s.enabled ? "1" : "0")).sort().join(",");
@@ -122,7 +123,13 @@ export function evaluateStrategies(match, strategies) {
   if (!match || !strategies || !Array.isArray(strategies)) return [];
   const key = cacheKey(match, strategies);
   const cached = evaluationCache.get(key);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    if (Date.now() - cached.timestamp > EVALUATION_CACHE_TTL) {
+      evaluationCache.delete(key);
+    } else {
+      return cached.value;
+    }
+  }
   const result = strategies
     .filter(s => evaluateSingleStrategy(match, s))
     .map(s => s.id);
@@ -130,6 +137,6 @@ export function evaluateStrategies(match, strategies) {
     const firstKey = evaluationCache.keys().next().value;
     evaluationCache.delete(firstKey);
   }
-  evaluationCache.set(key, result);
+  evaluationCache.set(key, { value: result, timestamp: Date.now() });
   return result;
 }

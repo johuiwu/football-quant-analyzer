@@ -214,7 +214,7 @@ export async function executeBet(betData) {
       if (betDirection === "over" && allOdds.length >= 2) {
         for (let i = 0; i < Math.min(2, allOdds.length); i++) {
           const val = parseFloat((allOdds[i].textContent || "").trim());
-          if (!isNaN(val) && Math.abs(val - odds) < 0.1) {
+          if (!isNaN(val) && Math.abs(val - odds) < 0.05) {
             allOdds[i].scrollIntoView({ block: "center" });
             allOdds[i].click();
             return { success: true, clickedOdds: val };
@@ -223,7 +223,7 @@ export async function executeBet(betData) {
       } else if (betDirection === "under" && allOdds.length >= 2) {
         for (let i = Math.max(0, allOdds.length - 2); i < allOdds.length; i++) {
           const val = parseFloat((allOdds[i].textContent || "").trim());
-          if (!isNaN(val) && Math.abs(val - odds) < 0.1) {
+          if (!isNaN(val) && Math.abs(val - odds) < 0.05) {
             allOdds[i].scrollIntoView({ block: "center" });
             allOdds[i].click();
             return { success: true, clickedOdds: val };
@@ -232,7 +232,7 @@ export async function executeBet(betData) {
       } else if (betDirection === "next") {
         for (const el of allOdds) {
           const val = parseFloat((el.textContent || "").trim());
-          if (!isNaN(val) && Math.abs(val - odds) < 0.1) {
+          if (!isNaN(val) && Math.abs(val - odds) < 0.05) {
             el.scrollIntoView({ block: "center" });
             el.click();
             return { success: true, clickedOdds: val };
@@ -243,7 +243,7 @@ export async function executeBet(betData) {
       // auto 或回退：匹配任意赔率
       for (const el of allOdds) {
         const val = parseFloat((el.textContent || "").trim());
-        if (!isNaN(val) && Math.abs(val - odds) < 0.1) {
+        if (!isNaN(val) && Math.abs(val - odds) < 0.05) {
           el.scrollIntoView({ block: "center" });
           el.click();
           return { success: true, clickedOdds: val };

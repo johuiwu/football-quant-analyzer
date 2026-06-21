@@ -10,6 +10,7 @@ const TOKEN_TTL = 3600000; // 1小时（CDN token 有效期较长）
 
 // ---- matchId 缓存 ----
 let cachedMatchIds = [];
+const MAX_CACHED_MATCH_IDS = 500;
 let matchIdTeamMap = new Map(); // matchId → { homeTeam, awayTeam }
 
 // ---- gismo 响应缓存 ----
@@ -58,6 +59,11 @@ export function extractMatchIdFromUrl(url) {
     const matchId = match[1];
     if (!cachedMatchIds.includes(matchId)) {
       cachedMatchIds.push(matchId);
+      // 超出上限时移除最早的条目
+      while (cachedMatchIds.length > MAX_CACHED_MATCH_IDS) {
+        const removed = cachedMatchIds.shift();
+        matchIdTeamMap.delete(removed);
+      }
       console.log("[gismoApi] 新 matchId: " + matchId + " (共 " + cachedMatchIds.length + " 个)");
     }
     return matchId;
@@ -403,6 +409,11 @@ export function addMatchIds(ids) {
     if (!cachedMatchIds.includes(id)) {
       cachedMatchIds.push(id);
     }
+  }
+  // 超出上限时移除最早的条目
+  while (cachedMatchIds.length > MAX_CACHED_MATCH_IDS) {
+    const removed = cachedMatchIds.shift();
+    matchIdTeamMap.delete(removed);
   }
   console.log(`[gismo] 添加 ${ids.length} 个 matchId 到缓存`);
 }
