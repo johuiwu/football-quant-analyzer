@@ -2725,6 +2725,48 @@ async function _crawlViaPureHttp() {
     return { __specialResult: true, reason: "login_cooldown" };
   }
 
+  // 3.5. 检查共享浏览器是否已登录（避免重复 autoLogin）
+  if (!hasCredentials || (creds && !creds.uid)) {
+    const sharedPage = getSharedPage();
+    if (sharedPage && isBrowserActive()) {
+      try {
+        const isLoggedIn = await sharedPage.evaluate(() => {
+          const body = document.body?.textContent || '';
+          return (body.includes('In-Play') && body.includes('Soccer')) ||
+                 !!document.getElementById('symbol_ft') ||
+                 !!document.getElementById('live_page');
+        });
+        if (isLoggedIn) {
+          console.log('[cornerCrawler] 共享浏览器已登录但 uid 缺失，从页面重新提取凭证...');
+          try {
+            const { syncCredentialsFromPage } = await import('./autoLogin.js');
+            const credResult = await syncCredentialsFromPage(sharedPage, {});
+            if (credResult.uid) {
+              console.log('[cornerCrawler] 从已登录页面提取 uid 成功: ' + credResult.uid.substring(0, 10) + '...');
+              // 重新加载凭证
+              const newCreds = loadCredentials();
+              if (newCreds && newCreds.uid && newCreds.ver && newCreds.cookieStr) {
+                const [rcnResult, rnouResult] = await Promise.all([
+                  fetchCornerData(newCreds.uid, newCreds.ver, newCreds.cookieStr),
+                  fetchHdpOuData(newCreds.uid, newCreds.ver, newCreds.cookieStr),
+                ]);
+                if (!rcnResult.expired && !rnouResult.expired) {
+                  return _processHttpResults(rcnResult, rnouResult, newCreds.uid, newCreds.ver, newCreds.cookieStr);
+                }
+              }
+            } else {
+              console.warn('[cornerCrawler] 从已登录页面提取 uid 失败，继续 autoLogin 流程');
+            }
+          } catch (e) {
+            console.warn('[cornerCrawler] 从已登录页面提取凭证异常:', e.message);
+          }
+        }
+      } catch (e) {
+        console.log('[cornerCrawler] 共享浏览器状态检查失败:', e.message);
+      }
+    }
+  }
+
   // 4. 触发 autoLogin（通过登录互斥锁保护，防止与 hgCrawlerService.loginToHG 并发）
   console.log("[cornerCrawler] 纯HTTP: 触发 Puppeteer 登录...");
   let newCreds = null;
