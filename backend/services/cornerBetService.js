@@ -2,6 +2,22 @@ import { run, query } from "../dbService.js";
 import { executeBet as executeBetOnHG, sleep } from "./cornerBetExecutor.js";
 import { loadAndValidate } from "./credentialManager.js";
 
+// ======================== 异步互斥锁（保护 betQueue / isProcessing） ========================
+class AsyncMutex {
+  constructor() { this._queue = []; this._locked = false; }
+  acquire() {
+    return new Promise(resolve => {
+      if (!this._locked) { this._locked = true; resolve(); }
+      else this._queue.push(resolve);
+    });
+  }
+  release() {
+    if (this._queue.length > 0) this._queue.shift()();
+    else this._locked = false;
+  }
+}
+const betMutex = new AsyncMutex();
+
 // 动态加载 httpBetExecutor 模块（文件可能不存在，使用动态 import + catch 兜底）
 let executeBetViaHttp = null;
 let _httpBetModuleLoaded = false;
@@ -327,16 +343,19 @@ export async function checkDuplicateBet(matchId, strategyId) {
     return false;
   } catch (err) {
     console.error("[cornerBetService] 查重失败:", err.message);
-    return false;
+    // 保守策略：查询失败时假定重复，避免在无法确认的情况下重复下单
+    return true;
   }
 }
 
 export async function processBetQueue() {
-  if (isProcessing || betQueue.length === 0) return;
-  isProcessing = true;
-
+  await betMutex.acquire();
   try {
-    const task = betQueue.shift();
+    if (isProcessing || betQueue.length === 0) return;
+    isProcessing = true;
+
+    try {
+      const task = betQueue.shift();
 
     // ★ 投注诊断日志
     console.log(`[投注诊断] 策略${task.strategyId}已进入投注执行队列，正在尝试下单...`);
@@ -490,6 +509,9 @@ export async function processBetQueue() {
   } finally {
     isProcessing = false;
   }
+  } finally {
+    betMutex.release();
+  }
 }
 
 export async function addManualBet(matchData) {
@@ -519,21 +541,26 @@ export async function addManualBet(matchData) {
     bet_status: "pending"
   }).catch(() => ({}));
 
-  betQueue.push({
-    betId: result.lastID,
-    historyId: historyResult?.id || null,
-    matchId,
-    matchName: matchName || "",
-    strategyId,
-    odds: odds || 0,
-    amount,
-    handicap: handicap || 0
-  });
+  await betMutex.acquire();
+  try {
+    betQueue.push({
+      betId: result.lastID,
+      historyId: historyResult?.id || null,
+      matchId,
+      matchName: matchName || "",
+      strategyId,
+      odds: odds || 0,
+      amount,
+      handicap: handicap || 0
+    });
 
-  if (betConfig.isRealMode) {
-    processBetQueue().catch(e =>
-      console.error("[cornerBetService] 投注队列处理失败:", e.message)
-    );
+    if (betConfig.isRealMode) {
+      processBetQueue().catch(e =>
+        console.error("[cornerBetService] 投注队列处理失败:", e.message)
+      );
+    }
+  } finally {
+    betMutex.release();
   }
 
   return { success: true, betId: result.lastID };
@@ -683,18 +710,23 @@ export async function confirmBet(betId) {
     if (!bet) {
       return { success: false, error: "投注不存在或状态不是待确认" };
     }
-    betQueue.push({
-      betId: bet.id,
-      matchId: bet.match_id,
-      matchName: bet.match_name || "",
-      strategyId: bet.strategy_id,
-      odds: bet.odds,
-      amount: bet.amount,
-      handicap: 0
-    });
-    processBetQueue().catch(e =>
-      console.error("[cornerBetService] 确认投注执行失败:", e.message)
-    );
+    await betMutex.acquire();
+    try {
+      betQueue.push({
+        betId: bet.id,
+        matchId: bet.match_id,
+        matchName: bet.match_name || "",
+        strategyId: bet.strategy_id,
+        odds: bet.odds,
+        amount: bet.amount,
+        handicap: 0
+      });
+      processBetQueue().catch(e =>
+        console.error("[cornerBetService] 确认投注执行失败:", e.message)
+      );
+    } finally {
+      betMutex.release();
+    }
     return { success: true, betId: bet.id };
   } catch (err) {
     return { success: false, error: err.message };
@@ -723,19 +755,24 @@ export async function retryBet(betId) {
       "UPDATE corner_history SET bet_status = 'pending' WHERE match_id = ? AND strategy_id = ? AND bet_status IN ('insufficient', 'failed')",
       [bet.match_id, String(bet.strategy_id)]
     ).catch(() => {});
-    betQueue.push({
-      betId: bet.id,
-      matchId: bet.match_id,
-      matchName: bet.match_name || "",
-      strategyId: bet.strategy_id,
-      odds: bet.odds,
-      amount: bet.amount,
-      handicap: 0,
-      betDirection: bet.bet_direction || "auto"
-    });
-    processBetQueue().catch(e =>
-      console.error("[cornerBetService] 重试投注执行失败:", e.message)
-    );
+    await betMutex.acquire();
+    try {
+      betQueue.push({
+        betId: bet.id,
+        matchId: bet.match_id,
+        matchName: bet.match_name || "",
+        strategyId: bet.strategy_id,
+        odds: bet.odds,
+        amount: bet.amount,
+        handicap: 0,
+        betDirection: bet.bet_direction || "auto"
+      });
+      processBetQueue().catch(e =>
+        console.error("[cornerBetService] 重试投注执行失败:", e.message)
+      );
+    } finally {
+      betMutex.release();
+    }
     return { success: true, betId: bet.id };
   } catch (err) {
     return { success: false, error: err.message };

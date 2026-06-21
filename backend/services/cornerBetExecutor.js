@@ -428,7 +428,12 @@ export async function executeBet(betData) {
       return { success: false, error: "投注被平台拒绝" };
     }
 
-    // success 或 unknown 都视为成功
+    if (resultVerified === "unknown") {
+      console.warn(`[BetExecutor] 投注结果未知: ${matchName}，标记为 pending 等待人工确认`);
+      return { success: false, pending: true, reason: "unknown_result" };
+    }
+
+    // success
     const transactionId = "txn_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
     console.log(`[BetExecutor] 投注执行成功: ${matchName} txn=${transactionId}`);
     return { success: true, transactionId };
