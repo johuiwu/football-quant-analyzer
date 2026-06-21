@@ -80,8 +80,8 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
   const [inputPass, setInputPass] = useState<string>('');
 
   // Left Column Config States
-  const [hgUsername, setHgUsername] = useState<string>('Aa60000888');
-  const [hgPassword, setHgPassword] = useState<string>('Aa60000888');
+  const [hgUsername, setHgUsername] = useState<string>('');
+  const [hgPassword, setHgPassword] = useState<string>('');
   const [hgBalance, setHgBalance] = useState<number>(60000);
   const [hgUrl, setHgUrl] = useState<string>('https://www.hga038.com');
   const [earlyRefreshHours, setEarlyRefreshHours] = useState<number>(1);

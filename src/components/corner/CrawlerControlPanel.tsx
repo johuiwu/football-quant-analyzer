@@ -38,7 +38,13 @@ export default function CrawlerControlPanel() {
   const [credentials, setCredentials] = useState(() => {
     const saved = localStorage.getItem("hg_credentials");
     if (saved) {
-      try { return JSON.parse(saved); } catch { /* ignore */ }
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          username: parsed.username || storeAccount.username || storeSettings.hgUsername || "",
+          password: storeAccount.password || storeSettings.hgPassword || "",
+        };
+      } catch { /* ignore */ }
     }
     return {
       username: storeAccount.username || storeSettings.hgUsername || "",
@@ -250,7 +256,7 @@ export default function CrawlerControlPanel() {
         setStatus(prev => ({ ...prev, isLoggedIn: true }));
         setLoginStatus(true, credentials.username);
         if (rememberMe) {
-          localStorage.setItem("hg_credentials", JSON.stringify({ username: credentials.username, password: credentials.password }));
+          localStorage.setItem("hg_credentials", JSON.stringify({ username: credentials.username }));
         } else {
           localStorage.removeItem("hg_credentials");
         }

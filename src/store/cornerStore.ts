@@ -650,8 +650,8 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   storage: createJSONStorage(() => localStorage),
   partialize: (state) => ({
     strategies: state.strategies,
-    accountConfig: state.accountConfig,
-    settings: state.settings,
+    accountConfig: { username: state.accountConfig.username, remember: state.accountConfig.remember },
+    settings: { ...state.settings, hgPassword: "" },
     autoRefresh: state.autoRefresh,
     isLoggedIn: state.isLoggedIn,
     balanceLastUpdated: state.balanceLastUpdated,

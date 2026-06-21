@@ -4,6 +4,8 @@
 
 import fs from "fs";
 import path from "path";
+import os from "os";
+import crypto from "crypto";
 import axios from "axios";
 import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
@@ -49,6 +51,62 @@ function _migrateCredFile() {
   }
 }
 _migrateCredFile();
+
+// ---- AES 加密/解密（密码保护） ----
+const _ENCRYPT_PREFIX = "enc:"; // 加密后数据前缀，用于区分新旧格式
+const _AES_ALGO = "aes-256-cbc";
+
+function _deriveKey() {
+  // 使用机器 hostname + 应用名派生 32 字节密钥，确保同机加解密一致
+  const hostname = os.hostname();
+  const secret = "足球竞彩量化分析系统:" + hostname;
+  return crypto.createHash("sha256").update(secret).digest();
+}
+
+let _ivCache = null;
+function _getIV() {
+  if (_ivCache) return _ivCache;
+  // 从固定种子派生 16 字节 IV（同机一致，确保可解密）
+  _ivCache = crypto.createHash("md5").update("corner-cred-iv:" + _deriveKey().toString("hex")).digest();
+  return _ivCache;
+}
+
+/**
+ * 加密密码（AES-256-CBC），返回 "enc:<base64>" 格式
+ */
+function encryptPassword(plaintext) {
+  if (!plaintext) return plaintext;
+  try {
+    const key = _deriveKey();
+    const iv = _getIV();
+    const cipher = crypto.createCipheriv(_AES_ALGO, key, iv);
+    let encrypted = cipher.update(plaintext, "utf8", "base64");
+    encrypted += cipher.final("base64");
+    return _ENCRYPT_PREFIX + encrypted;
+  } catch (e) {
+    console.warn("[credentialManager] 密码加密失败:", e.message);
+    return plaintext;
+  }
+}
+
+/**
+ * 解密密码，兼容旧版明文格式（无 "enc:" 前缀则视为明文直接返回）
+ */
+function decryptPassword(ciphertext) {
+  if (!ciphertext || !ciphertext.startsWith(_ENCRYPT_PREFIX)) return ciphertext;
+  try {
+    const key = _deriveKey();
+    const iv = _getIV();
+    const decipher = crypto.createDecipheriv(_AES_ALGO, key, iv);
+    const raw = ciphertext.slice(_ENCRYPT_PREFIX.length);
+    let decrypted = decipher.update(raw, "base64", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch (e) {
+    console.warn("[credentialManager] 密码解密失败，可能为旧格式明文:", e.message);
+    return ciphertext;
+  }
+}
 
 // ---- 内存缓存 ----
 let cachedCookieStr = null;
@@ -358,7 +416,7 @@ export function saveToDisk({ uid, ver, cookies, apiDomain, username, password })
       ver,
       apiDomain: apiDomain || null,
       username: username || null,
-      password: password || null,
+      password: password ? encryptPassword(password) : null,
       savedAt: Date.now(),
       cookieCount: cookies?.length || 0,
     };
@@ -384,7 +442,7 @@ export function loadFromDisk() {
     const raw = fs.readFileSync(CRED_PATH, "utf8");
     const data = JSON.parse(raw);
     if (!data.uid || !data.ver) return null;
-    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount, username: data.username, password: data.password, apiDomain: data.apiDomain };
+    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount, username: data.username, password: decryptPassword(data.password), apiDomain: data.apiDomain };
   } catch {
     return null;
   }
