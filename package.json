@@ -36,6 +36,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
+    "https-proxy-agent": "^9.1.0",
     "lru-cache": "^11.5.1",
     "lucide-react": "0.468.0",
     "openai": "^6.39.0",
@@ -116,7 +117,6 @@
           "*.db-wal"
         ]
       },
-
       {
         "from": "database/init-tables.sql",
         "to": "init-tables.sql"

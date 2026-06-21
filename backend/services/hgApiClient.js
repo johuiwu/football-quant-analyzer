@@ -4,6 +4,7 @@
 
 import axios from "axios";
 import net from "net";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { getBaseUrl, updateCredentials } from "./credentialManager.js";
 import { HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 
@@ -127,7 +128,7 @@ export async function detectProxyConfig() {
   if (envProxy) {
     try {
       const url = new URL(envProxy);
-      const config = { host: url.hostname, port: parseInt(url.port) || 80, protocol: url.protocol.replace(":", "") };
+      const config = { host: url.hostname, port: parseInt(url.port) || 80, protocol: url.protocol.replace(":", ""), url: envProxy };
       console.log("[代理检测] 使用环境变量代理: " + envProxy);
       console.log("[代理检测] 已自动探测到可用代理，请求将走代理通道");
       _proxyCache = config;
@@ -142,8 +143,9 @@ export async function detectProxyConfig() {
   for (const port of PROXY_PORTS) {
     const reachable = await testPort(port);
     if (reachable) {
-      const config = { host: "127.0.0.1", port, protocol: "http" };
-      console.log("[代理检测] 探测到本地代理: http://127.0.0.1:" + port);
+      const proxyUrl = "http://127.0.0.1:" + port;
+      const config = { host: "127.0.0.1", port, protocol: "http", url: proxyUrl };
+      console.log("[代理检测] 探测到本地代理: " + proxyUrl);
       console.log("[代理检测] 已自动探测到可用代理，请求将走代理通道");
       _proxyCache = config;
       _proxyCacheTime = Date.now();
@@ -198,8 +200,11 @@ async function _postToDomain(domain, ver, cookieStr, params, proxyConfig) {
     maxRedirects: MAX_REDIRECTS,
     validateStatus: (status) => status < 400,
   };
-  if (proxyConfig) {
-    axiosConfig.proxy = proxyConfig;
+  if (proxyConfig && proxyConfig.url) {
+    const agent = new HttpsProxyAgent(proxyConfig.url);
+    axiosConfig.httpsAgent = agent;
+    axiosConfig.httpAgent = agent;
+    axiosConfig.proxy = false;
   }
   const response = await axios.post(url, params.toString(), axiosConfig);
   if (isSessionExpired(response)) {
