@@ -38,10 +38,18 @@ export default function CornerSystemPage() {
       </div>
 
       <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-4">
-        {activeTab === 'crawler' && <CrawlerControlPanel />}
-        {activeTab === 'monitor' && <LiveMonitor />}
-        {activeTab === 'strategy' && <StrategyConfigPanel />}
-        {activeTab === 'history' && <CornerHistoryChart />}
+        <div style={{ display: activeTab === 'crawler' ? 'block' : 'none' }}>
+          <CrawlerControlPanel />
+        </div>
+        <div style={{ display: activeTab === 'monitor' ? 'block' : 'none' }}>
+          <LiveMonitor />
+        </div>
+        <div style={{ display: activeTab === 'strategy' ? 'block' : 'none' }}>
+          <StrategyConfigPanel />
+        </div>
+        <div style={{ display: activeTab === 'history' ? 'block' : 'none' }}>
+          <CornerHistoryChart />
+        </div>
       </div>
     </div>
   );

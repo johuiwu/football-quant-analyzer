@@ -38,7 +38,7 @@ interface Actions {
 
 export type WorldCupStore = State & Actions;
 
-const initialState: State = {
+const createInitialState = (): State => ({
   fixtures: WORLD_CUP_FIXTURES_2026,
   teams: WORLD_CUP_TEAMS,
   predictions: {},
@@ -46,13 +46,13 @@ const initialState: State = {
   isLoading: false,
   error: null,
   lastPredictionUpdate: null,
-};
+});
 
 let _fetchBatchAbortController: AbortController | null = null;
 let _fetchGroupAbortController: AbortController | null = null;
 
 export const useWorldCupStore = create<WorldCupStore>((set, get) => ({
-  ...initialState,
+  ...createInitialState(),
 
   fetchPredictions: async (matchId?: string) => {
     const controller = new AbortController();
@@ -239,5 +239,5 @@ export const useWorldCupStore = create<WorldCupStore>((set, get) => ({
 
   setLoading: (loading: boolean) => set({ isLoading: loading }),
 
-  reset: () => set({ ...initialState }),
+  reset: () => set({ ...createInitialState() }),
 }));

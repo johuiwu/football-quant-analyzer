@@ -23,7 +23,12 @@ export async function fetchWithRetry<T>(
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), config.timeout || defaultConfig.timeout);
-      
+
+      // Merge external signal with our timeout controller instead of overriding
+      if (options.signal) {
+        options.signal.addEventListener('abort', () => controller.abort());
+      }
+
       const response = await fetch(url, {
         ...options,
         signal: controller.signal
@@ -58,7 +63,12 @@ export async function fetchWithTimeout<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
+
+  // Merge external signal with our timeout controller instead of overriding
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => controller.abort());
+  }
+
   try {
     const response = await fetch(url, {
       ...options,

@@ -21,7 +21,7 @@ export interface CornerStrategy {
 /** 盘口条目 */
 export interface HandicapEntry {
   order: number;
-  category: "O/U" | "HDP" | "1X2" | "O/E" | "NEXT";
+  category: "O/U" | "HDP" | "1X2" | "O/E" | "NEXT" | "CS";
   categoryLabel: string;
   period: "full" | "half";
   line?: number | string;
@@ -151,6 +151,7 @@ export interface CornerStore {
   setBetConfirmRequired: (required: boolean) => void;
   setScheduleFreshLoaded: (loaded: boolean) => void;
   setAutoRefresh: (on: boolean) => void;
+  syncAllSettingsToBackend: () => Promise<void>;
 }
 
 // ==================== 默认策略 ====================
@@ -350,7 +351,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   },
 
   // 一次性同步所有配置到后端（用于页面初始化时确保前后端一致）
-  syncAllSettingsToBackend: () => {
+  syncAllSettingsToBackend: async () => {
     const s = get().settings;
     const trackedMatchIds = getAppStoreTrackedMatchIds();
     fetch('/api/corner/bet-config', {
@@ -481,13 +482,13 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         homeTeam: m.homeTeam || "",
         awayTeam: m.awayTeam || "",
         time: m.time || "",
-        elapsedMinutes: m.elapsedMinutes || 0,
-        homeScore: m.homeScore || 0,
-        awayScore: m.awayScore || 0,
-        homeCorners: m.homeCorners || 0,
-        awayCorners: m.awayCorners || 0,
-        cornerHandicap: m.cornerHandicap || 0,
-        cornerOdds: m.cornerOdds || 0,
+        elapsedMinutes: m.elapsedMinutes ?? 0,
+        homeScore: m.homeScore ?? 0,
+        awayScore: m.awayScore ?? 0,
+        homeCorners: m.homeCorners ?? 0,
+        awayCorners: m.awayCorners ?? 0,
+        cornerHandicap: m.cornerHandicap ?? 0,
+        cornerOdds: m.cornerOdds ?? 0,
         handicaps: m.handicaps || [],
         _dataSource: m._dataSource,
         _cornerSource: m._cornerSource,
@@ -661,7 +662,6 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     accountConfig: { username: state.accountConfig.username, remember: state.accountConfig.remember },
     settings: { ...state.settings, hgPassword: "" },
     autoRefresh: state.autoRefresh,
-    isLoggedIn: state.isLoggedIn,
     balanceLastUpdated: state.balanceLastUpdated,
   })
 }));

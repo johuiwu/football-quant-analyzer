@@ -65,11 +65,26 @@ export default function CrawlerControlPanel() {
   const [isBackendPolling, setIsBackendPolling] = useState(false);
 
   const fetchingRef = React.useRef(false);
-  const messageTimerRef = React.useRef(null);
+  const messageTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const startMonitorTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const normalizeMatchForRender = (item, index) => ({
+  /** Raw match data from API before normalization */
+  interface RawMatchItem {
+    matchId?: string | number;
+    homeTeam?: string;
+    awayTeam?: string;
+    league?: string;
+    time?: string;
+    homeScore?: number;
+    awayScore?: number;
+    totalCorners?: number;
+    handicaps?: any[];
+    _dataSource?: string;
+    [key: string]: any;
+  }
+
+  const normalizeMatchForRender = (item: RawMatchItem, index: number) => ({
     ...item,
     matchId: item.matchId != null ? String(item.matchId) : "match-" + index,
     homeTeam: item.homeTeam || "--",

@@ -106,12 +106,16 @@ export function getTeamElo(team: TeamStats): number {
     if (rawElo && rawElo > 0) {
       // 归一化：世界杯 Elo 整体偏高约 200，需向五大联赛标准基数靠拢
       const normalizedElo = rawElo > 1800 ? rawElo - 200 : rawElo;
-      console.log(`[Elo 世界杯] ${team.nameCn || team.name || team.id} 读取到 Elo: ${rawElo} (归一化后: ${normalizedElo})`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Elo 世界杯] ${team.nameCn || team.name || team.id} 读取到 Elo: ${rawElo} (归一化后: ${normalizedElo})`);
+      }
       return normalizedElo;
     }
 
     // 映射表里没查到，绝对不能返回 0，给保底值 1550
-    console.warn(`[Elo 安全兜底] 未在映射表中找到 ${team.nameCn || team.name || team.id} 的 Elo，使用保底值 1550`);
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[Elo 安全兜底] 未在映射表中找到 ${team.nameCn || team.name || team.id} 的 Elo，使用保底值 1550`);
+    }
     return 1550;
   }
 
