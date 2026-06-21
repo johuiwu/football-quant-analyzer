@@ -450,15 +450,6 @@ export async function autoLoginAndGetCredentials(options = {}) {
       page.on("response", async (response) => {
         const url = response.url();
         try {
-          // 拦截 chk_login 响应提取 uid
-          if (url.includes("chk_login")) {
-            const text = await response.text();
-            const uidMatch = text.match(/<uid>([^<]+)<\/uid>/);
-            if (uidMatch && uidMatch[1]) {
-              capturedUid = uidMatch[1];
-              console.log("[autoLogin] 从 chk_login 捕获 uid: " + capturedUid.substring(0, 10) + "...");
-            }
-          }
           // 拦截 transform.php 请求提取 ver
           if (url.includes("transform.php") && url.includes("ver=")) {
             extractVerFromRequest(url);
@@ -660,6 +651,22 @@ export async function autoLoginAndGetCredentials(options = {}) {
                 } catch (e) {}
               }
 
+              // 从 _CHDomain 对象提取 uid
+              if (!capturedUid) {
+                try {
+                  const chDomainUid = await page.evaluate(() => {
+                    try {
+                      const ch = window._CHDomain || (typeof top !== 'undefined' && top._CHDomain) || null;
+                      return ch ? ch.uid : '';
+                    } catch (e) { return ''; }
+                  });
+                  if (chDomainUid && chDomainUid.length >= 10 && !chDomainUid.endsWith('=')) {
+                    capturedUid = chDomainUid;
+                    console.log('[autoLogin] 从 _CHDomain.uid 提取 uid: ' + capturedUid.substring(0, 12) + '...');
+                  }
+                } catch (e) {}
+              }
+
               // 最后回退：导航到 Soccer 页面触发请求
               try {
                 await page.evaluate(() => {
@@ -687,6 +694,33 @@ export async function autoLoginAndGetCredentials(options = {}) {
             // 获取 Cookie
             const cookies = await page.cookies();
             console.log("[autoLogin] 获取到 " + cookies.length + " 条 Cookie");
+
+            // 从内联 script 标签解析 uid
+            if (!capturedUid) {
+              try {
+                for (const frame of page.frames()) {
+                  try {
+                    const scriptUids = await frame.evaluate(() => {
+                      const results = [];
+                      const scripts = document.querySelectorAll('script');
+                      for (const s of scripts) {
+                        const text = s.textContent || '';
+                        const m = text.match(/uid\s*=\s*'([^']+)'/);
+                        if (m && m[1] && m[1].length >= 10 && !m[1].endsWith('=')) {
+                          results.push(m[1]);
+                        }
+                      }
+                      return results;
+                    });
+                    if (scriptUids.length > 0) {
+                      capturedUid = scriptUids[0];
+                      console.log('[autoLogin] 从内联 script 标签提取 uid: ' + capturedUid.substring(0, 12) + '...');
+                      break;
+                    }
+                  } catch (e) {}
+                }
+              } catch (e) {}
+            }
 
             // 如果 uid 仍为空，尝试从 Cookie 中提取
             if (!capturedUid) {
@@ -778,14 +812,6 @@ export async function syncCredentialsFromPage(page, options = {}) {
   page.on("response", async (response) => {
     const url = response.url();
     try {
-      if (url.includes("chk_login")) {
-        const text = await response.text();
-        const uidMatch = text.match(/<uid>([^<]+)<\/uid>/);
-        if (uidMatch && uidMatch[1]) {
-          capturedUid = uidMatch[1];
-          console.log("[syncCredentials] 从 chk_login 捕获 uid: " + capturedUid.substring(0, 10) + "...");
-        }
-      }
       if (url.includes("transform.php") && url.includes("ver=")) {
         extractVerFromRequest(url);
         const verMatch = url.match(/[?&]ver=([^&]+)/);
@@ -796,6 +822,43 @@ export async function syncCredentialsFromPage(page, options = {}) {
       }
     } catch (e) {}
   });
+
+  // 1.5. 从 _CHDomain 对象提取 uid（首要来源 - 登录后主页内联脚本设置）
+  if (!capturedUid) {
+    try {
+      const chDomain = await page.evaluate(() => {
+        try {
+          const ch = window._CHDomain || (typeof top !== 'undefined' && top._CHDomain) || null;
+          if (!ch) return null;
+          return {
+            uid: ch.uid || '',
+            mid: ch.mid || '',
+            username: ch.username || '',
+            ver: ch.ver || '',
+            domain: ch.domain || ''
+          };
+        } catch (e) { return null; }
+      });
+      if (chDomain && chDomain.uid && chDomain.uid.length >= 10 && !chDomain.uid.endsWith('=')) {
+        capturedUid = chDomain.uid;
+        console.log('[syncCredentials] 从 _CHDomain.uid 提取 uid: ' + capturedUid.substring(0, 12) + '...');
+        // 同步 _CHDomain 附加信息
+        if (chDomain.mid) options._chMid = chDomain.mid;
+        if (chDomain.username && !options.username) options.username = chDomain.username;
+        if (chDomain.ver && !capturedVer) {
+          capturedVer = chDomain.ver;
+          extractVerFromRequest('transform.php?ver=' + chDomain.ver);
+          console.log('[syncCredentials] 从 _CHDomain.ver 提取 ver: ' + chDomain.ver.substring(0, 16) + '...');
+        }
+        if (chDomain.domain && !apiDomain) {
+          apiDomain = 'https://' + chDomain.domain;
+          console.log('[syncCredentials] 从 _CHDomain.domain 提取 apiDomain: ' + apiDomain);
+        }
+      }
+    } catch (e) {
+      console.warn('[syncCredentials] _CHDomain 提取失败:', e.message);
+    }
+  }
 
   // 2. 从 frame 提取 uid 和 API 域名
   try {
@@ -866,6 +929,33 @@ export async function syncCredentialsFromPage(page, options = {}) {
         capturedVer = verFromDom;
         extractVerFromRequest("transform.php?ver=" + verFromDom);
         console.log("[syncCredentials] 从 DOM 提取 ver: " + verFromDom.substring(0, 16) + "...");
+      }
+    } catch (e) {}
+  }
+
+  // 5.5. 从内联 script 标签解析 uid（回退）
+  if (!capturedUid) {
+    try {
+      for (const frame of page.frames()) {
+        try {
+          const scriptUids = await frame.evaluate(() => {
+            const results = [];
+            const scripts = document.querySelectorAll('script');
+            for (const s of scripts) {
+              const text = s.textContent || '';
+              const m = text.match(/uid\s*=\s*'([^']+)'/);
+              if (m && m[1] && m[1].length >= 10 && !m[1].endsWith('=')) {
+                results.push(m[1]);
+              }
+            }
+            return results;
+          });
+          if (scriptUids.length > 0) {
+            capturedUid = scriptUids[0];
+            console.log('[syncCredentials] 从内联 script 标签提取 uid: ' + capturedUid.substring(0, 12) + '...');
+            break;
+          }
+        } catch (e) {}
       }
     } catch (e) {}
   }
