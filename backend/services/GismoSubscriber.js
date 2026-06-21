@@ -1,8 +1,8 @@
 // ======================== gismo 实时数据订阅器 ========================
 // 使用 match_timelinedelta 端点轮询比赛实时数据（比分、角球、时间等）
-// 支持变更检测和比赛结束自动退订
+// 支持变更检测、比赛结束自动退订、Token 失效自动刷新
 
-import { getToken } from "./gismoApiClient.js";
+import { getToken, extractTokenFromPage } from "./gismoApiClient.js";
 
 const GISMO_BASE = "https://ws-fn-cdn001.akamaized.net/188bet/en/Etc:UTC/gismo";
 const POLL_INTERVAL = 3000; // 轮询间隔 3 秒
@@ -11,7 +11,76 @@ const POLL_INTERVAL = 3000; // 轮询间隔 3 秒
 const timers = new Map();       // matchId → interval timer
 const lastState = new Map();    // matchId → { homeScore, awayScore, totalCorners, elapsedMinutes }
 const failCounts = new Map();   // matchId → 连续失败次数
-const MAX_CONSECUTIVE_FAILURES = 10; // 连续失败超过此阈值自动退订
+const MAX_CONSECUTIVE_FAILURES = 10; // 连续失败超过此阈值触发 Token 刷新
+
+// ---- Token 刷新全局锁 ----
+let isRefreshingToken = false;  // 全局互斥锁，防止多个 matchId 并发刷新
+let tokenRefreshFailCount = 0;  // Token 刷新连续失败计数
+const TOKEN_REFRESH_LOG_INTERVAL = 3; // 每失败 N 次才输出一次警告日志，避免刷屏
+
+// ---- 订阅参数缓存（用于刷新 Token 后重新订阅） ----
+let cachedCallback = null;
+let cachedPage = null;
+let cachedOnMatchEnded = null;
+
+// ======================== Token 刷新 ========================
+
+/**
+ * 尝试刷新 Token（带全局互斥锁）
+ * 刷新成功：重置所有 failCount，Token 自动缓存到 gismoApiClient
+ * 刷新失败：输出警告日志，重置所有 failCount 继续重试
+ * @returns {Promise<boolean>} 是否刷新成功
+ */
+async function tryRefreshToken() {
+  if (isRefreshingToken) {
+    // 其他 matchId 正在刷新，直接跳过等待
+    return false;
+  }
+
+  isRefreshingToken = true;
+  try {
+    if (!cachedPage || cachedPage.isClosed()) {
+      tokenRefreshFailCount++;
+      if (tokenRefreshFailCount % TOKEN_REFRESH_LOG_INTERVAL === 1) {
+        console.warn("[GismoSubscriber] \u26a0\ufe0f Token 刷新失败（page 不可用），等待下一轮重试");
+      }
+      return false;
+    }
+
+    const newToken = await extractTokenFromPage(cachedPage);
+    if (newToken) {
+      tokenRefreshFailCount = 0;
+      console.log("[GismoSubscriber] \u2705 Token 刷新成功，重置所有 failCount 继续轮询");
+      // 重置所有 matchId 的 failCount（Token 是全局共享的）
+      for (const mid of failCounts.keys()) {
+        failCounts.set(mid, 0);
+      }
+      return true;
+    } else {
+      tokenRefreshFailCount++;
+      if (tokenRefreshFailCount % TOKEN_REFRESH_LOG_INTERVAL === 1) {
+        console.warn("[GismoSubscriber] \u26a0\ufe0f Token 刷新失败（凭证可能已彻底失效），请检查账号凭证。等待下一轮重试...");
+      }
+      // 刷新失败也重置 failCount，让系统继续重试而非退订
+      for (const mid of failCounts.keys()) {
+        failCounts.set(mid, 0);
+      }
+      return false;
+    }
+  } catch (error) {
+    tokenRefreshFailCount++;
+    if (tokenRefreshFailCount % TOKEN_REFRESH_LOG_INTERVAL === 1) {
+      console.error("[GismoSubscriber] \u274c Token 刷新过程发生异常:", error.message);
+    }
+    // 异常也重置 failCount，继续重试
+    for (const mid of failCounts.keys()) {
+      failCounts.set(mid, 0);
+    }
+    return false;
+  } finally {
+    isRefreshingToken = false; // 绝对必须释放锁！
+  }
+}
 
 // ======================== 数据解析 ========================
 
@@ -108,6 +177,11 @@ export function subscribeMatches(matchIds, callback, page, onMatchEnded) {
     return;
   }
 
+  // 缓存订阅参数（用于 Token 刷新后恢复）
+  cachedCallback = callback;
+  cachedPage = page;
+  cachedOnMatchEnded = onMatchEnded;
+
   for (const matchId of matchIds) {
     // 已订阅则跳过
     if (timers.has(matchId)) continue;
@@ -125,8 +199,9 @@ export function subscribeMatches(matchIds, callback, page, onMatchEnded) {
         const fails = (failCounts.get(matchId) || 0) + 1;
         failCounts.set(matchId, fails);
         if (fails >= MAX_CONSECUTIVE_FAILURES) {
-          console.log("[GismoSubscriber] token 连续不可用 " + fails + " 次，自动退订 matchId=" + matchId);
-          unsubscribeMatches([matchId]);
+          // 达到阈值：先尝试刷新 Token，不直接退订
+          console.log("[GismoSubscriber] token 连续不可用 " + fails + " 次，尝试刷新 Token (matchId=" + matchId + ")");
+          await tryRefreshToken();
         } else {
           console.log("[GismoSubscriber] 无可用 token (" + fails + "/" + MAX_CONSECUTIVE_FAILURES + ")，跳过轮询 matchId=" + matchId);
         }
@@ -150,16 +225,18 @@ export function subscribeMatches(matchIds, callback, page, onMatchEnded) {
           const fails = (failCounts.get(matchId) || 0) + 1;
           failCounts.set(matchId, fails);
           if (fails >= MAX_CONSECUTIVE_FAILURES) {
-            console.log("[GismoSubscriber] matchId=" + matchId + " 连续请求失败 " + fails + " 次，自动退订");
-            unsubscribeMatches([matchId]);
+            // 达到阈值：先尝试刷新 Token，不直接退订
+            console.log("[GismoSubscriber] matchId=" + matchId + " 连续请求失败 " + fails + " 次，尝试刷新 Token");
+            await tryRefreshToken();
           } else {
             console.log("[GismoSubscriber] matchId=" + matchId + " 请求失败: " + result.error + " (" + fails + "/" + MAX_CONSECUTIVE_FAILURES + ")");
           }
           return;
         }
 
-        // 请求成功，重置失败计数
+        // 请求成功，重置失败计数和刷新失败计数
         failCounts.set(matchId, 0);
+        tokenRefreshFailCount = 0;
 
         const deltaData = parseTimelineDelta(result);
         if (!deltaData) return;
@@ -170,7 +247,7 @@ export function subscribeMatches(matchIds, callback, page, onMatchEnded) {
         // 回调通知
         callback(deltaData);
 
-        // 比赛结束自动退订
+        // 比赛结束自动退订（仅此场景才退订）
         if (deltaData.liveStatus !== "live" || !deltaData.isRunning) {
           console.log("[GismoSubscriber] matchId " + matchId + " ended, unsubscribing");
           if (onMatchEnded) onMatchEnded(matchId);
@@ -180,8 +257,9 @@ export function subscribeMatches(matchIds, callback, page, onMatchEnded) {
         const fails = (failCounts.get(matchId) || 0) + 1;
         failCounts.set(matchId, fails);
         if (fails >= MAX_CONSECUTIVE_FAILURES) {
-          console.log("[GismoSubscriber] matchId=" + matchId + " 连续异常 " + fails + " 次，自动退订: " + e.message);
-          unsubscribeMatches([matchId]);
+          // 达到阈值：先尝试刷新 Token，不直接退订
+          console.log("[GismoSubscriber] matchId=" + matchId + " 连续异常 " + fails + " 次，尝试刷新 Token: " + e.message);
+          await tryRefreshToken();
         } else {
           console.log("[GismoSubscriber] matchId=" + matchId + " 轮询异常: " + e.message);
         }
@@ -221,6 +299,8 @@ export function unsubscribeAll() {
   timers.clear();
   lastState.clear();
   failCounts.clear();
+  isRefreshingToken = false;
+  tokenRefreshFailCount = 0;
   console.log("[GismoSubscriber] 已退订所有比赛");
 }
 

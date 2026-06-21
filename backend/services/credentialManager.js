@@ -5,6 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import axios from "axios";
 import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL } from "./browserPool.js";
 import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
 
@@ -200,8 +201,7 @@ export async function validateCredentials(uid, ver, cookieStr, apiDomain) {
       p3type: "", date: "", filter: "", cupFantasy: "N",
       specialClick: "", isFantasy: "N",
     });
-    const res = await fetch(`${baseUrl}/transform.php?ver=${encodeURIComponent(ver)}`, {
-      method: "POST",
+    const response = await axios.post(`${baseUrl}/transform.php?ver=${encodeURIComponent(ver)}`, params.toString(), {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "X-Requested-With": "XMLHttpRequest",
@@ -212,14 +212,16 @@ export async function validateCredentials(uid, ver, cookieStr, apiDomain) {
         "Accept-Language": "en-us",
         Cookie: cookieStr,
       },
-      body: params.toString(),
+      timeout: 15000,
+      maxRedirects: 0,
+      validateStatus: () => true,
     });
 
-    if (!res.ok) {
+    if (response.status >= 400 || response.status === 302) {
       return { valid: false, reason: "session_expired" };
     }
 
-    const text = await res.text();
+    const text = typeof response.data === "string" ? response.data : String(response.data);
 
     // 响应包含 <serverresponse> XML 标签（有效会话）
     if (text.includes("<serverresponse")) {

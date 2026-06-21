@@ -1,5 +1,6 @@
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import axios from "axios";
 
 puppeteer.use(StealthPlugin());
 
@@ -42,20 +43,15 @@ async function checkDomainReachable(url, timeout = 8000) {
     return true;
   }
   try {
-    // 使用 HTTPS HEAD 请求替代原始 TCP socket 检测
-    // 原始 TCP socket 不支持 SNI，导致需要 SNI 的网站误判为不可达
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    const res = await fetch(url, {
-      method: "HEAD",
-      signal: controller.signal,
-      redirect: "manual",
+    const res = await axios.head(url, {
+      timeout,
+      maxRedirects: 0,
+      validateStatus: () => true,
     });
-    clearTimeout(timer);
     // 任何响应（包括 3xx 重定向）都说明域名可达
     return res.status > 0;
   } catch (err) {
-    // fetch 失败（网络错误/超时/SSL错误）视为不可达
+    // axios 请求失败（网络错误/超时/SSL错误）视为不可达
     return false;
   }
 }

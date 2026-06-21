@@ -2,6 +2,7 @@
 // 当 XHR 劫持和 DOM 解析均失败时，用缓存的 ver 签名 + 浏览器 cookies 直连 transform.php
 
 import { HG_URL, getLoginCookies, getRandomUA } from "./browserPool.js";
+import axios from "axios";
 import { parseTransformXML } from "./xhrDataParser.js";
 import { getCurrentVer } from "./transformSigner.js";
 
@@ -34,8 +35,7 @@ export async function fetchViaDirectHTTP() {
   console.log("[directFetcher] 直连请求: " + url.substring(0, 100));
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
+    const response = await axios.get(url, {
       headers: {
         "User-Agent": getRandomUA(),
         "Referer": HG_URL + "/",
@@ -43,8 +43,9 @@ export async function fetchViaDirectHTTP() {
         "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
         "Cookie": cookieHeader,
       },
-      // 短暂超时，避免阻塞轮询
-      signal: AbortSignal.timeout(8000),
+      timeout: 8000,
+      maxRedirects: 0,
+      validateStatus: () => true,
     });
 
     if (response.status === 429 || response.status === 403) {
@@ -52,12 +53,12 @@ export async function fetchViaDirectHTTP() {
       return { success: false, reason: "waf_blocked", httpStatus: response.status };
     }
 
-    if (!response.ok) {
-      console.log("[directFetcher] HTTP " + response.status + " " + response.statusText);
+    if (response.status >= 400) {
+      console.log("[directFetcher] HTTP " + response.status);
       return { success: false, reason: "http_" + response.status };
     }
 
-    const text = await response.text();
+    const text = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
 
     // 检测是否被重定向到登录页
     if (text.includes("login") && text.length < 2000) {

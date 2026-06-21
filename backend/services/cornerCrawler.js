@@ -2691,14 +2691,15 @@ async function _processHttpResults(rcnResult, rnouResult, uid, ver, cookieStr) {
 async function _crawlViaPureHttp() {
   // 1. 直接加载凭证（不前置验证，直接尝试请求）
   let creds = loadCredentials();
-  if (!creds || !creds.uid || !creds.ver || !creds.cookieStr) {
-    // 凭证缺失，需要登录
-    console.log("[cornerCrawler] 纯HTTP: 凭证缺失，需要登录");
-    return { __specialResult: true, reason: "credentials_missing" };
+  const hasCredentials = creds && creds.uid && creds.ver && creds.cookieStr;
+
+  if (!hasCredentials) {
+    // 凭证缺失，需要登录 — 不直接返回，fall through 到 autoLogin 逻辑
+    console.log("[cornerCrawler] 纯HTTP: 凭证缺失，需要登录（将尝试 autoLogin）");
   }
 
   // 2. 如果有凭证，直接尝试发送请求
-  if (creds && creds.uid && creds.ver && creds.cookieStr) {
+  if (hasCredentials) {
     const { uid, ver, cookieStr } = creds;
     console.log("[cornerCrawler] 纯HTTP: 使用缓存凭证发送请求...");
     const [rcnResult, rnouResult] = await Promise.all([
