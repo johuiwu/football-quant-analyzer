@@ -57,21 +57,29 @@ export async function detectWorkingDomain() {
   }
 
   const domains = _getAllDomains();
-  for (const domain of domains) {
-    try {
-      // 快速 HTTP HEAD 测试（验证 HTTP 层可达）
+  console.log("[域名检测] 并行检测域名可达性:", domains.join(", "));
+
+  // ★ 并行检测所有域名，第一个可达的立即返回
+  const results = await Promise.allSettled(
+    domains.map(async (domain) => {
       await axios.head(domain, { timeout: 5000, maxRedirects: 0, validateStatus: () => true });
+      return domain;
+    })
+  );
+
+  // 按原始优先级顺序查找第一个成功的
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      const domain = r.value;
       _workingDomain = domain;
       _workingDomainTime = Date.now();
       console.log("[域名检测] 可用域名: " + domain);
-      // 如果工作域名与 credentials.json 中的 apiDomain 不同，更新凭证
       const currentBase = getBaseUrl();
       if (domain !== currentBase) {
         try { updateCredentials({ apiDomain: domain }); } catch (_) {}
       }
       return domain;
-    } catch {
-      console.log("[域名检测] 域名不可达: " + domain);
     }
   }
 

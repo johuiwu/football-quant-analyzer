@@ -4,7 +4,7 @@ import axios from "axios";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, FALLBACK_DOMAINS, loadCookiesFromDisk } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, FALLBACK_DOMAINS, loadCookiesFromDisk, detectLocalBrowser } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
 import { loadAndValidate } from "./credentialManager.js";
@@ -36,7 +36,7 @@ const HG_PASSWORD = process.env.HG_PASSWORD || "";
 /**
  * 检测域名 443 端口是否可达
  */
-async function checkDomainReachable(url, timeout = 8000) {
+async function checkDomainReachable(url, timeout = 5000) {
   // ★ 如果配置了代理，跳过检测（代理模式下直连必然失败）
   if (process.env.PUPPETEER_PROXY) {
     console.log("[HgCrawler] 代理模式已启用，跳过域名可达性检测");
@@ -60,20 +60,26 @@ async function checkDomainReachable(url, timeout = 8000) {
  * 检测并选择可达的域名
  */
 async function selectReachableDomain() {
-  console.log("[HgCrawler] 检测主域名可达性:", HG_URL);
-  if (await checkDomainReachable(HG_URL)) {
-    console.log("[HgCrawler] 主域名可达:", HG_URL);
-    return { url: HG_URL, changed: false };
-  }
-  console.warn("[HgCrawler] 主域名不可达:", HG_URL);
+  // ★ 并行检测所有域名，第一个可达的立即返回
+  const allDomains = [HG_URL, ...FALLBACK_DOMAINS];
+  console.log("[HgCrawler] 并行检测域名可达性:", allDomains.join(", "));
 
-  for (const fb of FALLBACK_DOMAINS) {
-    console.log("[HgCrawler] 检测备选域名可达性:", fb);
-    if (await checkDomainReachable(fb)) {
-      console.log("[HgCrawler] 备选域名可达，切换到:", fb);
-      return { url: fb, changed: true };
+  const results = await Promise.allSettled(
+    allDomains.map(async (domain) => {
+      const reachable = await checkDomainReachable(domain, 5000);
+      return { domain, reachable };
+    })
+  );
+
+  // 找到第一个可达的域名
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled' && r.value.reachable) {
+      const domain = r.value.domain;
+      const isPrimary = domain === HG_URL;
+      console.log("[HgCrawler] 域名可达:", domain, isPrimary ? "(主域名)" : "(备选域名)");
+      return { url: domain, changed: !isPrimary };
     }
-    console.warn("[HgCrawler] 备选域名不可达:", fb);
   }
 
   console.error("[HgCrawler] 所有域名均不可达，使用主域名:", HG_URL);
@@ -474,10 +480,14 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
 
   let bi;
   if (isolated) {
+    const browserPath = detectLocalBrowser();
+    if (!browserPath) {
+      return { success: false, error: "系统未安装 Chrome 或 Edge，请安装任意一款浏览器" };
+    }
     const headless = true;
     bi = await puppeteer.launch({
       headless,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      executablePath: browserPath,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--window-size=1920,1400"],
       timeout: 60000
     });
