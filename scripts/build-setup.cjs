@@ -47,38 +47,8 @@ copyDir(dbSrc, dbDest, (name) => {
 });
 console.log('[build-setup] Database files ready');
 
-// 2. Copy Chrome/Chromium from Puppeteer cache
-const userHome = require('os').homedir();
-const chromeCacheDir = path.join(userHome, '.cache', 'puppeteer', 'chrome');
-
-if (fs.existsSync(chromeCacheDir)) {
-  const chromeVersions = fs.readdirSync(chromeCacheDir);
-  if (chromeVersions.length > 0) {
-    // Use the latest version
-    const latestVersion = chromeVersions.sort().reverse()[0];
-    const chromeSrc = path.join(chromeCacheDir, latestVersion, 'chrome-win64');
-    const chromeDest = path.join(BUILD_RES, 'chrome', 'chrome-win64');
-
-    if (fs.existsSync(chromeSrc)) {
-      copyDir(chromeSrc, chromeDest, () => true);
-      const totalSize = getDirSize(chromeDest);
-      console.log(`[build-setup] Chromium copied: ${chromeSrc} → ${chromeDest} (${(totalSize / 1024 / 1024).toFixed(1)} MB)`);
-    } else {
-      console.warn(`[build-setup] Chrome-win64 not found at: ${chromeSrc}`);
-    }
-  } else {
-    console.error('[build-setup] No Chrome versions found in Puppeteer cache!');
-    console.error('[build-setup] Chromium is required for the corner crawler system.');
-    console.error('[build-setup] Please run: npm install puppeteer');
-    process.exit(1);
-  }
-} else {
-  console.error('[build-setup] Puppeteer Chrome cache not found!');
-  console.error('[build-setup] Chromium is required for the corner crawler system.');
-  console.error('[build-setup] Please run: npm install puppeteer');
-  console.error('[build-setup] Or set PUPPETEER_CACHE_DIR to a directory with Chrome.');
-  process.exit(1);
-}
+// 2. (已移除) 不再打包 Chromium — 改用用户本地 Chrome/Edge 浏览器
+console.log('[build-setup] Puppeteer 将使用本地 Chrome/Edge，无需打包 Chromium');
 
 // 3. Copy icon to build_resources
 const iconSrc = path.join(ROOT, 'public', 'icon.ico');
