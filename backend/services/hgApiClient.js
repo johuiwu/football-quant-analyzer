@@ -4,11 +4,80 @@
 
 import axios from "axios";
 import net from "net";
-import { getBaseUrl } from "./credentialManager.js";
+import { getBaseUrl, updateCredentials } from "./credentialManager.js";
+import { HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 
 // ---- 请求配置 ----
 const DEFAULT_TIMEOUT = 15000;
 const MAX_REDIRECTS = 0;
+
+// ---- 域名回退机制 ----
+const DOMAIN_CACHE_TTL = 30 * 60 * 1000; // 30 分钟缓存
+let _workingDomain = null;
+let _workingDomainTime = 0;
+
+/**
+ * 获取所有可用域名列表（优先使用最近成功的域名）
+ * @returns {string[]}
+ */
+function _getAllDomains() {
+  const primary = getBaseUrl() || HG_URL;
+  const all = [primary];
+  for (const d of FALLBACK_DOMAINS) {
+    if (d !== primary) all.push(d);
+  }
+  // 如果有缓存的工作域名且不是主域名，将其提到第一位
+  if (_workingDomain && _workingDomain !== primary && (Date.now() - _workingDomainTime) < DOMAIN_CACHE_TTL) {
+    const idx = all.indexOf(_workingDomain);
+    if (idx > 0) {
+      all.splice(idx, 1);
+      all.unshift(_workingDomain);
+    }
+  }
+  return all;
+}
+
+/**
+ * 清除工作域名缓存
+ */
+export function clearDomainCache() {
+  _workingDomain = null;
+  _workingDomainTime = 0;
+}
+
+/**
+ * 自动探测可用域名（主域名不可达时尝试备用域名）
+ * @returns {Promise<string>} 可用域名
+ */
+export async function detectWorkingDomain() {
+  // 检查缓存
+  if (_workingDomain && (Date.now() - _workingDomainTime) < DOMAIN_CACHE_TTL) {
+    return _workingDomain;
+  }
+
+  const domains = _getAllDomains();
+  for (const domain of domains) {
+    try {
+      // 快速 HTTP HEAD 测试（验证 HTTP 层可达）
+      await axios.head(domain, { timeout: 5000, maxRedirects: 0, validateStatus: () => true });
+      _workingDomain = domain;
+      _workingDomainTime = Date.now();
+      console.log("[域名检测] 可用域名: " + domain);
+      // 如果工作域名与 credentials.json 中的 apiDomain 不同，更新凭证
+      const currentBase = getBaseUrl();
+      if (domain !== currentBase) {
+        try { updateCredentials({ apiDomain: domain }); } catch (_) {}
+      }
+      return domain;
+    } catch {
+      console.log("[域名检测] 域名不可达: " + domain);
+    }
+  }
+
+  // 所有域名都不可达，返回主域名（让请求自行处理超时）
+  console.warn("[域名检测] 所有域名均不可达，使用主域名: " + domains[0]);
+  return domains[0];
+}
 
 // ---- 代理自动探测 ----
 const PROXY_PORTS = [7890, 10809, 1080, 8888]; // Clash, V2Ray, SS, Proxifier
@@ -97,8 +166,7 @@ function getUserAgent() {
   return process.env.USE_MOBILE_UA === "true" ? MOBILE_UA : DESKTOP_UA;
 }
 
-function buildHeaders(cookieStr) {
-  const baseUrl = getBaseUrl();
+function buildHeaders(cookieStr, baseUrl) {
   return {
     "Content-Type": "application/x-www-form-urlencoded",
     "X-Requested-With": "XMLHttpRequest",
@@ -118,50 +186,92 @@ function isSessionExpired(response) {
   return false;
 }
 
-async function postTransformPhp(ver, cookieStr, params) {
-  const baseUrl = getBaseUrl();
-  const url = baseUrl + "/transform.php?ver=" + encodeURIComponent(ver);
+/**
+ * 向单个域名发送 POST 请求
+ * @returns {Promise<{data: string, expired: boolean}>}
+ */
+async function _postToDomain(domain, ver, cookieStr, params, proxyConfig) {
+  const url = domain + "/transform.php?ver=" + encodeURIComponent(ver);
+  const axiosConfig = {
+    headers: buildHeaders(cookieStr, domain),
+    timeout: DEFAULT_TIMEOUT,
+    maxRedirects: MAX_REDIRECTS,
+    validateStatus: (status) => status < 400,
+  };
+  if (proxyConfig) {
+    axiosConfig.proxy = proxyConfig;
+  }
+  const response = await axios.post(url, params.toString(), axiosConfig);
+  if (isSessionExpired(response)) {
+    return { data: "", expired: true };
+  }
+  return { data: response.data, expired: false };
+}
 
+async function postTransformPhp(ver, cookieStr, params) {
   // 代理自动探测
   const proxyConfig = await detectProxyConfig();
 
-  try {
-    const axiosConfig = {
-      headers: buildHeaders(cookieStr),
-      timeout: DEFAULT_TIMEOUT,
-      maxRedirects: MAX_REDIRECTS,
-      validateStatus: (status) => status < 400,
-    };
+  // 获取所有域名（优先使用缓存的工作域名）
+  const domains = _getAllDomains();
+  let lastError = null;
 
-    // 如果探测到代理，添加 proxy 配置
-    if (proxyConfig) {
-      axiosConfig.proxy = proxyConfig;
+  for (const domain of domains) {
+    try {
+      const result = await _postToDomain(domain, ver, cookieStr, params, proxyConfig);
+
+      // 请求成功 → 缓存工作域名
+      if (_workingDomain !== domain) {
+        _workingDomain = domain;
+        _workingDomainTime = Date.now();
+        console.log("[hgApiClient] 域名回退成功: " + domain);
+        // 更新凭证中的 apiDomain
+        const currentBase = getBaseUrl();
+        if (domain !== currentBase) {
+          try { updateCredentials({ apiDomain: domain }); } catch (_) {}
+        }
+      }
+
+      if (result.expired) {
+        console.warn("[hgApiClient] 会话已过期（响应为 HTML 或 302）");
+        return result;
+      }
+
+      return result;
+    } catch (err) {
+      const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+        err.code === "ECONNRESET" || err.code === "ENOTFOUND" || err.code === "EAI_FAIL";
+
+      if (isNetworkError) {
+        console.warn("[hgApiClient] 域名不可达: " + domain + " (" + err.code + ")，尝试下一个...");
+        lastError = err;
+        // 清除工作域名缓存（当前域名已不可达）
+        if (_workingDomain === domain) {
+          _workingDomain = null;
+          _workingDomainTime = 0;
+        }
+        continue; // 尝试下一个域名
+      }
+
+      // 非网络错误（如 302 重定向、HTTP 错误等）不重试其他域名
+      if (err.response && err.response.status === 302) {
+        console.warn("[hgApiClient] 会话已过期（302 重定向）");
+        return { data: "", expired: true };
+      }
+
+      console.error("[hgApiClient] 请求失败:", err.message);
+      throw err;
     }
-
-    const response = await axios.post(url, params.toString(), axiosConfig);
-
-    if (isSessionExpired(response)) {
-      console.warn("[hgApiClient] 会话已过期（响应为 HTML 或 302）");
-      return { data: "", expired: true };
-    }
-
-    return { data: response.data, expired: false };
-  } catch (err) {
-    // 请求失败时清除代理缓存，下次重新探测
-    const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
-      err.code === "ECONNRESET" || err.code === "ENOTFOUND" || err.code === "EAI_FAIL";
-    if (isNetworkError && proxyConfig) {
-      console.warn("[hgApiClient] 网络错误，清除代理缓存以便下次重新探测:", err.code);
-      clearProxyCache();
-    }
-
-    if (err.response && err.response.status === 302) {
-      console.warn("[hgApiClient] 会话已过期（302 重定向）");
-      return { data: "", expired: true };
-    }
-    console.error("[hgApiClient] 请求失败:", err.message);
-    throw err;
   }
+
+  // 所有域名都失败
+  if (proxyConfig) {
+    console.warn("[hgApiClient] 所有域名均失败，清除代理缓存以便下次重新探测");
+    clearProxyCache();
+  }
+  clearDomainCache();
+  console.error("[hgApiClient] 所有域名均不可达，最后错误:", lastError?.message);
+  throw lastError || new Error("所有域名均不可达");
 }
 
 // ======================== API 方法 ========================

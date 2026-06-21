@@ -5,8 +5,9 @@
 import fs from "fs";
 import path from "path";
 import axios from "axios";
-import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL } from "./browserPool.js";
+import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 import { getCurrentVer, extractVerFromRequest } from "./transformSigner.js";
+// ★ 避免与 hgApiClient.js 循环依赖，代理/域名检测函数使用懒加载
 
 // ---- credentials.json 路径 ----
 // ★ 禁止使用 import.meta.url / __dirname 推导路径
@@ -231,60 +232,101 @@ export function getBaseUrl() {
  * @returns {Promise<{ valid: boolean, reason?: string, error?: string }>}
  */
 export async function validateCredentials(uid, ver, cookieStr, apiDomain) {
-  const baseUrl = apiDomain || HG_URL;
-  try {
-    // 使用 get_game_list 接口验证（与实际数据请求一致，比 get_member_data 更可靠）
-    const ts = Date.now();
-    const params = new URLSearchParams({
-      uid, ver, langx: "en-us",
-      p: "get_game_list", gtype: "ft", showtype: "live",
-      rtype: "rcn", ltype: "3", sorttype: "L",
-      ts: String(ts), chgSortTS: String(ts),
-      p3type: "", date: "", filter: "", cupFantasy: "N",
-      specialClick: "", isFantasy: "N",
-    });
-    const response = await axios.post(`${baseUrl}/transform.php?ver=${encodeURIComponent(ver)}`, params.toString(), {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Requested-With": "XMLHttpRequest",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        "Referer": baseUrl + "/",
-        "Origin": baseUrl,
-        "Accept": "*/*",
-        "Accept-Language": "en-us",
-        Cookie: cookieStr,
-      },
-      timeout: 15000,
-      maxRedirects: 0,
-      validateStatus: () => true,
-    });
-
-    if (response.status >= 400 || response.status === 302) {
-      return { valid: false, reason: "session_expired" };
-    }
-
-    const text = typeof response.data === "string" ? response.data : String(response.data);
-
-    // 响应包含 <serverresponse> XML 标签（有效会话）
-    if (text.includes("<serverresponse")) {
-      return { valid: true };
-    }
-
-    // 响应是 HTML（会话已过期，被重定向到登录页）
-    if (text.includes("<html>") || text.includes("<!DOCTYPE")) {
-      return { valid: false, reason: "session_expired" };
-    }
-
-    // CheckEMNU 响应说明参数不完整或凭证无效
-    if (text.includes("CheckEMNU")) {
-      return { valid: false, reason: "check_emnu" };
-    }
-
-    // 其他情况视为无效
-    return { valid: false, reason: "session_expired" };
-  } catch (err) {
-    return { valid: false, reason: "network_error", error: err.message };
+  // 构建域名列表：优先 apiDomain → 主域名 → 备用域名
+  const primaryDomain = apiDomain || HG_URL;
+  const domains = [primaryDomain];
+  for (const d of FALLBACK_DOMAINS) {
+    if (d !== primaryDomain) domains.push(d);
   }
+
+  // 代理自动探测（懒加载避免循环依赖）
+  let proxyConfig = null;
+  try {
+    const { detectProxyConfig } = await import("./hgApiClient.js");
+    proxyConfig = await detectProxyConfig();
+  } catch (_) {}
+
+  let lastError = null;
+
+  for (const baseUrl of domains) {
+    try {
+      const ts = Date.now();
+      const params = new URLSearchParams({
+        uid, ver, langx: "en-us",
+        p: "get_game_list", gtype: "ft", showtype: "live",
+        rtype: "rcn", ltype: "3", sorttype: "L",
+        ts: String(ts), chgSortTS: String(ts),
+        p3type: "", date: "", filter: "", cupFantasy: "N",
+        specialClick: "", isFantasy: "N",
+      });
+      const axiosConfig = {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+          "Referer": baseUrl + "/",
+          "Origin": baseUrl,
+          "Accept": "*/*",
+          "Accept-Language": "en-us",
+          Cookie: cookieStr,
+        },
+        timeout: 15000,
+        maxRedirects: 0,
+        validateStatus: () => true,
+      };
+      if (proxyConfig) {
+        axiosConfig.proxy = proxyConfig;
+      }
+
+      const response = await axios.post(`${baseUrl}/transform.php?ver=${encodeURIComponent(ver)}`, params.toString(), axiosConfig);
+
+      if (response.status >= 400 || response.status === 302) {
+        return { valid: false, reason: "session_expired" };
+      }
+
+      const text = typeof response.data === "string" ? response.data : String(response.data);
+
+      // 响应包含 <serverresponse> XML 标签（有效会话）
+      if (text.includes("<serverresponse")) {
+        // 如果回退域名成功，更新 apiDomain
+        if (baseUrl !== primaryDomain) {
+          try { updateCredentials({ apiDomain: baseUrl }); } catch (_) {}
+          console.log("[credentialManager] 凭证验证域名回退成功: " + baseUrl);
+        }
+        return { valid: true };
+      }
+
+      // 响应是 HTML（会话已过期，被重定向到登录页）
+      if (text.includes("<html>") || text.includes("<!DOCTYPE")) {
+        return { valid: false, reason: "session_expired" };
+      }
+
+      // CheckEMNU 响应说明参数不完整或凭证无效
+      if (text.includes("CheckEMNU")) {
+        return { valid: false, reason: "check_emnu" };
+      }
+
+      // 其他情况视为无效
+      return { valid: false, reason: "session_expired" };
+    } catch (err) {
+      const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+        err.code === "ECONNRESET" || err.code === "ENOTFOUND" || err.code === "EAI_FAIL";
+      if (isNetworkError) {
+        console.warn("[credentialManager] 域名不可达: " + baseUrl + " (" + err.code + ")，尝试下一个...");
+        lastError = err;
+        continue;
+      }
+      return { valid: false, reason: "network_error", error: err.message };
+    }
+  }
+
+  // 所有域名都失败
+  try {
+    const { clearProxyCache, clearDomainCache } = await import("./hgApiClient.js");
+    if (proxyConfig) clearProxyCache();
+    clearDomainCache();
+  } catch (_) {}
+  return { valid: false, reason: "network_error", error: lastError?.message || "所有域名均不可达" };
 }
 
 /**

@@ -4,7 +4,8 @@
 
 import axios from "axios";
 import { loadCredentials, getBaseUrl } from "./credentialManager.js";
-import { detectProxyConfig, clearProxyCache } from "./hgApiClient.js";
+import { detectProxyConfig, clearProxyCache, detectWorkingDomain, clearDomainCache } from "./hgApiClient.js";
+import { HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 
 const DESKTOP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
@@ -22,75 +23,108 @@ function pickAttr(xml, tag, attr) {
 }
 
 /**
- * 向 transform_nl.php 发送 POST 请求
+ * 获取所有可用域名列表（含回退）
  */
-async function postNL(baseUrl, ver, cookieStr, body) {
-  const url = baseUrl + "/transform_nl.php?ver=" + encodeURIComponent(ver);
-  const proxyConfig = await detectProxyConfig();
-  const axiosConfig = {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": DESKTOP_UA,
-      Accept: "*/*",
-      "Accept-Language": "zh-cn",
-      Origin: baseUrl,
-      Cookie: cookieStr,
-    },
-    timeout: 15000,
-    validateStatus: (s) => s < 400,
-  };
-  if (proxyConfig) {
-    axiosConfig.proxy = proxyConfig;
+function _getAllDomains(primaryDomain) {
+  const all = [primaryDomain];
+  for (const d of FALLBACK_DOMAINS) {
+    if (d !== primaryDomain) all.push(d);
   }
-  try {
-    const res = await axios.post(url, body, axiosConfig);
-    return res.data;
-  } catch (err) {
-    const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
-      err.code === "ECONNRESET" || err.code === "ENOTFOUND";
-    if (isNetworkError && proxyConfig) {
-      console.warn("[httpBet] 网络错误，清除代理缓存:", err.code);
-      clearProxyCache();
-    }
-    throw err;
-  }
+  return all;
 }
 
 /**
- * 向 transform.php 发送 POST 请求
+ * 向 transform_nl.php 发送 POST 请求（含域名回退）
+ */
+async function postNL(baseUrl, ver, cookieStr, body) {
+  const domains = _getAllDomains(baseUrl);
+  const proxyConfig = await detectProxyConfig();
+  let lastError = null;
+
+  for (const domain of domains) {
+    const url = domain + "/transform_nl.php?ver=" + encodeURIComponent(ver);
+    const axiosConfig = {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": DESKTOP_UA,
+        Accept: "*/*",
+        "Accept-Language": "zh-cn",
+        Origin: domain,
+        Cookie: cookieStr,
+      },
+      timeout: 15000,
+      validateStatus: (s) => s < 400,
+    };
+    if (proxyConfig) {
+      axiosConfig.proxy = proxyConfig;
+    }
+    try {
+      const res = await axios.post(url, body, axiosConfig);
+      if (domain !== baseUrl) console.log("[httpBet] postNL 域名回退成功: " + domain);
+      return res.data;
+    } catch (err) {
+      const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+        err.code === "ECONNRESET" || err.code === "ENOTFOUND";
+      if (isNetworkError) {
+        console.warn("[httpBet] postNL 域名不可达: " + domain + " (" + err.code + ")，尝试下一个...");
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (proxyConfig) clearProxyCache();
+  clearDomainCache();
+  throw lastError || new Error("所有域名均不可达");
+}
+
+/**
+ * 向 transform.php 发送 POST 请求（含域名回退）
  */
 async function postTransform(baseUrl, ver, cookieStr, body) {
-  const url = baseUrl + "/transform.php?ver=" + encodeURIComponent(ver);
+  const domains = _getAllDomains(baseUrl);
   const proxyConfig = await detectProxyConfig();
-  const axiosConfig = {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": DESKTOP_UA,
-      Accept: "*/*",
-      "Accept-Language": "zh-cn",
-      Origin: baseUrl,
-      Cookie: cookieStr,
-    },
-    timeout: 15000,
-    validateStatus: (s) => s < 400,
-  };
-  if (proxyConfig) {
-    axiosConfig.proxy = proxyConfig;
-  }
-  try {
-    const res = await axios.post(url, body, axiosConfig);
-    return res.data;
-  } catch (err) {
-    const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
-      err.code === "ECONNRESET" || err.code === "ENOTFOUND";
-    if (isNetworkError && proxyConfig) {
-      console.warn("[httpBet] 网络错误，清除代理缓存:", err.code);
-      clearProxyCache();
+  let lastError = null;
+
+  for (const domain of domains) {
+    const url = domain + "/transform.php?ver=" + encodeURIComponent(ver);
+    const axiosConfig = {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": DESKTOP_UA,
+        Accept: "*/*",
+        "Accept-Language": "zh-cn",
+        Origin: domain,
+        Cookie: cookieStr,
+      },
+      timeout: 15000,
+      validateStatus: (s) => s < 400,
+    };
+    if (proxyConfig) {
+      axiosConfig.proxy = proxyConfig;
     }
-    throw err;
+    try {
+      const res = await axios.post(url, body, axiosConfig);
+      if (domain !== baseUrl) console.log("[httpBet] postTransform 域名回退成功: " + domain);
+      return res.data;
+    } catch (err) {
+      const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+        err.code === "ECONNRESET" || err.code === "ENOTFOUND";
+      if (isNetworkError) {
+        console.warn("[httpBet] postTransform 域名不可达: " + domain + " (" + err.code + ")，尝试下一个...");
+        lastError = err;
+        continue;
+      }
+      throw err;
+    }
   }
+
+  if (proxyConfig) clearProxyCache();
+  clearDomainCache();
+  throw lastError || new Error("所有域名均不可达");
 }
 
 // ======================== Step 1: FT_order_view ========================
