@@ -1,11 +1,16 @@
 import express from 'express';
 import cors from 'cors';
-import { createRequire } from 'module';
-import apiRoutes from './routes/index.js';
-
-const require = createRequire(import.meta.url);
-const knex = require('knex');
-const knexConfig = require('../knexfile.cjs');
+import teamRoutes from './routes/teamRoutes.js';
+import teamStatsRoutes from './routes/teamStatsRoutes.js';
+import playerRoutes from './routes/playerRoutes.js';
+import matchRoutes from './routes/matchRoutes.js';
+import featureRoutes from './routes/featureRoutes.js';
+import strengthRoutes from './routes/strength.js';
+import predictRoutes from './routes/predict.js';
+// import fixtureRoutes from './routes/fixtureRoutes.js'; // 需要 TypeScript 编译，暂时禁用
+// import aiRoutes from './routes/aiRoutes.js'; // 需要 TypeScript 编译，暂时禁用
+import cornerRoutes from './routes/cornerRoutes.js';
+import crawlerRoutes from './routes/crawlerRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -74,7 +79,17 @@ app.get('/api', (req, res) => {
   });
 });
 
-app.use('/api', apiRoutes);
+app.use('/api/teams', teamRoutes);
+app.use('/api/team-stats', teamStatsRoutes);
+app.use('/api/players', playerRoutes);
+app.use('/api/matches', matchRoutes);
+app.use('/api/features', featureRoutes);
+app.use('/api', strengthRoutes);
+app.use('/api', predictRoutes);
+// app.use('/api', fixtureRoutes); // 需要 TypeScript 编译，暂时禁用
+// app.use('/api', aiRoutes); // 需要 TypeScript 编译，暂时禁用
+app.use('/api', cornerRoutes);
+app.use('/api', crawlerRoutes);
 
 // 根路由 — 重定向到 API 文档
 app.get('/', (req, res) => {
@@ -101,23 +116,9 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: true, message: 'Internal server error' });
 });
 
-async function startServer() {
-  // 执行数据库迁移
-  try {
-    const db = knex(knexConfig.development);
-    await db.migrate.latest();
-    console.log('[migration] 数据库迁移执行完成');
-    await db.destroy();
-  } catch (err) {
-    console.warn('[migration] 数据库迁移失败（非致命）:', err.message);
-  }
-
-  app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-    console.log(`API documentation: http://localhost:${PORT}/api`);
-  });
-}
-
-startServer();
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`API documentation: http://localhost:${PORT}/api`);
+});
 
 export default app;
