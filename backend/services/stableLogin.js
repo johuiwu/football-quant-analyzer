@@ -5,7 +5,7 @@
 // ================================================================
 
 import { loginToHG } from './hgCrawlerService.js';
-import { getSharedPage, setSharedPage, isBrowserActive, isPageLoggedIn } from './browserPool.js';
+import { getSharedPage, setSharedPage, isBrowserActive, isLoggedIn as isPageLoggedIn } from './browserPool.js';
 
 /**
  * 执行稳定的登录流程

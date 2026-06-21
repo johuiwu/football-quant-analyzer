@@ -18,4 +18,16 @@ router.use(crawlerRoutes);
 router.use(fixtureRoutes);
 router.use(worldcupRoutes);
 
+// aiWarroomRoutes 使用 CJS module.exports，延迟异步注册
+// esbuild CJS 格式不支持 top-level await，需在运行时动态加载
+import('./aiWarroomRoutes.js')
+  .then(mod => {
+    const aiWarroomRoutes = mod.default || mod;
+    router.use('/ai-warroom', aiWarroomRoutes);
+    console.log('[routes] aiWarroomRoutes 已注册');
+  })
+  .catch(e => {
+    console.warn('[routes] aiWarroomRoutes 注册失败:', e.message);
+  });
+
 export default router;

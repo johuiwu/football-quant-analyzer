@@ -95,7 +95,7 @@ export async function syncStandings(league: string): Promise<any> {
 
 export async function getMatchData(matchId: string): Promise<any> {
   try {
-    return await fetchWithRetry(`/api/match/${matchId}`);
+    return await fetchWithRetry(`/api/matches/${matchId}`);
   } catch (error) {
     console.error('[API] Failed to get match data:', error);
     throw new Error('Cannot get match data, please check network or retry later');

@@ -1,7 +1,7 @@
 // ======================== Elo 等级分服务 ========================
 // 负责 Elo 的 DB 读写和基于积分榜数据的动态计算
 
-import { getDb } from '../../database/db';
+import { query, run } from '../dbService.js';
 
 /** 联赛基准 Elo */
 const LEAGUE_ELO_BASE = {
@@ -91,17 +91,12 @@ export function calculateEloUpdate(homeElo, awayElo, goalDiff, matchType = 'leag
 
 /** 批量计算并写入所有球队 Elo */
 export async function updateAllTeamElos(teams) {
-  const db = await getDb();
-
   for (const team of teams) {
     const elo = computeEloFromStandings(team);
     team.elo = elo;
 
     try {
-      await db.run(
-        'UPDATE teams SET elo = ? WHERE team_id = ?',
-        [elo, team.id]
-      );
+      await run('UPDATE teams SET elo = ? WHERE team_id = ?', [elo, team.id]);
     } catch (err) {
       console.error('[eloService] 更新 Elo 失败:', team.nameCn, err.message);
     }
@@ -112,8 +107,7 @@ export async function updateAllTeamElos(teams) {
 
 /** 从数据库加载所有球队 Elo */
 export async function loadAllElos() {
-  const db = await getDb();
-  const rows = await db.all('SELECT team_id, elo FROM teams WHERE elo IS NOT NULL');
+  const rows = await query('SELECT team_id, elo FROM teams WHERE elo IS NOT NULL');
   const eloMap = {};
   for (const row of rows) {
     eloMap[row.team_id] = row.elo;

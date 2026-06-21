@@ -678,3 +678,23 @@ export async function getLiveCornerData(filterMatchId) {
 export function evaluateStrategies(match, strategies) {
   return evaluateCornerStrategies(match, strategies);
 }
+
+// ======================== 回测模拟单步执行 ========================
+/**
+ * 执行一步回测模拟，委托给 cornerStrategyEngine.runBacktest
+ * @returns {Promise<{ matches: Array, logs: Array }>}
+ */
+export async function runSimulationStep() {
+  try {
+    const { runBacktest } = await import('./cornerStrategyEngine.js');
+    const strategies = getCornerStrategies();
+    const result = await runBacktest(strategies);
+    return {
+      matches: result.matches || [],
+      logs: result.logs || [],
+    };
+  } catch (err) {
+    console.error('[cornerService] runSimulationStep 异常:', err.message);
+    return { matches: [], logs: ['模拟步骤执行异常: ' + err.message] };
+  }
+}

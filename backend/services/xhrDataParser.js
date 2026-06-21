@@ -1,4 +1,4 @@
-﻿// ======================== XHR 数据解析器 ========================
+// ======================== XHR 数据解析器 ========================
 // 从 capturedResponses 中提取比赛和盘口数据
 // 不依赖 DOM，纯 JSON 解析
 
@@ -105,3 +105,23 @@ export function parseXHRResponses(capturedResponses) {
 
 // ---- 导出辅助函数供外部使用 ----
 export { mapToCornerMatch, pickBestResponse };
+
+// ---- 兼容旧接口：parseTransformXML / parseGameListXML ----
+// directFetcher.js 和 cornerApiClient.js 引用了这两个函数
+// 实际逻辑等价于 parseXHRResponses，此处做别名导出
+
+/**
+ * 解析 transform.php 返回的 XML/JSON 数据
+ * 兼容别名：等价于 parseXHRResponses
+ */
+export function parseTransformXML(capturedResponses) {
+  return parseXHRResponses(capturedResponses);
+}
+
+/**
+ * 解析游戏列表 XML/JSON 数据
+ * 兼容别名：等价于 parseXHRResponses
+ */
+export function parseGameListXML(capturedResponses) {
+  return parseXHRResponses(capturedResponses);
+}
