@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
+import React, { useMemo, useState } from 'react';
+import { scaleLinear, scaleBand, line, curveMonotoneX } from 'd3';
 import { TeamStats } from '../data/realTeamsData';
 import { PredictionResults } from '../utils/quantModel';
 import { Info, HelpCircle, X, BarChart3, Snowflake, TrendingUp, Flag, Shield, Activity } from 'lucide-react';
@@ -39,8 +39,6 @@ const getHistoricalAvgCorners = (team: TeamStats, isHome: boolean): number => {
 
 export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = ({ home, away, results }) => {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
-  const barContainerRef = useRef<HTMLDivElement | null>(null);
-  const scatterContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Home and Away Live parameters
   const homeHistAvg = getHistoricalAvgCorners(home, true);
@@ -49,14 +47,9 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
   const homeExp = results.expectedHomeCorners;
   const awayExp = results.expectedAwayCorners;
 
-  // D3 Rendering for Part 1: Bar Chart (Expected vs Historical Baseline Corners)
-  useEffect(() => {
-    if (!barContainerRef.current) return;
-    if (!home || !away || !results) return;
-
-    const container = d3.select(barContainerRef.current);
-    // Remove previous D3-created SVG (safe: container is a plain <div> managed by React)
-    container.selectAll('svg').remove();
+  // ======================== Bar Chart Data Computation (useMemo) ========================
+  const barChartData = useMemo(() => {
+    if (!home || !away || !results) return null;
 
     const width = 360;
     const height = 180;
@@ -64,20 +57,13 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
 
-    // D3 creates and owns the entire <svg> element
-    const svgElement = container.append('svg')
-      .attr('width', '100%')
-      .attr('height', '100%')
-      .attr('viewBox', `0 0 ${width} ${height}`)
-      .attr('class', 'max-w-[340px]');
-
     // Prepare data
     const data = [
       {
         team: home.nameCn,
         type: '历史场均',
         value: homeHistAvg,
-        color: 'rgba(239, 68, 68, 0.45)', // soft red
+        color: 'rgba(239, 68, 68, 0.45)',
         strokeColor: '#EF4444'
       },
       {
@@ -91,7 +77,7 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
         team: away.nameCn,
         type: '历史场均',
         value: awayHistAvg,
-        color: 'rgba(16, 185, 129, 0.45)', // soft green
+        color: 'rgba(16, 185, 129, 0.45)',
         strokeColor: '#10B981'
       },
       {
@@ -103,137 +89,51 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
       }
     ];
 
-    const chartGroup = svgElement
-      .append('g')
-      .attr('transform', `translate(${margin.left}, ${margin.top})`);
-
-    // Definitions for gradients
-    const defs = svgElement.append('defs');
-    
-    // Home gradient
-    const homeGrad = defs.append('linearGradient')
-      .attr('id', 'homeBarGrad')
-      .attr('x1', '0%')
-      .attr('y1', '100%')
-      .attr('x2', '0%')
-      .attr('y2', '0%');
-    homeGrad.append('stop').attr('offset', '0%').attr('stop-color', '#991B1B').attr('stop-opacity', 0.85);
-    homeGrad.append('stop').attr('offset', '100%').attr('stop-color', '#EF4444').attr('stop-opacity', 0.95);
-
-    // Away gradient
-    const awayGrad = defs.append('linearGradient')
-      .attr('id', 'awayBarGrad')
-      .attr('x1', '0%')
-      .attr('y1', '100%')
-      .attr('x2', '0%')
-      .attr('y2', '0%');
-    awayGrad.append('stop').attr('offset', '0%').attr('stop-color', '#065F46').attr('stop-opacity', 0.85);
-    awayGrad.append('stop').attr('offset', '100%').attr('stop-color', '#10B981').attr('stop-opacity', 0.95);
-
     // Scales
-    const y = d3.scaleLinear()
-      .domain([0, Math.max(10, d3.max(data, d => d.value) || 10) * 1.1])
+    const y = scaleLinear()
+      .domain([0, Math.max(10, Math.max(...data.map(d => d.value)) || 10) * 1.1])
       .range([chartHeight, 0]);
 
-    // X0 scale for team groups
-    const x0 = d3.scaleBand()
+    const x0 = scaleBand()
       .domain([home.nameCn, away.nameCn])
       .range([0, chartWidth])
       .paddingInner(0.25);
 
-    // X1 scale for bar types within team groups
-    const x1 = d3.scaleBand()
+    const x1 = scaleBand()
       .domain(['历史场均', '模型预测'])
       .range([0, x0.bandwidth()])
       .padding(0.08);
 
-    // Grid lines (Y axis)
-    chartGroup.append('g')
-      .attr('class', 'grid')
-      .call(
-        d3.axisLeft(y)
-          .ticks(5)
-          .tickSize(-chartWidth)
-          .tickFormat(() => '')
-      )
-      .selectAll('line')
-      .attr('stroke', 'rgba(148, 163, 184, 0.06)')
-      .attr('stroke-dasharray', '2,2');
+    // Compute bar positions
+    const bars = data.map(d => ({
+      ...d,
+      x: (x0(d.team) ?? 0) + (x1(d.type) ?? 0),
+      y: y(d.value),
+      width: x1.bandwidth(),
+      height: chartHeight - y(d.value),
+      labelX: (x0(d.team) ?? 0) + (x1(d.type) ?? 0) + x1.bandwidth() / 2,
+      labelY: y(d.value) - 6,
+    }));
 
-    // Add Axes
-    chartGroup.append('g')
-      .attr('transform', `translate(0, ${chartHeight})`)
-      .call(d3.axisBottom(x0).tickSize(4))
-      .selectAll('text')
-      .attr('fill', 'rgba(241, 245, 249, 0.8)')
-      .attr('font-size', '10px');
+    // Compute Y axis ticks
+    const yTicks = y.ticks(5).map(tick => ({
+      value: tick,
+      y: y(tick),
+      label: tick.toFixed(0),
+    }));
 
-    chartGroup.append('g')
-      .call(d3.axisLeft(y).ticks(5).tickSize(4))
-      .selectAll('text')
-      .attr('fill', 'rgba(148, 163, 184, 0.7)')
-      .attr('font-size', '9px')
-      .attr('font-family', 'monospace');
+    // Compute X axis ticks (team names)
+    const xTicks = [home.nameCn, away.nameCn].map(team => ({
+      value: team,
+      x: (x0(team) ?? 0) + x0.bandwidth() / 2,
+    }));
 
-    // Drawing Bars with entrance transition
-    chartGroup.selectAll('.bar-group')
-      .data(data)
-      .enter()
-      .append('rect')
-      .attr('x', d => {
-        const xPos = x0(d.team);
-        return (xPos !== undefined ? xPos : 0) + (x1(d.type) || 0);
-      })
-      .attr('width', x1.bandwidth())
-      .attr('y', chartHeight)
-      .attr('height', 0)
-      .attr('fill', d => d.color)
-      .attr('stroke', d => d.strokeColor)
-      .attr('stroke-width', 1)
-      .attr('rx', 2)
-      .attr('ry', 2)
-      .transition()
-      .duration(800)
-      .attr('y', d => y(d.value))
-      .attr('height', d => chartHeight - y(d.value));
-
-    // Drawing Bar values text
-    chartGroup.selectAll('.bar-label')
-      .data(data)
-      .enter()
-      .append('text')
-      .attr('x', d => {
-        const xPos = x0(d.team);
-        return (xPos !== undefined ? xPos : 0) + (x1(d.type) || 0) + x1.bandwidth() / 2;
-      })
-      .attr('text-anchor', 'middle')
-      .attr('y', chartHeight - 5)
-      .attr('fill', 'rgba(255, 255, 255, 0.9)')
-      .attr('font-size', '8.5px')
-      .attr('font-family', 'monospace')
-      .attr('font-weight', '600')
-      .transition()
-      .duration(850)
-      .attr('y', d => y(d.value) - 6)
-      .text(d => d.value.toFixed(1));
-
-    // Customize Axis lines color
-    chartGroup.selectAll('.domain')
-      .attr('stroke', 'rgba(148, 163, 184, 0.15)');
-    chartGroup.selectAll('line')
-      .attr('stroke', 'rgba(148, 163, 184, 0.12)');
-
-    return () => { container.selectAll('svg').remove(); };
+    return { bars, yTicks, xTicks, chartWidth, chartHeight, margin, width, height };
   }, [home, away, homeHistAvg, awayHistAvg, homeExp, awayExp]);
 
-  // D3 Rendering for Part 2: Scatter / Line Plot (Correlation between Attack Index & Corners)
-  useEffect(() => {
-    if (!scatterContainerRef.current) return;
-    if (!home || !away || !results) return;
-
-    const container = d3.select(scatterContainerRef.current);
-    // Remove previous D3-created SVG (safe: container is a plain <div> managed by React)
-    container.selectAll('svg').remove();
+  // ======================== Scatter Chart Data Computation (useMemo) ========================
+  const scatterChartData = useMemo(() => {
+    if (!home || !away || !results) return null;
 
     const width = 360;
     const height = 180;
@@ -241,26 +141,14 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
 
-    // D3 creates and owns the entire <svg> element
-    const svgElement = container.append('svg')
-      .attr('width', '100%')
-      .attr('height', '100%')
-      .attr('viewBox', `0 0 ${width} ${height}`)
-      .attr('class', 'max-w-[340px]');
-
-    const chartGroup = svgElement
-      .append('g')
-      .attr('transform', `translate(${margin.left}, ${margin.top})`);
-
-    // 1. Generate reference correlation line data of Attack Index vs Expected Corners
-    // Formula base: corners = 3.9 + (attackRating * 2.1) under average opposing defense (indexing ~ 1.0)
+    // 1. Generate reference correlation line data
     const correlationData = Array.from({ length: 13 }, (_, i) => {
-      const attack = 0.5 + i * 0.2; // 0.5 to 2.9
+      const attack = 0.5 + i * 0.2;
       const estCorners = 3.9 + attack * 2.1;
       return { attack, estCorners };
     });
 
-    // 2. Generate benchmarks dataset (other famous EPL/LaLiga standard indices)
+    // 2. Generate benchmarks dataset
     const benchmarks = [
       { name: '皇家马德里', id: 'realmadrid', attack: 2.35, corners: 8.8, color: '#38BDF8' },
       { name: '曼彻斯特城', id: 'mancity', attack: 2.10, corners: 8.3, color: '#38BDF8' },
@@ -272,17 +160,16 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
       { name: '多特蒙德', id: 'bortmund', attack: 1.35, corners: 6.7, color: '#475569' },
     ];
 
-    // Filter benchmarks if any matches our current home/away team to prevent overlap
     const visibleBenchmarks = benchmarks.filter(b => b.id !== home.id && b.id !== away.id).slice(0, 5);
 
-    // Current selected teams live plotting points
+    // Current selected teams
     const currentPoints = [
       {
         name: `${home.nameCn} (选)`,
         id: home.id,
         attack: results.homeAttackIndex,
         corners: homeExp,
-        color: '#EF4444', // Home rose red
+        color: '#EF4444',
         isCurrent: true
       },
       {
@@ -290,145 +177,59 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
         id: away.id,
         attack: results.awayAttackIndex,
         corners: awayExp,
-        color: '#10B981', // Away emerald green
+        color: '#10B981',
         isCurrent: true
       }
     ];
 
     // Scales
-    const x = d3.scaleLinear()
+    const x = scaleLinear()
       .domain([0.4, 2.8])
       .range([0, chartWidth]);
 
-    const y = d3.scaleLinear()
+    const y = scaleLinear()
       .domain([2.5, 10.5])
       .range([chartHeight, 0]);
 
-    // Grid lines (X & Y)
-    chartGroup.append('g')
-      .attr('class', 'grid')
-      .call(
-        d3.axisLeft(y)
-          .ticks(5)
-          .tickSize(-chartWidth)
-          .tickFormat(() => '')
-      )
-      .selectAll('line')
-      .attr('stroke', 'rgba(148, 163, 184, 0.05)')
-      .attr('stroke-dasharray', '2,2');
-
-    chartGroup.append('g')
-      .attr('class', 'grid')
-      .attr('transform', `translate(0, ${chartHeight})`)
-      .call(
-        d3.axisBottom(x)
-          .ticks(6)
-          .tickSize(-chartHeight)
-          .tickFormat(() => '')
-      )
-      .selectAll('line')
-      .attr('stroke', 'rgba(148, 163, 184, 0.05)')
-      .attr('stroke-dasharray', '2,2');
-
-    // Add Axes
-    chartGroup.append('g')
-      .attr('transform', `translate(0, ${chartHeight})`)
-      .call(d3.axisBottom(x).ticks(6).tickSize(4))
-      .selectAll('text')
-      .attr('fill', 'rgba(148, 163, 184, 0.75)')
-      .attr('font-size', '8.5px')
-      .attr('font-family', 'monospace');
-
-    chartGroup.append('g')
-      .call(d3.axisLeft(y).ticks(5).tickSize(4))
-      .selectAll('text')
-      .attr('fill', 'rgba(148, 163, 184, 0.75)')
-      .attr('font-size', '8.5px')
-      .attr('font-family', 'monospace');
-
-    // Generate Regression Line (D3 line path)
-    const lineGenerator = d3.line<{ attack: number, estCorners: number }>()
+    // Generate regression line path
+    const lineGenerator = line<{ attack: number; estCorners: number }>()
       .x(d => x(d.attack))
       .y(d => y(d.estCorners))
-      .curve(d3.curveMonotoneX);
+      .curve(curveMonotoneX);
 
-    // Draw regression curve path
-    chartGroup.append('path')
-      .datum(correlationData)
-      .attr('fill', 'none')
-      .attr('stroke', 'rgba(129, 140, 248, 0.25)') // custom slate-purple
-      .attr('stroke-width', 3)
-      .attr('stroke-dasharray', '3,3')
-      .attr('d', lineGenerator);
+    const regressionPath = lineGenerator(correlationData) ?? '';
 
-    // Render underlying Benchmark dots (static opacity markers to visualize standard distribution)
-    chartGroup.selectAll('.benchmark-dot')
-      .data(visibleBenchmarks)
-      .enter()
-      .append('circle')
-      .attr('cx', d => x(d.attack))
-      .attr('cy', d => y(d.corners))
-      .attr('r', 4.5)
-      .attr('fill', '#334155')
-      .attr('stroke', 'rgba(255,255,255,0.08)')
-      .attr('stroke-width', 1)
-      .attr('opacity', 0.5);
+    // Compute benchmark dot positions
+    const benchmarkDots = visibleBenchmarks.map(b => ({
+      ...b,
+      cx: x(b.attack),
+      cy: y(b.corners),
+    }));
 
-    // Benchmark Labels
-    chartGroup.selectAll('.benchmark-label')
-      .data(visibleBenchmarks)
-      .enter()
-      .append('text')
-      .attr('x', d => x(d.attack) + 6)
-      .attr('y', d => y(d.corners) + 3)
-      .text(d => d.name)
-      .attr('fill', 'rgba(148, 163, 184, 0.35)')
-      .attr('font-size', '8px');
+    // Compute current team dot positions
+    const currentDots = currentPoints.map(p => ({
+      ...p,
+      cx: x(p.attack),
+      cy: y(p.corners),
+      labelX: x(p.attack) + (p.id === home.id ? 9 : -9),
+      labelY: y(p.corners) - 7,
+      textAnchor: p.id === home.id ? 'start' as const : 'end' as const,
+    }));
 
-    // Render dynamic active selected teams highlighted coordinates
-    const selectedDots = chartGroup.selectAll('.selected-dot')
-      .data(currentPoints)
-      .enter()
-      .append('g')
-      .attr('class', 'selected-dot');
+    // Compute axis ticks
+    const xTicks = x.ticks(6).map(tick => ({
+      value: tick,
+      x: x(tick),
+      label: tick.toFixed(1),
+    }));
 
-    // Glowing halo pulse underneath
-    selectedDots.append('circle')
-      .attr('cx', d => x(d.attack))
-      .attr('cy', d => y(d.corners))
-      .attr('r', 10)
-      .attr('fill', d => d.color)
-      .attr('opacity', 0.18)
-      .attr('class', 'animate-pulse');
+    const yTicks = y.ticks(5).map(tick => ({
+      value: tick,
+      y: y(tick),
+      label: tick.toFixed(1),
+    }));
 
-    // Central solid core dot
-    selectedDots.append('circle')
-      .attr('cx', d => x(d.attack))
-      .attr('cy', d => y(d.corners))
-      .attr('r', 5.5)
-      .attr('fill', d => d.color)
-      .attr('stroke', '#ffffff')
-      .attr('stroke-width', 1.5)
-      .attr('cursor', 'pointer');
-
-    // Selected Team Name display annotations
-    selectedDots.append('text')
-      .attr('x', d => x(d.attack) + (d.id === home.id ? 9 : -9))
-      .attr('y', d => y(d.corners) - 7)
-      .attr('text-anchor', d => d.id === home.id ? 'start' : 'end')
-      .text(d => `${d.name} (${d.corners.toFixed(1)}角)`)
-      .attr('fill', '#ffffff')
-      .attr('font-weight', '700')
-      .attr('font-size', '9px')
-      .attr('class', 'drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]');
-
-    // Customize Axis lines color
-    chartGroup.selectAll('.domain')
-      .attr('stroke', 'rgba(148, 163, 184, 0.15)');
-    chartGroup.selectAll('line')
-      .attr('stroke', 'rgba(148, 163, 184, 0.12)');
-
-    return () => { container.selectAll('svg').remove(); };
+    return { regressionPath, benchmarkDots, currentDots, xTicks, yTicks, chartWidth, chartHeight, margin, width, height };
   }, [home, away, results, homeExp, awayExp]);
 
   const toggleInfo = (key: string) => {
@@ -465,9 +266,9 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
         </p>
       </div>
 
-      {/* Grid containing two D3 charts */}
+      {/* Grid containing two charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-1.5">
-        
+
         {/* Card 1: Expected vs Historical base */}
         <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-900 flex flex-col justify-between relative">
           <div className="flex justify-between items-center mb-1 mb-1.5">
@@ -477,9 +278,141 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
             </span>
             <span className="text-[9px] text-slate-500 font-mono">单位: 个</span>
           </div>
-          
+
           <div className="w-full flex justify-center items-center h-[180px]">
-            <div ref={barContainerRef} className="w-full h-full max-w-[340px]" />
+            {barChartData && (
+              <svg
+                width="100%"
+                height="100%"
+                viewBox={`0 0 ${barChartData.width} ${barChartData.height}`}
+                className="max-w-[340px] notranslate"
+                translate="no"
+              >
+                <defs>
+                  <linearGradient id="homeBarGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+                    <stop offset="0%" stopColor="#991B1B" stopOpacity={0.85} />
+                    <stop offset="100%" stopColor="#EF4444" stopOpacity={0.95} />
+                  </linearGradient>
+                  <linearGradient id="awayBarGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+                    <stop offset="0%" stopColor="#065F46" stopOpacity={0.85} />
+                    <stop offset="100%" stopColor="#10B981" stopOpacity={0.95} />
+                  </linearGradient>
+                </defs>
+
+                <g transform={`translate(${barChartData.margin.left}, ${barChartData.margin.top})`}>
+                  {/* Y axis grid lines */}
+                  {barChartData.yTicks.map((tick, i) => (
+                    <line
+                      key={`ygrid-${i}`}
+                      x1={0}
+                      y1={tick.y}
+                      x2={barChartData.chartWidth}
+                      y2={tick.y}
+                      stroke="rgba(148, 163, 184, 0.06)"
+                      strokeDasharray="2,2"
+                    />
+                  ))}
+
+                  {/* X axis line */}
+                  <line
+                    x1={0}
+                    y1={barChartData.chartHeight}
+                    x2={barChartData.chartWidth}
+                    y2={barChartData.chartHeight}
+                    stroke="rgba(148, 163, 184, 0.15)"
+                  />
+
+                  {/* Y axis line */}
+                  <line
+                    x1={0}
+                    y1={0}
+                    x2={0}
+                    y2={barChartData.chartHeight}
+                    stroke="rgba(148, 163, 184, 0.15)"
+                  />
+
+                  {/* Y axis tick marks and labels */}
+                  {barChartData.yTicks.map((tick, i) => (
+                    <g key={`ytick-${i}`}>
+                      <line
+                        x1={-4}
+                        y1={tick.y}
+                        x2={0}
+                        y2={tick.y}
+                        stroke="rgba(148, 163, 184, 0.12)"
+                      />
+                      <text
+                        x={-8}
+                        y={tick.y}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        fill="rgba(148, 163, 184, 0.7)"
+                        fontSize="9px"
+                        fontFamily="monospace"
+                      >
+                        {tick.label}
+                      </text>
+                    </g>
+                  ))}
+
+                  {/* X axis tick marks and labels */}
+                  {barChartData.xTicks.map((tick, i) => (
+                    <g key={`xtick-${i}`}>
+                      <line
+                        x1={tick.x}
+                        y1={barChartData.chartHeight}
+                        x2={tick.x}
+                        y2={barChartData.chartHeight + 4}
+                        stroke="rgba(148, 163, 184, 0.12)"
+                      />
+                      <text
+                        x={tick.x}
+                        y={barChartData.chartHeight + 16}
+                        textAnchor="middle"
+                        fill="rgba(241, 245, 249, 0.8)"
+                        fontSize="10px"
+                      >
+                        {tick.value}
+                      </text>
+                    </g>
+                  ))}
+
+                  {/* Bars with CSS transition */}
+                  {barChartData.bars.map((bar, i) => (
+                    <rect
+                      key={`bar-${i}`}
+                      x={bar.x}
+                      y={bar.y}
+                      width={bar.width}
+                      height={bar.height}
+                      fill={bar.color}
+                      stroke={bar.strokeColor}
+                      strokeWidth={1}
+                      rx={2}
+                      ry={2}
+                      style={{ transition: 'y 0.8s ease-out, height 0.8s ease-out' }}
+                    />
+                  ))}
+
+                  {/* Bar value labels */}
+                  {barChartData.bars.map((bar, i) => (
+                    <text
+                      key={`barlabel-${i}`}
+                      x={bar.labelX}
+                      y={bar.labelY}
+                      textAnchor="middle"
+                      fill="rgba(255, 255, 255, 0.9)"
+                      fontSize="8.5px"
+                      fontFamily="monospace"
+                      fontWeight="600"
+                      style={{ transition: 'y 0.85s ease-out' }}
+                    >
+                      {bar.value.toFixed(1)}
+                    </text>
+                  ))}
+                </g>
+              </svg>
+            )}
           </div>
 
           <div className="text-[10px] text-slate-400 bg-slate-900/40 p-1.5 rounded border border-slate-850/60 leading-normal mt-2">
@@ -498,7 +431,181 @@ export const CornerKickStrategyChart: React.FC<CornerKickStrategyChartProps> = (
           </div>
 
           <div className="w-full flex justify-center items-center h-[180px]">
-            <div ref={scatterContainerRef} className="w-full h-full max-w-[340px]" />
+            {scatterChartData && (
+              <svg
+                width="100%"
+                height="100%"
+                viewBox={`0 0 ${scatterChartData.width} ${scatterChartData.height}`}
+                className="max-w-[340px] notranslate"
+                translate="no"
+              >
+                <g transform={`translate(${scatterChartData.margin.left}, ${scatterChartData.margin.top})`}>
+                  {/* Y axis grid lines */}
+                  {scatterChartData.yTicks.map((tick, i) => (
+                    <line
+                      key={`ygrid-${i}`}
+                      x1={0}
+                      y1={tick.y}
+                      x2={scatterChartData.chartWidth}
+                      y2={tick.y}
+                      stroke="rgba(148, 163, 184, 0.05)"
+                      strokeDasharray="2,2"
+                    />
+                  ))}
+
+                  {/* X axis grid lines */}
+                  {scatterChartData.xTicks.map((tick, i) => (
+                    <line
+                      key={`xgrid-${i}`}
+                      x1={tick.x}
+                      y1={0}
+                      x2={tick.x}
+                      y2={scatterChartData.chartHeight}
+                      stroke="rgba(148, 163, 184, 0.05)"
+                      strokeDasharray="2,2"
+                    />
+                  ))}
+
+                  {/* X axis line */}
+                  <line
+                    x1={0}
+                    y1={scatterChartData.chartHeight}
+                    x2={scatterChartData.chartWidth}
+                    y2={scatterChartData.chartHeight}
+                    stroke="rgba(148, 163, 184, 0.15)"
+                  />
+
+                  {/* Y axis line */}
+                  <line
+                    x1={0}
+                    y1={0}
+                    x2={0}
+                    y2={scatterChartData.chartHeight}
+                    stroke="rgba(148, 163, 184, 0.15)"
+                  />
+
+                  {/* X axis tick marks and labels */}
+                  {scatterChartData.xTicks.map((tick, i) => (
+                    <g key={`xtick-${i}`}>
+                      <line
+                        x1={tick.x}
+                        y1={scatterChartData.chartHeight}
+                        x2={tick.x}
+                        y2={scatterChartData.chartHeight + 4}
+                        stroke="rgba(148, 163, 184, 0.12)"
+                      />
+                      <text
+                        x={tick.x}
+                        y={scatterChartData.chartHeight + 16}
+                        textAnchor="middle"
+                        fill="rgba(148, 163, 184, 0.75)"
+                        fontSize="8.5px"
+                        fontFamily="monospace"
+                      >
+                        {tick.label}
+                      </text>
+                    </g>
+                  ))}
+
+                  {/* Y axis tick marks and labels */}
+                  {scatterChartData.yTicks.map((tick, i) => (
+                    <g key={`ytick-${i}`}>
+                      <line
+                        x1={-4}
+                        y1={tick.y}
+                        x2={0}
+                        y2={tick.y}
+                        stroke="rgba(148, 163, 184, 0.12)"
+                      />
+                      <text
+                        x={-8}
+                        y={tick.y}
+                        textAnchor="end"
+                        dominantBaseline="middle"
+                        fill="rgba(148, 163, 184, 0.75)"
+                        fontSize="8.5px"
+                        fontFamily="monospace"
+                      >
+                        {tick.label}
+                      </text>
+                    </g>
+                  ))}
+
+                  {/* Regression curve */}
+                  <path
+                    d={scatterChartData.regressionPath}
+                    fill="none"
+                    stroke="rgba(129, 140, 248, 0.25)"
+                    strokeWidth={3}
+                    strokeDasharray="3,3"
+                  />
+
+                  {/* Benchmark dots */}
+                  {scatterChartData.benchmarkDots.map((dot, i) => (
+                    <circle
+                      key={`bench-${i}`}
+                      cx={dot.cx}
+                      cy={dot.cy}
+                      r={4.5}
+                      fill="#334155"
+                      stroke="rgba(255,255,255,0.08)"
+                      strokeWidth={1}
+                      opacity={0.5}
+                    />
+                  ))}
+
+                  {/* Benchmark labels */}
+                  {scatterChartData.benchmarkDots.map((dot, i) => (
+                    <text
+                      key={`benchlabel-${i}`}
+                      x={dot.cx + 6}
+                      y={dot.cy + 3}
+                      fill="rgba(148, 163, 184, 0.35)"
+                      fontSize="8px"
+                    >
+                      {dot.name}
+                    </text>
+                  ))}
+
+                  {/* Selected team dots: halo + core + label */}
+                  {scatterChartData.currentDots.map((dot, i) => (
+                    <g key={`selected-${i}`}>
+                      {/* Glowing halo pulse */}
+                      <circle
+                        cx={dot.cx}
+                        cy={dot.cy}
+                        r={10}
+                        fill={dot.color}
+                        opacity={0.18}
+                        className="animate-pulse"
+                      />
+                      {/* Central solid core dot */}
+                      <circle
+                        cx={dot.cx}
+                        cy={dot.cy}
+                        r={5.5}
+                        fill={dot.color}
+                        stroke="#ffffff"
+                        strokeWidth={1.5}
+                        cursor="pointer"
+                      />
+                      {/* Team name label */}
+                      <text
+                        x={dot.labelX}
+                        y={dot.labelY}
+                        textAnchor={dot.textAnchor}
+                        fill="#ffffff"
+                        fontWeight="700"
+                        fontSize="9px"
+                        className="drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+                      >
+                        {`${dot.name} (${dot.corners.toFixed(1)}角)`}
+                      </text>
+                    </g>
+                  ))}
+                </g>
+              </svg>
+            )}
           </div>
 
           <div className="text-[10px] text-slate-400 bg-slate-900/40 p-1.5 rounded border border-slate-850/60 mt-2">
