@@ -1,8 +1,8 @@
-version: 2.8.4
+version: 2.8.5
 files:
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.4/football-quant-analyzer-setup-2.8.4.exe
-    sha512: rBShMT0f99BkHULs25i0oPJDHrMjnNJp6CcaR9pjva0aGnZ1RJ1u1ENln8Th47FDFD6TkdQC+zxveiwVFK3SWw==
-    size: 268197242
-path: football-quant-analyzer-setup-2.8.4.exe
-sha512: rBShMT0f99BkHULs25i0oPJDHrMjnNJp6CcaR9pjva0aGnZ1RJ1u1ENln8Th47FDFD6TkdQC+zxveiwVFK3SWw==
-releaseDate: '2026-06-21T11:09:39.579Z'
+  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.5/football-quant-analyzer-setup-2.8.5.exe
+    sha512: oJcbLsJC4GV8IS/DyWCUkhx8V1/y+ZW71aR+LR9Aeg3Pj2GFi1w5Th7XuExis4SkLsnJSYwzUoJwsSDXw6yisA==
+    size: 130183280
+path: football-quant-analyzer-setup-2.8.5.exe
+sha512: oJcbLsJC4GV8IS/DyWCUkhx8V1/y+ZW71aR+LR9Aeg3Pj2GFi1w5Th7XuExis4SkLsnJSYwzUoJwsSDXw6yisA==
+releaseDate: '2026-06-21T15:49:25.514Z'
