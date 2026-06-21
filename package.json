@@ -116,10 +116,7 @@
           "*.db-wal"
         ]
       },
-      {
-        "from": "build_resources/chrome/",
-        "to": "chrome/"
-      },
+
       {
         "from": "database/init-tables.sql",
         "to": "init-tables.sql"
@@ -127,8 +124,7 @@
     ],
     "asarUnpack": [
       "node_modules/sqlite/**",
-      "node_modules/sqlite3/**",
-      "node_modules/@puppeteer/browsers/**"
+      "node_modules/sqlite3/**"
     ],
     "win": {
       "icon": "public/icon.ico",

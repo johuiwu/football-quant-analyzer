@@ -142,14 +142,8 @@ async function loadServerModule() {
     process.env.DISABLE_HMR = "true";
     process.env.NODE_ENV = "production";
 
-    // 设置 Puppeteer Chrome 执行路径（打包后的 Chromium 路径）
-    const chromePath = path.join(process.resourcesPath, "chrome", "chrome-win64", "chrome.exe");
-    if (fs.existsSync(chromePath)) {
-      process.env.PUPPETEER_EXECUTABLE_PATH = chromePath;
-      console.log("[electron] 使用捆绑 Chromium:", chromePath);
-    } else {
-      console.warn("[electron] 未找到捆绑 Chromium，Puppeteer 将尝试查找系统 Chrome");
-    }
+    // Puppeteer 使用本地 Chrome/Edge 浏览器（不再捆绑 Chromium）
+    console.log("[electron] Puppeteer 将使用本地 Chrome/Edge 浏览器");
 
     console.log("[electron] DB_DIR:", dbPath);
     console.log("[electron] STATIC_DIR:", staticDir);
