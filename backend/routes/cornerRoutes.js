@@ -613,4 +613,20 @@ router.delete("/corner/reset-backtest", async (req, res) => {
   }
 });
 
+// ======================== POST /api/corner/simulation-step ========================
+// 回测模拟单步执行
+router.post("/corner/simulation-step", async (req, res) => {
+  try {
+    const { runSimulationStep } = await import("../services/cornerService.js");
+    if (typeof runSimulationStep !== "function") {
+      return res.json({ success: true, matches: [], logs: ["回测模拟功能未启用"] });
+    }
+    const result = await runSimulationStep();
+    res.json({ success: true, matches: result.matches || [], logs: result.logs || [] });
+  } catch (err) {
+    console.error("[cornerRoutes] /corner/simulation-step error:", err.message);
+    res.json({ success: true, matches: [], logs: ["模拟步骤执行异常: " + err.message] });
+  }
+});
+
 export default router;

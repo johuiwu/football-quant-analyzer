@@ -287,7 +287,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
   // Sync state and run simulation step
   const fetchMatchesData = async (stepMode: boolean = false) => {
     try {
-      const url = stepMode ? '/api/corner/simulation-step' : '/api/corner/matches';
+      const url = stepMode ? '/api/corner/simulation-step' : '/api/corner/live';
       const opt = stepMode ? { method: 'POST' } : { method: 'GET' };
       const response = await fetch(url, opt);
       if (response.ok) {
@@ -307,7 +307,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
   // Sync login state on load
   const syncLoginState = async () => {
     try {
-      const response = await fetch('/api/corner/matches');
+      const response = await fetch('/api/corner/live');
       if (response.ok) {
         const data = await response.json();
         setIsLoggedIn(data.isLoggedIn);
@@ -386,7 +386,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
   // Toggle browser crawler engine selection
   const handleToggleBrowser = async () => {
     try {
-      const response = await fetch('/api/corner/toggle-browser', { method: 'POST' });
+      const response = await fetch('/api/corner/start', { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
         setIsBrowserActive(data.isBrowserActive);
@@ -453,7 +453,7 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       for (const strat of strategies) {
         const backendId = strat.id === 'strat_1' ? 1 : strat.id === 'strat_2' ? 2 : strat.id === 'strat_3' ? 3 : strat.id === 'strat_4' ? 4 : 5;
         try {
-          const resp = await fetch(`/api/corner/strategy-stats?strategyId=${backendId}`);
+          const resp = await fetch(`/api/corner/stats/${backendId}`);
           const json = await resp.json();
           if (json.success && json.data) {
             stats[strat.id] = json.data;

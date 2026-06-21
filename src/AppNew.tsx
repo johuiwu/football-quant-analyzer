@@ -53,7 +53,7 @@ function AppNewContent() {
   useEffect(() => {
     const savedKey = localStorage.getItem("football_api_key");
     if (savedKey) {
-      fetch("/api/set-api-key", {
+      fetch("/api/deepseek/set-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: savedKey }),
