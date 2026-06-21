@@ -483,7 +483,8 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
           if (popupCount.passcodePage > MAX_POPUP) {
             console.log("[HgCrawler] WARNING: passcodePage 弹窗超过 " + MAX_POPUP + " 次，登录失败");
             crawlerStatus.error = "popup loop timeout (passcodePage)";
-            return isolated ? { success: false, error: "popup loop timeout (passcodePage)" } : { success: false, error: "popup loop timeout (passcodePage)" };
+            if (isolated && bi) { try { await bi.close(); } catch (_) {} }
+            return { success: false, error: "popup loop timeout (passcodePage)" };
           }
           console.log("[HgCrawler] 检测到简易密码页面，点击普通登入... (" + detected.detail + ")");
           await page.evaluate(() => {
@@ -501,6 +502,7 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
             // ★ 被踢出超过 2 次直接返回失败，避免死循环
             console.log("[HgCrawler] 被踢出超过 2 次，登录失败（网站反并发机制触发）");
             crawlerStatus.error = "登录失败：账号在其他地方登录或网站反爬机制触发，请稍后重试";
+            if (isolated && bi) { try { await bi.close(); } catch (_) {} }
             return { success: false, error: crawlerStatus.error };
           }
           console.log("[HgCrawler] 检测到被踢出登录，点击确认并清理... (" + detected.detail + ")");
@@ -565,7 +567,8 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
           if (popupCount.passcodeDialog > MAX_POPUP) {
             console.log("[HgCrawler] WARNING: passcodeDialog 弹窗超过 " + MAX_POPUP + " 次，登录失败");
             crawlerStatus.error = "popup loop timeout (passcodeDialog)";
-            return isolated ? { success: false, error: "popup loop timeout (passcodeDialog)" } : { success: false, error: "popup loop timeout (passcodeDialog)" };
+            if (isolated && bi) { try { await bi.close(); } catch (_) {} }
+            return { success: false, error: "popup loop timeout (passcodeDialog)" };
           }
           console.log("[HgCrawler] 检测到弹窗，尝试处理... (" + detected.detail + ", loginClicked=" + loginClicked + ")");
           const clicked = await clickNoButton(page);
@@ -670,10 +673,15 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
 
     console.log("[HgCrawler] ⚠ 登录超时");
     crawlerStatus.error = "登录超时";
+    if (isolated && bi) { try { await bi.close(); } catch (_) {} }
     return { success: false, error: "登录超时" };
   } catch (err) {
     console.error("[HgCrawler] 登录失败:", err.message);
     crawlerStatus.error = err.message;
+    // 隔离模式下，异常路径必须关闭浏览器，避免资源泄漏
+    if (isolated && bi) {
+      try { await bi.close(); } catch (_) {}
+    }
     return { success: false, error: err.message };
   }
 }

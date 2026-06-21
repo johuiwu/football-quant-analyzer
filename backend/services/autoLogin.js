@@ -417,6 +417,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
 
   let browser = null;
   let page = null;
+  let browserRef = null; // 共享引用，确保超时时也能关闭浏览器
 
   try {
     // 超时保护
@@ -460,6 +461,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
         userDataDir: path.join(os.tmpdir(), 'puppeteer_profile'),
         args: launchArgs,
       });
+      browserRef = browser; // 保存引用，超时时可关闭
       page = await browser.newPage();
       console.log("[autoLogin] 浏览器已启动");
 
@@ -809,15 +811,19 @@ export async function autoLoginAndGetCredentials(options = {}) {
 
   } catch (err) {
     console.error("[autoLogin] 自动登录失败:", err.message);
+    // 超时或其他异常时，确保关闭浏览器避免资源泄漏
+    if (browserRef) {
+      try { await browserRef.close(); } catch (_) {}
+    }
     return { success: false, error: err.message };
   } finally {
-    // 关闭浏览器
+    // 关闭浏览器（如果 catch 中已关闭则 browserRef 为已关闭状态，close 会抛错但被忽略）
     if (browser) {
       try {
         await browser.close();
         console.log("[autoLogin] 浏览器已关闭");
       } catch (e) {
-        // 忽略关闭错误
+        // 忽略关闭错误（可能已在 catch 中关闭）
       }
     }
   }

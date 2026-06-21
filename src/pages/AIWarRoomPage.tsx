@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Bot, Play, Loader2, RefreshCw } from 'lucide-react';
 import AgentStatusPanel from '../components/ai_warroom/AgentStatusPanel';
 import TacticalCanvas from '../components/ai_warroom/TacticalCanvas';
@@ -23,6 +23,16 @@ export default function AIWarRoomPage() {
 
   // 连接 WebSocket
   useAIWarroomSocket();
+
+  // 组件卸载时清理轮询 interval，防止内存泄漏
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
 
   const handlePredict = useCallback(async () => {
     if (!homeTeam.trim() || !awayTeam.trim()) {
