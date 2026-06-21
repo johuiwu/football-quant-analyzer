@@ -1396,8 +1396,12 @@ async function ensurePageReady() {
   }
 }
 
-export async function fetchAllLiveMatches() {
-  console.log("[HgCrawler] === 获取比赛数据 (In-Play → Soccer → CORNERS) ===");
+export async function fetchAllLiveMatches(_depth = 0) {
+  if (_depth >= 3) {
+    console.error("[HgCrawler] fetchAllLiveMatches 递归深度超过限制 (>=3)，终止递归");
+    return { success: false, error: "递归深度超限，请检查登录状态" };
+  }
+  console.log("[HgCrawler] === 获取比赛数据 (In-Play → Soccer → CORNERS) ===" + (_depth > 0 ? ` (递归深度: ${_depth})` : ""));
 
   if (!(await ensurePageReady())) {
     return { success: false, error: "无法连接到浏览器页面" };
@@ -1492,7 +1496,7 @@ export async function fetchAllLiveMatches() {
     crawlerStatus.error = err.message;
     try {
       const loginResult = await loginToHG();
-      if (loginResult.success) return await fetchAllLiveMatches();
+      if (loginResult.success) return await fetchAllLiveMatches(_depth + 1);
     } catch (e) {}
     return { success: false, error: err.message };
   }
@@ -1628,7 +1632,14 @@ export async function fetchSchedule(_retryCount = 0) {
             page = loginRes2.page;
             privateBrowser = loginRes2.browser;
             console.log("[HgCrawler] 重新登录成功，重试获取赛程 (retry " + (_retryCount + 1) + "/2)");
-            return await fetchSchedule(_retryCount + 1);
+            try {
+              return await fetchSchedule(_retryCount + 1);
+            } catch (recurseErr) {
+              // 递归调用失败时，确保新创建的浏览器也被关闭
+              console.error("[HgCrawler] 递归 fetchSchedule 失败:", recurseErr.message);
+              try { await privateBrowser.close(); } catch(_) {}
+              throw recurseErr;
+            }
           }
           console.log("[HgCrawler] 重新登录失败，返回空结果");
         }

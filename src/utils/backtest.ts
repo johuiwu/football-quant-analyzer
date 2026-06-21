@@ -120,7 +120,7 @@ export function runBacktest(matches: MatchHistory[]): BacktestReport {
   });
 
   const correctCount = entries.filter((e) => e.directionCorrect).length;
-  const passRate = correctCount / entries.length;
+  const passRate = entries.length > 0 ? correctCount / entries.length : 0;
   const highRiskGames = entries
     .filter((e) => e.isHighRisk)
     .map((e) => e.match);

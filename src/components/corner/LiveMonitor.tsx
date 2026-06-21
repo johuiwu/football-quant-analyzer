@@ -313,11 +313,9 @@ export default function LiveMonitor() {
   const refreshData = useCornerStore((s) => s.refreshData);
   const [searchText, setSearchText] = useState("");
 
-  // 20 秒自动刷新，确保监控 tab 数据及时更新
+  // 初次加载时获取数据（轮询由 cornerStore.startMonitor 的 schedulePoll 统一管理）
   useEffect(() => {
     if (displayData.length === 0) refreshData();
-    const timer = setInterval(() => refreshData(), 20000);
-    return () => clearInterval(timer);
   }, []);
 
   const findTeamInfo = (nameCn: string) => {

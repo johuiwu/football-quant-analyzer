@@ -241,6 +241,28 @@ function syncStrategiesToBackend(strategies: CornerStrategy[]) {
 }
 
 
+// ==================== 跨 Store 延迟访问 ====================
+// cornerStore 和 useAppStore 存在循环依赖，使用延迟获取避免模块加载时死循环
+
+function getAppStoreTrackedMatchIds(): string[] {
+  try {
+    // 动态 require 仅在运行时执行，不影响模块加载
+    const mod = require('./useAppStore');
+    return mod?.useAppStore?.getState?.()?.trackedMatchIds || [];
+  } catch {
+    return [];
+  }
+}
+
+function getAppStoreState(): any | null {
+  try {
+    const mod = require('./useAppStore');
+    return mod?.useAppStore?.getState?.() || null;
+  } catch {
+    return null;
+  }
+}
+
 // ==================== 监控循环 ====================
 
 let monitorInterval: ReturnType<typeof setTimeout> | null = null;
@@ -312,14 +334,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     // 配置变更时同步到后端（合并 trackedMatchIds）
     if ('isRealMode' in partial || 'betAmount' in partial || 'autoBetEnabled' in partial || 'autoBetConfirmRequired' in partial) {
       const s = get().settings;
-      // 尝试获取 useAppStore 的 trackedMatchIds
-      let trackedMatchIds: string[] = [];
-      try {
-        const appModule = require('./useAppStore');
-        if (appModule?.useAppStore?.getState) {
-          trackedMatchIds = appModule.useAppStore.getState().trackedMatchIds || [];
-        }
-      } catch (_) {}
+      const trackedMatchIds = getAppStoreTrackedMatchIds();
       fetch('/api/corner/bet-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -337,13 +352,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   // 一次性同步所有配置到后端（用于页面初始化时确保前后端一致）
   syncAllSettingsToBackend: () => {
     const s = get().settings;
-    let trackedMatchIds: string[] = [];
-    try {
-      const appModule = require('./useAppStore');
-      if (appModule?.useAppStore?.getState) {
-        trackedMatchIds = appModule.useAppStore.getState().trackedMatchIds || [];
-      }
-    } catch (_) {}
+    const trackedMatchIds = getAppStoreTrackedMatchIds();
     fetch('/api/corner/bet-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -607,9 +616,8 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       set({ liveMatches, isLoading: false });
 
       // 自动清理已失效的 trackedMatchIds：移除不在当前 liveMatches 中的 ID
-      try {
-        const { useAppStore } = require('./useAppStore');
-        const appState = useAppStore.getState();
+      const appState = getAppStoreState();
+      if (appState) {
         const currentTracked = appState.trackedMatchIds || [];
         if (currentTracked.length > 0) {
           const liveMatchIds = new Set(liveMatches.map((m: any) => String(m.matchId || "")));
@@ -621,7 +629,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
             console.log(`[cornerStore] 自动清理 ${staleIds.length} 个已结束的追踪比赛`);
           }
         }
-      } catch (_) {}
+      }
 
       const triggeredCount = liveMatches.reduce((sum, m) => sum + m.triggeredStrategies.length, 0);
       if (triggeredCount > 0) {

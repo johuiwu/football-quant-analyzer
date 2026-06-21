@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 亚盘 ↔ 欧赔精确转换模块
  * 基于 Dixon-Coles 双变量泊松模型（rho 按联赛差异化）
  * 替代 quantModel.ts 中的分段线性映射表
@@ -61,9 +61,10 @@ export function exactAsianTo1X2(
   const mu = Math.max(0.1, baseGoals - adjustedDiff / 2 - homeAdv / 2);
   const rho = getLeagueRho(league);
   const { homeProb, drawProb, awayProb } = computeDixonColesProbs(lambda, mu, rho);
-  const homeOdds = Math.round((returnRate / homeProb) * 100) / 100;
-  const drawOdds = Math.round((returnRate / drawProb) * 100) / 100;
-  const awayOdds = Math.round((returnRate / awayProb) * 100) / 100;
+  const MIN_PROB = 0.001;
+  const homeOdds = Math.round((returnRate / Math.max(homeProb, MIN_PROB)) * 100) / 100;
+  const drawOdds = Math.round((returnRate / Math.max(drawProb, MIN_PROB)) * 100) / 100;
+  const awayOdds = Math.round((returnRate / Math.max(awayProb, MIN_PROB)) * 100) / 100;
   return { homeOdds, drawOdds, awayOdds, homeProb, drawProb, awayProb };
 }
 
@@ -122,10 +123,12 @@ export function exact1X2ToAsian(
   }
 
   const finalResult = exactAsianTo1X2(finalHandicap, homeStrength, awayStrength, league, returnRate, homeAdv);
-  const homeFair = finalResult.homeProb / (finalResult.homeProb + finalResult.awayProb);
-  const awayFair = finalResult.awayProb / (finalResult.homeProb + finalResult.awayProb);
-  const homeWater = Math.round((returnRate / homeFair) * 100) / 100;
-  const awayWater = Math.round((returnRate / awayFair) * 100) / 100;
+  const totalProb = finalResult.homeProb + finalResult.awayProb;
+  const homeFair = totalProb > 0 ? finalResult.homeProb / totalProb : 0.5;
+  const awayFair = totalProb > 0 ? finalResult.awayProb / totalProb : 0.5;
+  const MIN_FAIR = 0.001;
+  const homeWater = Math.round((returnRate / Math.max(homeFair, MIN_FAIR)) * 100) / 100;
+  const awayWater = Math.round((returnRate / Math.max(awayFair, MIN_FAIR)) * 100) / 100;
 
   return {
     handicap: finalHandicap,
