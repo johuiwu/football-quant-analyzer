@@ -431,9 +431,23 @@ export async function autoLoginAndGetCredentials(options = {}) {
         "--no-sandbox",
         "--disable-setuid-sandbox",
       ];
+      // 代理自动探测：环境变量 → 本地端口探测
       if (process.env.PUPPETEER_PROXY) {
         launchArgs.push("--proxy-server=" + process.env.PUPPETEER_PROXY);
         launchArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
+      } else {
+        try {
+          const { detectProxyConfig } = await import("./hgApiClient.js");
+          const proxyConfig = await detectProxyConfig();
+          if (proxyConfig) {
+            const proxyUrl = `${proxyConfig.protocol || 'http'}://${proxyConfig.host}:${proxyConfig.port}`;
+            console.log('[autoLogin] 自动探测到代理: ' + proxyUrl);
+            launchArgs.push("--proxy-server=" + proxyUrl);
+            launchArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
+          }
+        } catch (e) {
+          // hgApiClient 不可用时忽略
+        }
       }
 
       const detectedPath = detectLocalBrowser();

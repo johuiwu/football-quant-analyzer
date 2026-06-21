@@ -66,6 +66,34 @@ export function detectLocalBrowser() {
   return null;
 }
 
+/**
+ * 自动探测代理并返回 Puppeteer 的 --proxy-server 参数
+ * 优先级：PUPPETEER_PROXY 环境变量 → 本地端口探测
+ * @returns {Promise<string[]>} Chrome 启动参数数组
+ */
+async function _detectBrowserProxyArgs() {
+  // 优先级 1：环境变量
+  if (process.env.PUPPETEER_PROXY) {
+    console.log('[browserPool] 使用环境变量代理: ' + process.env.PUPPETEER_PROXY);
+    return [`--proxy-server=${process.env.PUPPETEER_PROXY}`, "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"];
+  }
+
+  // 优先级 2：本地端口探测（复用 hgApiClient 的 detectProxyConfig）
+  try {
+    const { detectProxyConfig } = await import("./hgApiClient.js");
+    const proxyConfig = await detectProxyConfig();
+    if (proxyConfig) {
+      const proxyUrl = `${proxyConfig.protocol || 'http'}://${proxyConfig.host}:${proxyConfig.port}`;
+      console.log('[browserPool] 自动探测到代理: ' + proxyUrl);
+      return [`--proxy-server=${proxyUrl}`, "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"];
+    }
+  } catch (e) {
+    // hgApiClient 不可用时忽略
+  }
+
+  return []; // 无代理，直连
+}
+
 // ======================== 浏览器启动 ========================
 
 // ======================== WebSocket 心跳保活 ========================
@@ -140,9 +168,7 @@ async function launchBrowser() {
         "--enable-features=NetworkService,NetworkServiceInProcess",
         "--lang=zh-CN,zh",
         "--accept-lang=zh-CN,zh;q=0.9",
-        ...(process.env.PUPPETEER_PROXY
-          ? [`--proxy-server=${process.env.PUPPETEER_PROXY}`, "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost"]
-          : [])
+        ...(await _detectBrowserProxyArgs()),
       ],
       timeout: 120000 // 启动超时 2 分钟
     });

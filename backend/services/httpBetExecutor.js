@@ -4,6 +4,7 @@
 
 import axios from "axios";
 import { loadCredentials, getBaseUrl } from "./credentialManager.js";
+import { detectProxyConfig, clearProxyCache } from "./hgApiClient.js";
 
 const DESKTOP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
@@ -25,7 +26,8 @@ function pickAttr(xml, tag, attr) {
  */
 async function postNL(baseUrl, ver, cookieStr, body) {
   const url = baseUrl + "/transform_nl.php?ver=" + encodeURIComponent(ver);
-  const res = await axios.post(url, body, {
+  const proxyConfig = await detectProxyConfig();
+  const axiosConfig = {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "X-Requested-With": "XMLHttpRequest",
@@ -37,8 +39,22 @@ async function postNL(baseUrl, ver, cookieStr, body) {
     },
     timeout: 15000,
     validateStatus: (s) => s < 400,
-  });
-  return res.data;
+  };
+  if (proxyConfig) {
+    axiosConfig.proxy = proxyConfig;
+  }
+  try {
+    const res = await axios.post(url, body, axiosConfig);
+    return res.data;
+  } catch (err) {
+    const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+      err.code === "ECONNRESET" || err.code === "ENOTFOUND";
+    if (isNetworkError && proxyConfig) {
+      console.warn("[httpBet] 网络错误，清除代理缓存:", err.code);
+      clearProxyCache();
+    }
+    throw err;
+  }
 }
 
 /**
@@ -46,7 +62,8 @@ async function postNL(baseUrl, ver, cookieStr, body) {
  */
 async function postTransform(baseUrl, ver, cookieStr, body) {
   const url = baseUrl + "/transform.php?ver=" + encodeURIComponent(ver);
-  const res = await axios.post(url, body, {
+  const proxyConfig = await detectProxyConfig();
+  const axiosConfig = {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "X-Requested-With": "XMLHttpRequest",
@@ -58,8 +75,22 @@ async function postTransform(baseUrl, ver, cookieStr, body) {
     },
     timeout: 15000,
     validateStatus: (s) => s < 400,
-  });
-  return res.data;
+  };
+  if (proxyConfig) {
+    axiosConfig.proxy = proxyConfig;
+  }
+  try {
+    const res = await axios.post(url, body, axiosConfig);
+    return res.data;
+  } catch (err) {
+    const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+      err.code === "ECONNRESET" || err.code === "ENOTFOUND";
+    if (isNetworkError && proxyConfig) {
+      console.warn("[httpBet] 网络错误，清除代理缓存:", err.code);
+      clearProxyCache();
+    }
+    throw err;
+  }
 }
 
 // ======================== Step 1: FT_order_view ========================
