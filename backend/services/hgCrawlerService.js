@@ -127,10 +127,11 @@ async function safeEvaluate(page, fn) {
 }
 
 async function clickNoButton(page) {
-  try {
-    let clickedSomething = false;
+  let clickedSomething = false;
+  const isContextError = (err) => err.message && (err.message.includes("Execution context was destroyed") || err.message.includes("detached Frame"));
 
-    // 1. 尝试点击按钮
+  // Step 1: 尝试点击按钮
+  try {
     const clicked = await page.evaluate(() => {
       // 辅助函数：检查元素是否可见
       const isVisible = (el) => {
@@ -178,14 +179,66 @@ async function clickNoButton(page) {
 
       return localClicked;
     });
-    clickedSomething = clicked;
+    if (clicked) clickedSomething = true;
+  } catch (err) {
+    if (isContextError(err)) {
+      console.log("[HgCrawler] clickNoButton 步骤1: 页面导航中，等待后重试...");
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const clicked = await page.evaluate(() => {
+          const isVisible = (el) => {
+            const style = getComputedStyle(el);
+            return style.display !== 'none' && style.visibility !== 'hidden';
+          };
 
-    // 2. 稍作延迟，等待 JS 执行
-    if (clickedSomething) {
-      await new Promise(r => setTimeout(r, 400));
+          let localClicked = false;
+
+          const normalLoginBtn = document.getElementById("back_login");
+          if (normalLoginBtn && isVisible(normalLoginBtn)) {
+            normalLoginBtn.click();
+            localClicked = true;
+          }
+
+          const cancelBtns = document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, #C_cancel_btn, [class*='popup'] [class*='close']");
+          for (const btn of cancelBtns) {
+            if (!isVisible(btn)) continue;
+            const text = (btn.textContent || "").trim().toUpperCase();
+            if (text === "NO" || text === "否" || text === "CANCEL" || text === "取消" || btn.id === "C_no_btn" || btn.id === "no_btn" || btn.id === "C_cancel_btn") {
+              btn.click(); localClicked = true;
+            }
+          }
+
+          if (!localClicked) {
+            const cancelFallback = document.querySelectorAll(".btn_cancel");
+            for (const btn of cancelFallback) {
+              if (!isVisible(btn)) continue;
+              btn.click(); localClicked = true; break;
+            }
+          }
+
+          const okBtns = document.querySelectorAll('[class*="msg_popup"] .btn, .btn_confirm, .btn_submit, #C_ok_btn, #ok_btn, #C_alert_confirm, #alert_confirm, #kick_ok_btn, .btn_sure');
+          for (const btn of okBtns) {
+            if (!isVisible(btn)) continue;
+            const text = (btn.textContent || "").trim().toUpperCase();
+            if (text === "OK" || text === "确认" || text === "确定" || text === "SUBMIT" || text === "提交" || text === "是" || btn.id === "C_yes_btn" || btn.id === "yes_btn") {
+              btn.click(); localClicked = true;
+            }
+          }
+
+          return localClicked;
+        });
+        if (clicked) clickedSomething = true;
+      } catch (_) {}
     }
+  }
 
-    // 3. 强制兜底：只移除特定弹窗对话框的 .on 类，不动容器元素
+  // 延迟，等待 JS 执行
+  if (clickedSomething) {
+    await new Promise(r => setTimeout(r, 400));
+  }
+
+  // Step 2: 强制兜底：只移除特定弹窗对话框的 .on 类，不动容器元素
+  try {
     const forceCleaned = await page.evaluate(() => {
       let cleaned = false;
 
@@ -208,22 +261,45 @@ async function clickNoButton(page) {
 
       return cleaned;
     });
-    if (forceCleaned) {
-      clickedSomething = true;
-    }
-
-    // 4. 按 ESC 键作为最后兜底
-    try {
-      await page.keyboard.press("Escape");
-      await new Promise(r => setTimeout(r, 200));
-    } catch (_) {}
-
-    if (clickedSomething) console.log("[HgCrawler] ✓ 已处理弹窗（含强制清理）");
-    return !!clickedSomething;
+    if (forceCleaned) clickedSomething = true;
   } catch (err) {
-    console.log("[HgCrawler] clickNoButton 出错:", err.message);
-    return false;
+    if (isContextError(err)) {
+      console.log("[HgCrawler] clickNoButton 步骤2: 页面导航中，等待后重试...");
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const forceCleaned = await page.evaluate(() => {
+          let cleaned = false;
+
+          const dialogIds = ["C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "alert_kick", "system_popup"];
+          for (const id of dialogIds) {
+            const el = document.getElementById(id);
+            if (el && el.classList.contains("on")) {
+              el.classList.remove("on");
+              cleaned = true;
+            }
+          }
+
+          const bodyLock = document.body;
+          if (bodyLock) {
+            bodyLock.classList.remove("scroll_lock", "locked");
+            bodyLock.style.overflow = "";
+          }
+
+          return cleaned;
+        });
+        if (forceCleaned) clickedSomething = true;
+      } catch (_) {}
+    }
   }
+
+  // Step 3: 按 ESC 键作为最后兜底
+  try {
+    await page.keyboard.press("Escape");
+    await new Promise(r => setTimeout(r, 200));
+  } catch (_) {}
+
+  if (clickedSomething) console.log("[HgCrawler] ✓ 已处理弹窗（含强制清理）");
+  return !!clickedSomething;
 }
 
 async function detectLoginState(page) {
@@ -572,12 +648,13 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
           }
           console.log("[HgCrawler] 检测到弹窗，尝试处理... (" + detected.detail + ", loginClicked=" + loginClicked + ")");
           const clicked = await clickNoButton(page);
-          if (clicked) {
-            await new Promise((r) => setTimeout(r, 1000));
-            try { await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 8000 }); } catch (_) {}
-          } else {
-            await new Promise((r) => setTimeout(r, 1000));
-          }
+          // 等待页面稳定（clickNoButton 内部可能已触发导航）
+          try {
+            await page.waitForFunction(() => {
+              return document.readyState === 'complete' || document.readyState === 'interactive';
+            }, { timeout: 5000 });
+          } catch (_) {}
+          await new Promise((r) => setTimeout(r, 1000));
           break;
 
         case 'POPUP_ACTIVE':
@@ -585,7 +662,7 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
           await clickNoButton(page);
           await new Promise((r) => setTimeout(r, 1000));
           // 强制清理弹窗
-          await page.evaluate(() => {
+          await safeEvaluate(page, () => {
             const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "system_popup"];
             for (const id of dialogIds) {
               const el = document.getElementById(id);
