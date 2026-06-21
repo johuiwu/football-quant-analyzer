@@ -41,7 +41,8 @@ export function loadCredentials() {
   try {
     const credFile = JSON.parse(fs.readFileSync(CRED_PATH, "utf8"));
     if (credFile.savedAt && (Date.now() - credFile.savedAt) > 7200000) {
-      console.log("[credentialManager] 凭证已过期（超过 2 小时），需要重新登录");
+      const ageMin = ((Date.now() - credFile.savedAt) / 60000).toFixed(1);
+      console.log("[credentialManager] 凭证已过期（超过 2 小时，已过 " + ageMin + " 分钟），需要重新登录");
       return null;
     }
   } catch (e) {}
@@ -60,7 +61,18 @@ export function loadCredentials() {
     } catch (e) {}
   }
   if (!isValidUid(uid)) {
-    console.warn("[credentialManager] uid 无效或缺失");
+    // 诊断日志：输出 uid 无效的详细信息
+    const memUid = getUid();
+    let diskExists = false;
+    let diskUid = null;
+    try {
+      if (fs.existsSync(CRED_PATH)) {
+        diskExists = true;
+        const credFile = JSON.parse(fs.readFileSync(CRED_PATH, "utf8"));
+        diskUid = credFile.uid || null;
+      }
+    } catch (e) {}
+    console.warn("[credentialManager] uid 无效或缺失 | CRED_PATH=" + CRED_PATH + " | 内存uid=" + JSON.stringify(memUid) + " | 磁盘文件存在=" + diskExists + " | 磁盘uid=" + (diskUid ? diskUid.substring(0, 12) + "..." : "null"));
     return null;
   }
 
