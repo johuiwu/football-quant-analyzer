@@ -672,18 +672,34 @@ export async function autoLoginAndGetCredentials(options = {}) {
                 } catch (e) {}
               }
 
-              // 从 _CHDomain 对象提取 uid
+              // 从 _CHDomain 对象提取 uid（含 ver/domain 等附加字段）
               if (!capturedUid) {
                 try {
-                  const chDomainUid = await page.evaluate(() => {
+                  const chDomain = await page.evaluate(() => {
                     try {
                       const ch = window._CHDomain || (typeof top !== 'undefined' && top._CHDomain) || null;
-                      return ch ? ch.uid : '';
-                    } catch (e) { return ''; }
+                      if (!ch) return null;
+                      return {
+                        uid: ch.uid || '',
+                        mid: ch.mid || '',
+                        username: ch.username || '',
+                        ver: ch.ver || '',
+                        domain: ch.domain || ''
+                      };
+                    } catch (e) { return null; }
                   });
-                  if (chDomainUid && chDomainUid.length >= 10 && !chDomainUid.endsWith('=')) {
-                    capturedUid = chDomainUid;
+                  if (chDomain && chDomain.uid && chDomain.uid.length >= 10 && !chDomain.uid.endsWith('=')) {
+                    capturedUid = chDomain.uid;
                     console.log('[autoLogin] 从 _CHDomain.uid 提取 uid: ' + capturedUid.substring(0, 12) + '...');
+                    if (chDomain.ver && !capturedVer) {
+                      capturedVer = chDomain.ver;
+                      extractVerFromRequest('transform.php?ver=' + chDomain.ver);
+                      console.log('[autoLogin] 从 _CHDomain.ver 提取 ver: ' + capturedVer.substring(0, 8) + '...');
+                    }
+                    if (chDomain.domain && !apiDomain) {
+                      apiDomain = 'https://' + chDomain.domain;
+                      console.log('[autoLogin] 从 _CHDomain.domain 提取 apiDomain: ' + apiDomain);
+                    }
                   }
                 } catch (e) {}
               }
@@ -707,7 +723,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
 
             // 4.3 立即写入 credentialManager 和 browserPool
             if (capturedUid && capturedVer) {
-              updateCredentials({ uid: capturedUid, ver: capturedVer, cookies: [] });
+              updateCredentials({ uid: capturedUid, ver: capturedVer, cookies: [], apiDomain: apiDomain });
               setUid(capturedUid);
               console.log("[autoLogin] uid/ver 已立即写入 credentialManager 和 browserPool");
             }
@@ -765,7 +781,7 @@ export async function autoLoginAndGetCredentials(options = {}) {
             };
 
             if (result.success) {
-              updateCredentials({ uid: capturedUid, ver: capturedVer, cookies: cookies });
+              updateCredentials({ uid: capturedUid, ver: capturedVer, cookies: cookies, apiDomain: apiDomain });
               console.log("[autoLogin] 登录成功，凭证已保存 (耗时: " + (Date.now() - startTime) + "ms)");
             } else {
               console.warn("[autoLogin] 登录完成但凭证不完整: uid=" + (capturedUid ? "有" : "无") + " ver=" + (capturedVer ? "有" : "无"));
