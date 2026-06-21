@@ -751,3 +751,158 @@ export async function autoLoginAndGetCredentials(options = {}) {
     }
   }
 }
+
+/**
+ * 从已登录的 page 中提取 uid/ver 并同步到 credentialManager / browserPool
+ * 供 hgCrawlerService 等外部模块在登录成功后复用，避免重复编写提取逻辑
+ *
+ * 提取策略（按优先级）：
+ *   1. 从 frame 的 window.uid 提取
+ *   2. 从 DOM 全局变量 (top.uid / window.uid) 提取
+ *   3. 主动 fetch transform.php?p=home 触发 ver 获取
+ *   4. 从 DOM 全局变量 (top.ver / window.ver) 提取 ver
+ *   5. 从 Cookie 提取 uid（最终回退）
+ *
+ * @param {import('puppeteer').Page} page - 已登录的 Puppeteer 页面
+ * @param {object} [options] - 可选参数
+ * @param {string} [options.username] - 用户名（用于凭证持久化）
+ * @param {string} [options.password] - 密码（用于凭证持久化）
+ * @returns {Promise<{uid: string|null, ver: string|null, apiDomain: string|null}>}
+ */
+export async function syncCredentialsFromPage(page, options = {}) {
+  let capturedUid = null;
+  let capturedVer = null;
+  let apiDomain = null;
+
+  // 1. 注册响应拦截器，捕获后续请求中的 uid/ver
+  page.on("response", async (response) => {
+    const url = response.url();
+    try {
+      if (url.includes("chk_login")) {
+        const text = await response.text();
+        const uidMatch = text.match(/<uid>([^<]+)<\/uid>/);
+        if (uidMatch && uidMatch[1]) {
+          capturedUid = uidMatch[1];
+          console.log("[syncCredentials] 从 chk_login 捕获 uid: " + capturedUid.substring(0, 10) + "...");
+        }
+      }
+      if (url.includes("transform.php") && url.includes("ver=")) {
+        extractVerFromRequest(url);
+        const verMatch = url.match(/[?&]ver=([^&]+)/);
+        if (verMatch && verMatch[1]) {
+          capturedVer = verMatch[1];
+          console.log("[syncCredentials] 从 transform.php 捕获 ver: " + capturedVer.substring(0, 16) + "...");
+        }
+      }
+    } catch (e) {}
+  });
+
+  // 2. 从 frame 提取 uid 和 API 域名
+  try {
+    const frames = page.frames();
+    for (const frame of frames) {
+      try {
+        const frameUrl = frame.url();
+        // 提取 API 域名
+        if (frameUrl.includes("transform.php") && !apiDomain) {
+          try { apiDomain = new URL(frameUrl).origin; } catch (e) {}
+        }
+        // 从 frame 内 window.uid 提取
+        if (!capturedUid) {
+          const frameUid = await frame.evaluate(() => {
+            try { return window.uid || ""; } catch(e) { return ""; }
+          });
+          if (frameUid && frameUid !== "undefined" && frameUid.length >= 10 && !frameUid.endsWith("=")) {
+            capturedUid = frameUid;
+            console.log("[syncCredentials] 从 frame 提取 uid: " + capturedUid.substring(0, 12) + "...");
+          }
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  // 3. 从 DOM 全局变量提取 uid
+  if (!capturedUid) {
+    try {
+      const domUid = await page.evaluate(() => {
+        try { return top.uid || window.uid || ""; } catch(e) { return window.uid || ""; }
+      });
+      if (domUid && domUid !== "undefined" && domUid.length >= 10 && !domUid.endsWith("=")) {
+        capturedUid = domUid;
+        console.log("[syncCredentials] 从 DOM 提取 uid: " + capturedUid.substring(0, 12) + "...");
+      }
+    } catch (e) {}
+  }
+
+  // 4. 主动 fetch transform.php?p=home 触发 ver 获取
+  if (!capturedVer) {
+    try {
+      console.log("[syncCredentials] 主动 fetch transform.php?p=home 触发 ver 获取...");
+      await page.evaluate(async () => {
+        try {
+          await fetch("transform.php?p=home", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "X-Requested-With": "XMLHttpRequest"
+            },
+            credentials: "include"
+          });
+        } catch (e) {}
+      });
+      await sleep(1000);
+    } catch (e) {
+      console.warn("[syncCredentials] 主动 fetch 失败:", e.message);
+    }
+  }
+
+  // 5. 从 DOM 全局变量提取 ver（回退）
+  if (!capturedVer) {
+    try {
+      const verFromDom = await page.evaluate(() => {
+        try { return top.ver || window.ver || ""; } catch(e) { return window.ver || ""; }
+      });
+      if (verFromDom) {
+        capturedVer = verFromDom;
+        extractVerFromRequest("transform.php?ver=" + verFromDom);
+        console.log("[syncCredentials] 从 DOM 提取 ver: " + verFromDom.substring(0, 16) + "...");
+      }
+    } catch (e) {}
+  }
+
+  // 6. 从 Cookie 提取 uid（最终回退）
+  if (!capturedUid) {
+    try {
+      const cookies = await page.cookies();
+      for (const c of cookies) {
+        if (c.name.toLowerCase() === "uid" && c.value && c.value.length >= 10 && !c.value.endsWith("=")) {
+          capturedUid = c.value;
+          console.log("[syncCredentials] 从 Cookie 提取 uid: " + capturedUid.substring(0, 10) + "...");
+          break;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 7. 同步到 browserPool 内存 + credentialManager 磁盘
+  if (capturedUid) {
+    setUid(capturedUid);
+  }
+  const cookies = await page.cookies();
+  updateCredentials({
+    uid: capturedUid,
+    ver: capturedVer,
+    cookies,
+    username: options.username,
+    password: options.password,
+    apiDomain
+  });
+
+  if (capturedUid && capturedVer) {
+    console.log("[syncCredentials] 凭证同步完成: uid=" + capturedUid.substring(0, 10) + "... ver=" + (capturedVer || "").substring(0, 16) + "...");
+  } else {
+    console.warn("[syncCredentials] 凭证不完整: uid=" + (capturedUid ? "有" : "无") + " ver=" + (capturedVer ? "有" : "无"));
+  }
+
+  return { uid: capturedUid, ver: capturedVer, apiDomain };
+}

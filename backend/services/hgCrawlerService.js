@@ -4,11 +4,11 @@ import axios from "axios";
 
 puppeteer.use(StealthPlugin());
 
-import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, FALLBACK_DOMAINS, loadCookiesFromDisk, setUid, getUid } from "./browserPool.js";
+import { getSharedBrowser, getSharedPage, setSharedPage, isBrowserActive, closeSharedBrowser as closeShared, HG_URL, FALLBACK_DOMAINS, loadCookiesFromDisk } from "./browserPool.js";
 import { parseAllMarkets, handlePopups, clickTab, parseAsianHandicap } from "./crawlerShared.js";
 import { pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus } from "./cornerService.js";
-import { updateCredentials, loadAndValidate } from "./credentialManager.js";
-import { extractVerFromRequest } from "./transformSigner.js";
+import { loadAndValidate } from "./credentialManager.js";
+import { syncCredentialsFromPage } from "./autoLogin.js";
 import fs from "fs";
 
 // ======================== 登录互斥锁 ========================
@@ -451,38 +451,6 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
       console.warn("[HgCrawler] 清除 Cookie/缓存失败:", e.message);
     }
 
-    // ★ 拦截 chk_login 响应捕获 uid/ver（与 autoLogin.js 一致）
-    let capturedUid = null;
-    let capturedVer = null;
-    let capturedApiDomain = null;
-    page.on("response", async (response) => {
-      const url = response.url();
-      try {
-        if (url.includes("chk_login")) {
-          const text = await response.text();
-          const uidMatch = text.match(/<uid>([^<]+)<\/uid>/);
-          if (uidMatch && uidMatch[1]) {
-            capturedUid = uidMatch[1];
-            console.log("[HgCrawler] 从 chk_login 捕获 uid: " + capturedUid.substring(0, 12) + "...");
-          }
-        }
-        if (url.includes("transform.php") && url.includes("ver=")) {
-          extractVerFromRequest(url);
-          const verMatch = url.match(/[?&]ver=([^&]+)/);
-          if (verMatch && verMatch[1]) {
-            capturedVer = verMatch[1];
-            console.log("[HgCrawler] 从 transform.php 捕获 ver: " + capturedVer.substring(0, 16) + "...");
-          }
-          // 提取 API 域名
-          if (!capturedApiDomain) {
-            try {
-              capturedApiDomain = new URL(url).origin;
-            } catch (e) {}
-          }
-        }
-      } catch (e) {}
-    });
-
     await page.goto(activeUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     console.log("[HgCrawler] 等待页面完全加载...");
     // 条件等待：检测登录表单或主页特征（替代固定 sleep 5s）
@@ -632,78 +600,19 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
           if (!isolated) { mainPage = page; setSharedPage(page); }
           crawlerStatus.isLoggedIn = true;
 
-          // ★ 登录成功后提取 uid/ver 并保存到 credentialManager
+          // ★ 复用 autoLogin 的凭证提取能力，避免重复逻辑
           try {
-            // 优先级1: 使用 chk_login 拦截捕获的 uid
-            if (capturedUid) {
-              setUid(capturedUid);
-              console.log("[HgCrawler] 使用 chk_login 拦截的 uid: " + capturedUid.substring(0, 12) + "...");
-            }
-            // 优先级2: 从 frame URL 提取 uid
-            if (!getUid()) {
-              const frames = page.frames();
-              for (const frame of frames) {
-                try {
-                  const frameUrl = frame.url();
-                  if (frameUrl.includes("transform.php") && frameUrl.includes("uid=")) {
-                    const uidMatch = frameUrl.match(/uid=([^&]+)/);
-                    if (uidMatch && uidMatch[1] && uidMatch[1].length >= 10 && !uidMatch[1].endsWith("=")) {
-                      setUid(uidMatch[1]);
-                      console.log("[HgCrawler] 从 frame 提取 uid: " + uidMatch[1].substring(0, 12) + "...");
-                      break;
-                    }
-                  }
-                } catch (e) {}
-              }
-            }
-            // 优先级3: 从 DOM 提取 uid
-            if (!getUid()) {
-              try {
-                const domUid = await page.evaluate(() => {
-                  try { return top.uid || window.uid || ""; } catch(e) { return window.uid || ""; }
-                });
-                if (domUid && domUid !== "undefined" && domUid.length >= 10 && !domUid.endsWith("=")) {
-                  setUid(domUid);
-                  console.log("[HgCrawler] 从 DOM 提取 uid: " + domUid.substring(0, 12) + "...");
-                }
-              } catch (e) {}
-            }
-            // 优先级4: 从 Cookie 提取 uid
-            if (!getUid()) {
-              try {
-                const cookies = await page.cookies();
-                for (const c of cookies) {
-                  if (c.name.toLowerCase() === "uid" && c.value && c.value.length >= 10 && !c.value.endsWith("=")) {
-                    setUid(c.value);
-                    console.log("[HgCrawler] 从 Cookie 提取 uid: " + c.value.substring(0, 12) + "...");
-                    break;
-                  }
-                }
-              } catch (e) {}
-            }
-            // 提取 ver（优先使用拦截捕获的 ver，回退到 DOM）
-            let finalVer = capturedVer || null;
-            if (!finalVer) {
-              const domVer = await page.evaluate(() => {
-                try { return top.ver || window.ver || ""; } catch(e) { return window.ver || ""; }
-              });
-              if (domVer) {
-                finalVer = domVer;
-                extractVerFromRequest(domVer);
-                console.log("[HgCrawler] 从 DOM 提取 ver: " + domVer.substring(0, 16) + "...");
-              }
+            const credResult = await syncCredentialsFromPage(page, {
+              username: credentials?.username,
+              password: credentials?.password,
+            });
+            if (credResult.uid) {
+              console.log("[HgCrawler] 凭证同步成功: uid=" + credResult.uid.substring(0, 10) + "...");
             } else {
-              console.log("[HgCrawler] 使用 chk_login 拦截的 ver: " + finalVer.substring(0, 16) + "...");
-            }
-            // 保存凭证到磁盘
-            const cookies = await page.cookies();
-            updateCredentials({ uid: getUid(), ver: finalVer, cookies, username: credentials?.username, password: credentials?.password, apiDomain: capturedApiDomain });
-            console.log("[HgCrawler] 凭证已保存到 credentialManager");
-            if (!getUid()) {
-              console.warn("[HgCrawler] ⚠ uid 提取失败！已尝试: chk_login拦截、frame URL、DOM全局变量、Cookie，均未获取到有效 uid");
+              console.warn("[HgCrawler] ⚠ 凭证同步失败：uid 未提取到，角球爬虫可能无法工作");
             }
           } catch (e) {
-            console.warn("[HgCrawler] 提取 uid/ver 失败:", e.message);
+            console.warn("[HgCrawler] 凭证同步异常:", e.message);
           }
 
           if (process.env.CRAWLER_DEBUG === "1") {
