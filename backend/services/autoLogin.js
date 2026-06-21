@@ -135,8 +135,10 @@ async function handlePasscodePage(page, options) {
 async function handlePasscodeDialog(page) {
   console.log("[autoLogin] 检测到简易密码确认弹窗，正在关闭...");
   let cleaned = false;
+  const isContextError = (err) => err.message && (err.message.includes("Execution context was destroyed") || err.message.includes("detached Frame"));
+
+  // 步骤1：通过页面内点击关闭弹窗
   try {
-    // 方法1：通过 page.evaluate 在页面内直接点击（绕过 Puppeteer 元素可见性检查）
     const clicked = await page.evaluate(() => {
       // 尝试多种按钮：NO/否/取消/CANCEL/OK/确认
       const cancelSelectors = [
@@ -179,14 +181,62 @@ async function handlePasscodeDialog(page) {
       }
       return false;
     });
-
     if (clicked) {
       console.log("[autoLogin] 已通过页面内点击关闭弹窗");
       await sleep(500);
       cleaned = true;
     }
+  } catch (err) {
+    if (isContextError(err)) {
+      console.log("[autoLogin] handlePasscodeDialog 步骤1: 页面导航中，等待后重试...");
+      await sleep(2000);
+      try {
+        const clicked = await page.evaluate(() => {
+          const cancelSelectors = [
+            ".btn_cancel", "#C_no_btn", "#no_btn", "#C_cancel_btn",
+            "[class*='popup'] [class*='close']",
+          ];
+          const cancelTexts = ["NO", "否", "No", "no", "CANCEL", "取消"];
+          for (const sel of cancelSelectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+              const style = getComputedStyle(el);
+              if (style.display !== 'none' && style.visibility !== 'hidden') {
+                try { (el).click(); return true; } catch(_) {}
+              }
+            }
+          }
+          const allButtons = Array.from(document.querySelectorAll("button, a, div[role='button'], .btn"));
+          for (const btn of allButtons) {
+            const text = (btn.textContent || "").trim().toUpperCase();
+            if (cancelTexts.includes(text)) {
+              const style = getComputedStyle(btn);
+              if (style.display !== 'none' && style.visibility !== 'hidden') {
+                try { (btn).click(); return true; } catch(_) {}
+              }
+            }
+          }
+          const okSelectors = [".btn_confirm", ".btn_submit", "#C_ok_btn", "#ok_btn"];
+          for (const sel of okSelectors) {
+            const el = document.querySelector(sel);
+            if (el) {
+              const style = getComputedStyle(el);
+              if (style.display !== 'none' && style.visibility !== 'hidden') {
+                try { (el).click(); return true; } catch(_) {}
+              }
+            }
+          }
+          return false;
+        });
+        if (clicked) { await sleep(500); cleaned = true; }
+      } catch (_) {}
+    } else {
+      console.error("[autoLogin] handlePasscodeDialog 步骤1 error:", err.message);
+    }
+  }
 
-    // 方法2：强制清理兜底 — 直接移除弹窗容器的 .on 类
+  // 步骤2：强制清理兜底 — 直接移除弹窗容器的 .on 类
+  try {
     const forceCleaned = await page.evaluate(() => {
       const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "C_alert_ok", "alert_ok", "alert_kick", "system_popup", "msg_popup"];
       let result = false;
@@ -204,34 +254,39 @@ async function handlePasscodeDialog(page) {
       }
       return result;
     });
-
     if (forceCleaned) {
       console.log("[autoLogin] 已强制清理弹窗（移除 .on 类）");
       cleaned = true;
     }
-
-    // 方法3：ESC 键兜底
-    try { await page.keyboard.press('Escape'); } catch(_) {}
-    await sleep(400);
-
-  } catch (e) {
-    console.warn("[autoLogin] 关闭简易密码弹窗异常:", e.message);
-    // 异常时仍执行强制清理
-    try {
-      await page.evaluate(() => {
-        const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "C_alert_ok", "alert_ok", "alert_kick", "system_popup"];
-        for (const id of dialogIds) {
-          const el = document.getElementById(id);
-          if (el && el.classList.contains("on")) el.classList.remove("on");
-        }
-        if (document.body) {
-          document.body.classList.remove("scroll_lock", "locked");
-          document.body.style.overflow = "";
-        }
-      });
-      cleaned = true;
-    } catch(_) {}
+  } catch (err) {
+    if (isContextError(err)) {
+      console.log("[autoLogin] handlePasscodeDialog 步骤2: 页面导航中，等待后重试...");
+      await sleep(2000);
+      try {
+        const forceCleaned = await page.evaluate(() => {
+          const dialogIds = ["C_alert_confirm", "alert_confirm", "alert_show", "C_alert_ok", "alert_ok", "alert_kick", "system_popup", "msg_popup"];
+          let result = false;
+          for (const id of dialogIds) {
+            const el = document.getElementById(id);
+            if (el && el.classList.contains("on")) {
+              el.classList.remove("on");
+              result = true;
+            }
+          }
+          if (document.body) {
+            document.body.classList.remove("scroll_lock", "locked");
+            document.body.style.overflow = "";
+          }
+          return result;
+        });
+        if (forceCleaned) { cleaned = true; }
+      } catch (_) {}
+    }
   }
+
+  // 步骤3：ESC 键兜底
+  try { await page.keyboard.press('Escape'); } catch(_) {}
+  await sleep(400);
 
   if (cleaned) return { action: 'wait' };
   return { action: 'wait' };
