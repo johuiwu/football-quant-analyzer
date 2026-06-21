@@ -272,7 +272,7 @@ export async function validateCredentials(uid, ver, cookieStr, apiDomain) {
         },
         timeout: 15000,
         maxRedirects: 0,
-        validateStatus: () => true,
+        validateStatus: (s) => s < 500, // 5xx 触发异常以启用域名回退
       };
       if (proxyConfig) {
         axiosConfig.proxy = proxyConfig;

@@ -3,7 +3,7 @@
 // 流程：FT_order_view → 构造 wagers XML → Total_bet/FT_bet
 
 import axios from "axios";
-import { loadCredentials, getBaseUrl } from "./credentialManager.js";
+import { loadCredentials, getBaseUrl, updateCredentials } from "./credentialManager.js";
 import { detectProxyConfig, clearProxyCache, detectWorkingDomain, clearDomainCache } from "./hgApiClient.js";
 import { HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 
@@ -23,21 +23,50 @@ function pickAttr(xml, tag, attr) {
 }
 
 /**
- * 获取所有可用域名列表（含回退）
+ * 判断是否为网络不可达错误
  */
-function _getAllDomains(primaryDomain) {
+function _isNetworkError(err) {
+  return err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
+    err.code === "ECONNRESET" || err.code === "ENOTFOUND" || err.code === "EAI_FAIL";
+}
+
+/**
+ * 获取所有可用域名列表（优先使用 hgApiClient 缓存的工作域名）
+ */
+async function _getAllDomains(primaryDomain) {
+  // 优先使用 hgApiClient 缓存的工作域名
+  let workingDomain = null;
+  try { workingDomain = await detectWorkingDomain(); } catch (_) {}
   const all = [primaryDomain];
   for (const d of FALLBACK_DOMAINS) {
     if (d !== primaryDomain) all.push(d);
   }
+  // 将工作域名提升到首位
+  if (workingDomain && workingDomain !== primaryDomain) {
+    const idx = all.indexOf(workingDomain);
+    if (idx > 0) {
+      all.splice(idx, 1);
+      all.unshift(workingDomain);
+    }
+  }
   return all;
+}
+
+/**
+ * 域名回退成功后更新缓存和凭证
+ */
+function _onDomainFallback(domain, primaryDomain) {
+  if (domain !== primaryDomain) {
+    console.log("[httpBet] 域名回退成功: " + domain);
+    try { updateCredentials({ apiDomain: domain }); } catch (_) {}
+  }
 }
 
 /**
  * 向 transform_nl.php 发送 POST 请求（含域名回退）
  */
 async function postNL(baseUrl, ver, cookieStr, body) {
-  const domains = _getAllDomains(baseUrl);
+  const domains = await _getAllDomains(baseUrl);
   const proxyConfig = await detectProxyConfig();
   let lastError = null;
 
@@ -61,12 +90,10 @@ async function postNL(baseUrl, ver, cookieStr, body) {
     }
     try {
       const res = await axios.post(url, body, axiosConfig);
-      if (domain !== baseUrl) console.log("[httpBet] postNL 域名回退成功: " + domain);
+      _onDomainFallback(domain, baseUrl);
       return res.data;
     } catch (err) {
-      const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
-        err.code === "ECONNRESET" || err.code === "ENOTFOUND";
-      if (isNetworkError) {
+      if (_isNetworkError(err)) {
         console.warn("[httpBet] postNL 域名不可达: " + domain + " (" + err.code + ")，尝试下一个...");
         lastError = err;
         continue;
@@ -84,7 +111,7 @@ async function postNL(baseUrl, ver, cookieStr, body) {
  * 向 transform.php 发送 POST 请求（含域名回退）
  */
 async function postTransform(baseUrl, ver, cookieStr, body) {
-  const domains = _getAllDomains(baseUrl);
+  const domains = await _getAllDomains(baseUrl);
   const proxyConfig = await detectProxyConfig();
   let lastError = null;
 
@@ -108,12 +135,10 @@ async function postTransform(baseUrl, ver, cookieStr, body) {
     }
     try {
       const res = await axios.post(url, body, axiosConfig);
-      if (domain !== baseUrl) console.log("[httpBet] postTransform 域名回退成功: " + domain);
+      _onDomainFallback(domain, baseUrl);
       return res.data;
     } catch (err) {
-      const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
-        err.code === "ECONNRESET" || err.code === "ENOTFOUND";
-      if (isNetworkError) {
+      if (_isNetworkError(err)) {
         console.warn("[httpBet] postTransform 域名不可达: " + domain + " (" + err.code + ")，尝试下一个...");
         lastError = err;
         continue;
