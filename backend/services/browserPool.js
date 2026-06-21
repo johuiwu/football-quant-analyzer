@@ -2,6 +2,7 @@ import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
 puppeteer.use(StealthPlugin());
 
@@ -43,12 +44,26 @@ const FALLBACK_DOMAINS = [
   "https://m510.crw066.com",
 ];
 
-/** 角球系统浏览器模式：优先读取 CRAWLER_HEADLESS 环境变量 */
-function getHeadless() {
-  const val = process.env.CRAWLER_HEADLESS;
-  if (val === "false" || val === "0") return false;
-  if (val === "true" || val === "1") return true;
-  return true; // 默认 headless
+// ======================== 本地浏览器检测 ========================
+
+/**
+ * 检测本地已安装的 Chrome 或 Edge 浏览器
+ * 优先级：Chrome → Edge
+ * @returns {string|null} 浏览器可执行文件路径，或 null
+ */
+export function detectLocalBrowser() {
+  const candidates = [
+    { path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', name: 'Chrome' },
+    { path: 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe', name: 'Edge' },
+  ];
+  for (const { path: browserPath, name } of candidates) {
+    if (fs.existsSync(browserPath)) {
+      console.log(`[browserPool] 使用本地 ${name} 浏览器 (路径: ${browserPath})`);
+      return browserPath;
+    }
+  }
+  console.error('[browserPool] 错误：系统未安装 Chrome 或 Edge，请安装任意一款浏览器再启用角球监控');
+  return null;
 }
 
 // ======================== 浏览器启动 ========================
@@ -98,15 +113,20 @@ async function launchBrowser() {
     return browser;
   }
 
-  const headless = getHeadless();
+  const detectedPath = detectLocalBrowser();
+  if (!detectedPath) {
+    isLaunching = false;
+    return null;
+  }
   isLaunching = true;
-  console.log("[browserPool] 正在启动浏览器... (headless=" + headless + ", CRAWLER_HEADLESS=" + (process.env.CRAWLER_HEADLESS || "(未设置)") + ")");
+  console.log("[browserPool] 正在启动浏览器... (headless=new, executablePath=" + detectedPath + ")");
 
   try {
       const vp = getRandomViewport();
     const bi = await puppeteer.launch({
-      headless,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      headless: 'new',
+      executablePath: detectedPath,
+      userDataDir: path.join(os.tmpdir(), 'puppeteer_profile'),
       slowMo: process.env.CRAWLER_DEBUG === "1" ? 100 : 0,
       args: [
         "--no-sandbox",
@@ -155,7 +175,7 @@ async function launchBrowser() {
     const errMsg = e.message || String(e);
     console.error("[browserPool] 浏览器启动失败:", errMsg);
     if (errMsg.includes("chrome") || errMsg.includes("executable")) {
-      console.error("[browserPool] 提示: 请确认 Chromium 已安装 (npm install puppeteer 自动下载)");
+      console.error("[browserPool] 提示: 请安装 Google Chrome 或 Microsoft Edge 浏览器");
     }
     isLaunching = false;
     return null;

@@ -4,9 +4,11 @@
 
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import { HG_URL, setUid, saveCookiesToDisk, loadCookiesFromDisk } from "./browserPool.js";
+import { HG_URL, setUid, saveCookiesToDisk, loadCookiesFromDisk, detectLocalBrowser } from "./browserPool.js";
 import { extractVerFromRequest } from "./transformSigner.js";
 import { updateCredentials, invalidateCookieCache } from "./credentialManager.js";
+import os from "os";
+import path from "path";
 
 puppeteer.use(StealthPlugin());
 
@@ -434,9 +436,14 @@ export async function autoLoginAndGetCredentials(options = {}) {
         launchArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
       }
 
+      const detectedPath = detectLocalBrowser();
+      if (!detectedPath) {
+        return { success: false, error: '系统未安装 Chrome 或 Edge，请安装任意一款浏览器再启用角球监控' };
+      }
       browser = await puppeteer.launch({
-        headless: process.env.PUPPETEER_HEADLESS !== "false",
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        headless: 'new',
+        executablePath: detectedPath,
+        userDataDir: path.join(os.tmpdir(), 'puppeteer_profile'),
         args: launchArgs,
       });
       page = await browser.newPage();
