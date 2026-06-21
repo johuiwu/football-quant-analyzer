@@ -309,44 +309,53 @@ function setupAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = false;
 
   // 下载重试配置：大文件下载可能中断/限速，自动重试并切换代理
-  const MAX_DOWNLOAD_RETRIES = 3;
+  const MAX_DOWNLOAD_RETRIES = 5; // 增加到 5 次重试机会
   let downloadRetryCount = 0;
   let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
 
-  // GitHub 下载加速代理列表（2026年6月实测，按速度排序）
-  // 大文件(>100MB)优先使用专业节点，小文件用通用节点
+  // GitHub 下载加速代理列表（2026年6月实测，按大文件速度排序）
+  // 直连放最前：如果用户有 VPN/代理，直连 GitHub CDN 通常是最快的
   const GITHUB_MIRROR_PROXIES = [
-    'https://ghproxy.homeboyc.cn',   // 大文件专用，稳定不断连，适合 268MB 安装包
-    'https://gh-proxy.com',           // 主站，多节点智能路由，速度 1.5-5MB/s
-    'https://ghproxy.net',            // 无广告，小文件快
+    'https://ghproxy.homeboyc.cn',   // 大文件专用，1GB+ 稳定不断连，实测 2-5MB/s
+    'https://gh-proxy.com',           // 多节点智能路由，实测 1.5-5MB/s
+    'https://ghproxy.net',            // 无广告，断点续传支持
+    'https://moeyy.cn/gh-proxy',      // 备用节点，稳定
     'https://mirror.ghproxy.com',     // 备用镜像站
   ];
   let currentProxyIndex = 0;
+  let benchmarkDone = false;
 
-  // 测速选择最优代理：首次下载前并行测速，自动选择最快的
+  // 测速选择最优代理：并行 HEAD 请求小文件，选延迟最低的
   async function benchmarkProxies() {
-    const testUrl = 'https://github.com/johuiwu/football-quant-analyzer/releases/latest'; // latest 重定向目标（小文件）
+    // 测速用小文件（blockmap ~278KB），避免下载大文件浪费时间
+    const testUrl = 'https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.3/football-quant-analyzer-setup-2.8.3.exe.blockmap';
     const results = await Promise.allSettled(
       GITHUB_MIRROR_PROXIES.map(async (proxy) => {
         const start = Date.now();
         return new Promise((resolve, reject) => {
           const url = `${proxy}/${testUrl}`;
-          const req = require('https').get(url, { timeout: 5000 }, (res) => {
+          const req = require('https').get(url, { timeout: 8000, method: 'HEAD' }, (res) => {
             const elapsed = Date.now() - start;
+            // 302/301 重定向也算成功（说明代理可达）
+            const ok = res.statusCode < 400;
             res.resume();
-            res.on('end', () => resolve({ proxy, ms: elapsed, status: res.statusCode }));
+            res.on('end', () => resolve({ proxy, ms: elapsed, status: res.statusCode, ok }));
           });
           req.on('error', reject);
           req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
         });
       })
     );
-    const ok = results.filter(r => r.status === 'fulfilled' && r.value.status < 400)
+    // 只选可达的代理，按延迟排序
+    const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok)
       .map(r => r.value).sort((a, b) => a.ms - b.ms);
     if (ok.length > 0) {
       const best = ok[0];
       currentProxyIndex = GITHUB_MIRROR_PROXIES.indexOf(best.proxy);
-      console.log(`[autoUpdater] 测速完成，最快代理: ${best.proxy} (${best.ms}ms)`);
+      benchmarkDone = true;
+      console.log(`[autoUpdater] 测速完成，最快代理: ${best.proxy} (${best.ms}ms)，共 ${ok.length} 个可用`);
+    } else {
+      console.log('[autoUpdater] 所有代理测速失败，使用默认顺序');
     }
   }
 
@@ -366,7 +375,7 @@ function setupAutoUpdater() {
       }
       const proxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
       const rewrittenUrl = `${proxy}/${originalUrl}`;
-      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}个代理) [${isBlockmap ? 'blockmap' : 'exe'}]`);
+      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}/${GITHUB_MIRROR_PROXIES.length}个代理) [${isBlockmap ? 'blockmap' : 'exe'}]`);
       callback({ redirectURL: rewrittenUrl });
     }
   );
@@ -426,7 +435,7 @@ function setupAutoUpdater() {
       msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') ||
       msg.includes('ECONNRESET') || msg.includes('502') || msg.includes('503');
 
-    // 风险二：下载中断/限速自动重试并切换代理（最多 3 次，间隔 3 秒）
+    // 风险二：下载中断/限速自动重试并切换代理（最多 5 次，间隔 1 秒）
     const isDownloadError = isNetworkError && lastUpdateInfo &&
       downloadRetryCount < MAX_DOWNLOAD_RETRIES;
     if (isDownloadError) {
@@ -434,14 +443,14 @@ function setupAutoUpdater() {
       // 切换到下一个加速代理
       currentProxyIndex = (currentProxyIndex + 1) % GITHUB_MIRROR_PROXIES.length;
       const nextProxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
-      console.log(`[autoUpdater] 下载中断，${3}s 后切换代理 ${nextProxy} 重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`);
+      console.log(`[autoUpdater] 下载中断，1s 后切换代理 ${nextProxy} 重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`);
       if (mainWindow) mainWindow.webContents.send('update-error', {
         message: `下载中断，切换加速线路重试 (${downloadRetryCount}/${MAX_DOWNLOAD_RETRIES})...`,
         isRetrying: true
       });
       setTimeout(() => {
         autoUpdater.downloadUpdate();
-      }, 3000);
+      }, 1000);
       return;
     }
 
@@ -485,11 +494,15 @@ function setupAutoUpdater() {
       }
     }
 
-    // 最终错误提示（含手动下载链接）
+    // 最终错误提示（含手动下载链接 + Gitee 备用源）
     let friendlyMsg = msg;
     if (isNetworkError) {
-      friendlyMsg = `无法连接更新服务器，请检查网络连接。\n` +
-        `如持续失败，可手动下载最新版本：\n` +
+      friendlyMsg = `无法连接更新服务器，请检查网络连接。\n\n` +
+        `加速下载（推荐）：\n` +
+        `  https://ghproxy.homeboyc.cn/https://github.com/johuiwu/football-quant-analyzer/releases/latest\n\n` +
+        `备用下载（Gitee 国内直连）：\n` +
+        `  https://gitee.com/johuiwu/football-quant-analyzer/releases\n\n` +
+        `GitHub 官方：\n` +
         `  https://github.com/johuiwu/football-quant-analyzer/releases\n` +
         `（原始错误: ${msg}）`;
     }
