@@ -129,14 +129,7 @@
     "win": {
       "icon": "public/icon.ico",
       "artifactName": "football-quant-analyzer-setup-${version}.${ext}",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
+      "target": [{"target": "nsis", "arch": ["x64"]}],
       "signAndEditExecutable": false
     },
     "nsis": {
