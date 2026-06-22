@@ -101,3 +101,16 @@ export async function getMatchData(matchId: string): Promise<any> {
     throw new Error('Cannot get match data, please check network or retry later');
   }
 }
+
+export async function syncWorldCupTeams(apiKey: string): Promise<any> {
+  try {
+    return await fetchWithRetry('/api/worldcup/sync-teams', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey }),
+    }, { timeout: 120000, maxRetries: 1 });
+  } catch (error) {
+    console.error('[API] Failed to sync World Cup teams:', error);
+    throw error;
+  }
+}
