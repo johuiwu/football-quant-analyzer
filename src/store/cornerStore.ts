@@ -710,7 +710,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
 
       set({ liveMatches, isLoading: false });
 
-      // 自动清理已失效的 trackedMatchIds：移除不在当前 liveMatches 中的 ID
+      // 自动清理已失效的 trackedMatchIds：移除不在当前 liveMatches 中的 ID 或已结束的比赛
       const appState = getAppStoreState();
       if (appState) {
         const currentTracked = appState.trackedMatchIds || [];
@@ -721,7 +721,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
             for (const id of staleIds) {
               appState.removeTrackedMatch(id);
             }
-            console.log(`[cornerStore] 自动清理 ${staleIds.length} 个已结束的追踪比赛`);
+            console.log(`[cornerStore] 自动清理 ${staleIds.length} 个已结束的追踪比赛: [${staleIds.join(',')}]`);
           }
         }
       }

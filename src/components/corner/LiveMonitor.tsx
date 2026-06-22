@@ -394,11 +394,15 @@ export default function LiveMonitor() {
             </h3>
           </div>
           {dataSourceBadge()}
-          {trackedMatchIds.length > 0 && (
-            <span className="text-[10px] text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
-              追踪 {trackedMatchIds.length} 场比赛
-            </span>
-          )}
+          {trackedMatchIds.length > 0 && (() => {
+            const liveMatchIds = new Set(displayData.map((m: any) => String(m.matchId || "")));
+            const effectiveCount = trackedMatchIds.filter((id: string) => liveMatchIds.has(id)).length;
+            return effectiveCount > 0 ? (
+              <span className="text-[10px] text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">
+                追踪 {effectiveCount} 场比赛
+              </span>
+            ) : null;
+          })()}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
