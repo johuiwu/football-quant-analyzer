@@ -365,6 +365,8 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         trackedMatchIds
       })
     }).catch(() => {});
+    // ★ 同步策略到后端，确保后端重启后策略不丢失
+    syncStrategiesToBackend(get().strategies);
   },
 
   updateBalance: (balance) =>
@@ -448,16 +450,27 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       const loginSuccess = await login();
       if (!loginSuccess) return;
     }
-    set({ isMonitoring: true });
-    fetch('/api/corner/start', { method: 'POST' }).catch(() => {});
-    get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已启动", level: "info" });
-    await get().refreshData();
-    const schedulePoll = () => {
-      if (!get().isMonitoring) return;
-      const interval = 8000 + Math.random() * 2000;
-      monitorInterval = setTimeout(() => { get().refreshData(); schedulePoll(); }, interval);
-    };
-    schedulePoll();
+    try {
+      const response = await fetch('/api/corner/start', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        set({ isMonitoring: true });
+        get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已启动", level: "info" });
+        await get().refreshData();
+        const schedulePoll = () => {
+          if (!get().isMonitoring) return;
+          const interval = 8000 + Math.random() * 2000;
+          monitorInterval = setTimeout(() => { get().refreshData(); schedulePoll(); }, interval);
+        };
+        schedulePoll();
+      } else {
+        set({ error: "后端监控启动失败: " + (data.error || "未知错误") });
+        get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控启动失败", level: "warning" });
+      }
+    } catch (err: any) {
+      set({ error: "后端监控启动请求失败: " + (err.message || "网络错误") });
+      get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控启动请求失败", level: "warning" });
+    }
   },
 
   stopMonitor: () => {
