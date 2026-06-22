@@ -8,6 +8,7 @@ import { fetchStandings } from '../services/worldcupStandingsCrawler.js';
 
 const TEAM_STATS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.json');
 const TEAM_STATS_TS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.ts');
+const STANDINGS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_standings.json');
 
 const router = Router();
 
@@ -317,6 +318,27 @@ function readStatsFromFile() {
   }
 }
 
+/** 从 worldcup_standings.json 文件中读取积分榜缓存数据 */
+function readStandingsFromFile() {
+  try {
+    if (!fs.existsSync(STANDINGS_FILE)) return null;
+    const content = fs.readFileSync(STANDINGS_FILE, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('[worldcupRoutes] Failed to read standings JSON:', error.message);
+    return null;
+  }
+}
+
+/** 将积分榜数据写入 worldcup_standings.json 文件 */
+function writeStandingsToFile(data) {
+  try {
+    fs.writeFileSync(STANDINGS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('[worldcupRoutes] Failed to write standings JSON:', error.message);
+  }
+}
+
 // ---- 获取所有球队统计数据端点 ----
 
 router.get('/worldcup/team-stats', (req, res) => {
@@ -469,21 +491,47 @@ const STANDINGS_CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
 
 router.get('/worldcup/standings', async (req, res) => {
   try {
+    // 1. 先尝试从 JSON 文件读取
+    const fileCache = readStandingsFromFile();
+    if (fileCache && fileCache.groups) {
+      const isStale = Date.now() - new Date(fileCache.updatedAt).getTime() > STANDINGS_CACHE_TTL;
+
+      // 同步更新内存缓存
+      STANDINGS_CACHE.data = fileCache;
+      STANDINGS_CACHE.time = new Date(fileCache.updatedAt).getTime();
+
+      // 缓存过期时后台异步更新
+      if (isStale) {
+        fetchStandings().then(result => {
+          if (result.success) {
+            const response = { success: true, groups: result.groups, updatedAt: new Date().toISOString() };
+            STANDINGS_CACHE.data = response;
+            STANDINGS_CACHE.time = Date.now();
+            writeStandingsToFile(response);
+          }
+        }).catch(err => {
+          console.error('[worldcupRoutes] Background standings refresh failed:', err.message);
+        });
+      }
+
+      return res.json({ ...fileCache, stale: isStale });
+    }
+
+    // 2. 无文件缓存，检查内存缓存
     if (Date.now() - STANDINGS_CACHE.time < STANDINGS_CACHE_TTL && STANDINGS_CACHE.data) {
       return res.json(STANDINGS_CACHE.data);
     }
 
+    // 3. 首次访问，必须同步爬取
     const result = await fetchStandings();
     if (!result.success) {
-      if (STANDINGS_CACHE.data) {
-        return res.json({ ...STANDINGS_CACHE.data, cached: true });
-      }
       return res.status(503).json({ success: false, message: result.error || '爬取积分榜失败' });
     }
 
     const response = { success: true, groups: result.groups, updatedAt: new Date().toISOString() };
     STANDINGS_CACHE.data = response;
     STANDINGS_CACHE.time = Date.now();
+    writeStandingsToFile(response);
     res.json(response);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -500,6 +548,7 @@ router.post('/worldcup/refresh-standings', async (req, res) => {
     const response = { success: true, groups: result.groups, updatedAt: new Date().toISOString() };
     STANDINGS_CACHE.data = response;
     STANDINGS_CACHE.time = Date.now();
+    writeStandingsToFile(response);
     res.json(response);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

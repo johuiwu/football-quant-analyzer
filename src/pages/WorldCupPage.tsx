@@ -422,6 +422,8 @@ function StandingsTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
 
   const loadStandings = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -431,6 +433,12 @@ function StandingsTab() {
       const data = await res.json();
       if (data.success && data.groups) {
         setGroups(data.groups);
+        setStale(!!data.stale);
+        setUpdatedAt(data.updatedAt || null);
+        // 缓存过期时后台正在更新，3秒后自动重新拉取
+        if (data.stale) {
+          setTimeout(() => loadStandings(true), 3000);
+        }
       } else {
         setError(data.message || '加载失败');
       }
@@ -451,6 +459,8 @@ function StandingsTab() {
       const data = await res.json();
       if (data.success && data.groups) {
         setGroups(data.groups);
+        setStale(false);
+        setUpdatedAt(data.updatedAt || null);
         setError(null);
       } else {
         setError(data.message || '刷新失败');
@@ -462,7 +472,7 @@ function StandingsTab() {
     }
   };
 
-  if (loading) {
+  if (loading && groups.length === 0) {
     return (
       <div className="flex justify-center py-20">
         <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
@@ -476,6 +486,12 @@ function StandingsTab() {
         <div className="flex items-center gap-2">
           <Trophy className="w-4 h-4 text-amber-400" />
           <span className="text-sm font-medium text-slate-300">2026世界杯积分榜</span>
+          {stale && <span className="text-xs text-amber-400 animate-pulse">数据更新中...</span>}
+          {updatedAt && !stale && (
+            <span className="text-[10px] text-slate-500">
+              {Math.round((Date.now() - new Date(updatedAt).getTime()) / 60000)}分钟前更新
+            </span>
+          )}
           {error && <span className="text-xs text-rose-400">{error}</span>}
         </div>
         <button
