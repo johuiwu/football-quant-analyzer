@@ -147,12 +147,12 @@ async function launchBrowser() {
     return null;
   }
   isLaunching = true;
-  console.log("[browserPool] 正在启动浏览器... (headless=new, executablePath=" + detectedPath + ")");
+  console.log("[browserPool] 正在启动浏览器... (headless=" + (process.env.CRAWLER_HEADLESS === 'true' ? 'new' : 'false') + ", executablePath=" + detectedPath + ")");
 
   try {
       const vp = getRandomViewport();
     const bi = await puppeteer.launch({
-      headless: 'new',
+      headless: process.env.CRAWLER_HEADLESS === 'true' ? 'new' : false,
       executablePath: detectedPath,
       userDataDir: path.join(os.tmpdir(), 'puppeteer_profile'),
       slowMo: process.env.CRAWLER_DEBUG === "1" ? 100 : 0,

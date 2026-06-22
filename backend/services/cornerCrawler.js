@@ -195,78 +195,145 @@ async function saveDebugScreenshot(page, label) {
 async function handlePasscodePage(page, maxRetries = 3) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const passcodeStatus = await page.evaluate(() => {
-        const backLoginBtn = document.getElementById("back_login");
-        const isBackLoginVisible = backLoginBtn
-          && getComputedStyle(backLoginBtn).display !== 'none'
-          && getComputedStyle(backLoginBtn).visibility !== 'hidden';
-        const bodyText = (document.body?.textContent || "").substring(0, 500);
-        const hasPasscodeText = bodyText.includes("Passcode Login") || bodyText.includes("简易密码");
-        const hasTwoFactorText = bodyText.includes("普通登入");
-        return { isBackLoginVisible, hasPasscodeText, hasTwoFactorText };
-      });
+      // ★ 遍历所有 frame 检测简易密码页面（对标 autoLogin.js）
+      let passcodeFrame = null;
+      let passcodeStatus = null;
+      for (const frame of page.frames()) {
+        try {
+          const status = await frame.evaluate(() => {
+            const backLoginBtn = document.getElementById("back_login");
+            const isBackLoginVisible = backLoginBtn
+              && getComputedStyle(backLoginBtn).display !== 'none'
+              && getComputedStyle(backLoginBtn).visibility !== 'hidden'
+              && getComputedStyle(backLoginBtn).visibility !== 'collapse';
+            const bodyText = (document.body?.textContent || "").substring(0, 500);
+            const hasPasscodeText = bodyText.includes("Passcode Login") || bodyText.includes("简易密码");
+            const hasTwoFactorText = bodyText.includes("普通登入");
+            return { isBackLoginVisible, hasPasscodeText, hasTwoFactorText };
+          });
+          if (status.isBackLoginVisible || status.hasTwoFactorText) {
+            passcodeFrame = frame;
+            passcodeStatus = status;
+            break;
+          }
+        } catch (_) {}
+      }
 
-      if (!passcodeStatus.isBackLoginVisible && !passcodeStatus.hasTwoFactorText) {
+      if (!passcodeFrame || (!passcodeStatus.isBackLoginVisible && !passcodeStatus.hasTwoFactorText)) {
         return { detected: false, handled: false };
       }
 
-      console.log(`[cornerCrawler] 检测到简易密码页面 (attempt ${attempt + 1}/${maxRetries})，点击普通登入...`);
-      await page.evaluate(() => {
+      console.log(`[登录步骤] 检测到简易密码页面 (attempt ${attempt + 1}/${maxRetries})，点击普通登入...`);
+      // ★ 首次检测到时输出 HTML 结构诊断
+      if (attempt === 0) {
+        try {
+          const diag = await passcodeFrame.evaluate(() => {
+            const btn = document.getElementById('back_login');
+            return {
+              backLoginHTML: btn ? btn.outerHTML.substring(0, 300) : 'NOT_FOUND',
+              frameUrl: window.location.href,
+              bodySample: (document.body?.textContent || "").substring(0, 200)
+            };
+          });
+          console.log("[登录诊断] 简易密码页面结构:", JSON.stringify(diag, null, 2));
+        } catch (_) {}
+      }
+
+      // ★ 在目标 frame 中点击 #back_login（而非只在主 frame）
+      await passcodeFrame.evaluate(() => {
         const btn = document.querySelector("#back_login");
         if (btn) btn.click();
       });
       await randomDelay(3000, 4000);
 
-      // 重新输入账号密码
+      // ★ 重新输入账号密码（遍历所有 frame，使用 nativeInputValueSetter）
       const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
       const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
-      await page.evaluate((usr, pw) => {
-        const u = document.getElementById('usr');
-        const p = document.getElementById('pwd');
-        if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-        if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-      }, reUser, rePwd);
-      await randomDelay(500, 1000);
-      await page.evaluate(() => {
-        const btn = document.getElementById('btn_login');
-        if (btn) btn.click();
-      });
-      console.log("[cornerCrawler] 已重新登录，等待页面加载...");
+      for (const frame of page.frames()) {
+        try {
+          const filled = await frame.evaluate((usr, pw) => {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+              window.HTMLInputElement.prototype, "value"
+            ).set;
+            const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+            const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+            if (u) {
+              u.focus();
+              nativeInputValueSetter.call(u, usr);
+              u.dispatchEvent(new Event("input", { bubbles: true }));
+              u.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            if (p) {
+              p.focus();
+              nativeInputValueSetter.call(p, pw);
+              p.dispatchEvent(new Event("input", { bubbles: true }));
+              p.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            return !!(u && p);
+          }, reUser, rePwd);
+          if (filled) {
+            await randomDelay(500, 1000);
+            // ★ 使用 Puppeteer click 点击登录按钮（与 autoLogin.js 一致）
+            const btn = await frame.$("#btn_login, input[type='submit']");
+            if (btn) {
+              await btn.click();
+              console.log("[登录步骤] 已通过 Puppeteer click 点击登录按钮");
+            } else {
+              await frame.evaluate(() => {
+                const b = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+                if (b) b.click();
+              });
+            }
+            break;
+          }
+        } catch (_) {}
+      }
+      console.log("[登录步骤] 已重新输入凭据并点击登录，等待页面加载...");
       await randomDelay(5000, 7000);
 
       // 验证是否成功离开简易密码页面
-      const stillOnPasscode = await page.evaluate(() => {
-        const btn = document.getElementById("back_login");
-        return btn && getComputedStyle(btn).display !== 'none' && getComputedStyle(btn).visibility !== 'hidden';
-      });
+      let stillOnPasscode = false;
+      for (const frame of page.frames()) {
+        try {
+          const check = await frame.evaluate(() => {
+            const btn = document.getElementById("back_login");
+            return btn && getComputedStyle(btn).display !== 'none' && getComputedStyle(btn).visibility !== 'hidden';
+          });
+          if (check) { stillOnPasscode = true; break; }
+        } catch (_) {}
+      }
       if (!stillOnPasscode) {
-        console.log("[cornerCrawler] 简易密码页面已处理成功");
+        console.log("[登录步骤] 简易密码页面已处理成功");
         return { detected: true, handled: true };
       }
-      console.log("[cornerCrawler] 简易密码页面仍存在，重试...");
+      console.log("[登录步骤] 简易密码页面仍存在，重试...");
     } catch (e) {
-      console.warn("[cornerCrawler] 简易密码检测失败:", e.message);
+      console.warn("[登录步骤] 简易密码检测失败:", e.message);
     }
   }
   return { detected: true, handled: false };
 }
 
 /**
- * 登录状态检测（对标 hgCrawlerService.detectLoginState）
- * 优先级：PASSCODE_PAGE > KICKED_OUT > POPUP_ACTIVE > LOGGED_IN > LOGIN_PAGE > WAIT_RESPONSE
+ * 登录状态检测（对标 autoLogin.js detectPageState）
+ * 优先级：PASSCODE_PAGE > KICKED_OUT > PASSCODE_DIALOG > POPUP_ACTIVE > LOGGED_IN > LOGIN_PAGE > LOGIN_ERROR > WAIT_RESPONSE
  */
 async function detectLoginState(page) {
   // ★ HG 网站使用 iframe，登录表单和内容可能在 iframe 中
   // 必须遍历所有 frame 进行检测，不能只检测主 frame
   const detectFn = () => {
     try {
-      // 优先级1: 简易密码页面（#back_login 可见）
+      // 辅助：判断元素是否可见
+      function isVisible(el) {
+        if (!el) return false;
+        const s = getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden' && s.visibility !== 'collapse';
+      }
+
+      // 优先级1: 简易密码设置页面（#back_login 可见）
       var backLogin = document.getElementById('back_login');
-      if (backLogin) {
-        var s = getComputedStyle(backLogin);
-        if (s.display !== 'none' && s.visibility !== 'hidden' && s.visibility !== 'collapse') {
-          return { state: 'PASSCODE_PAGE', detail: '简易密码页面' };
-        }
+      if (isVisible(backLogin)) {
+        return { state: 'PASSCODE_PAGE', detail: '简易密码设置页面' };
       }
 
       // 优先级2: 被踢出（#alert_kick 容器激活）
@@ -275,8 +342,25 @@ async function detectLoginState(page) {
         return { state: 'KICKED_OUT', detail: '被踢出登录' };
       }
 
-      // 优先级3: 激活弹窗（容器 .on 类 或 display/visibility/opacity 可见）
-      var popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'C_alert_ok', 'alert_ok'];
+      // 优先级3: 简易密码确认弹窗（C_alert_confirm / alert_confirm 激活）
+      // ★ 从 POPUP_ACTIVE 中分离出来，专门处理（对标 autoLogin.js PASSCODE_DIALOG）
+      var passcodeDialogIds = ['C_alert_confirm', 'alert_confirm'];
+      for (var pd = 0; pd < passcodeDialogIds.length; pd++) {
+        var pdEl = document.getElementById(passcodeDialogIds[pd]);
+        if (pdEl) {
+          if (pdEl.classList.contains('on')) {
+            return { state: 'PASSCODE_DIALOG', detail: '简易密码确认弹窗(.on): ' + passcodeDialogIds[pd] };
+          }
+          var pdPs = getComputedStyle(pdEl);
+          var pdVisible = pdPs.display !== 'none' && pdPs.visibility !== 'hidden' && pdPs.visibility !== 'collapse' && pdPs.opacity !== '0';
+          if (pdVisible) {
+            return { state: 'PASSCODE_DIALOG', detail: '简易密码确认弹窗(可见): ' + passcodeDialogIds[pd] };
+          }
+        }
+      }
+
+      // 优先级4: 其他激活弹窗（容器 .on 类 或 display/visibility/opacity 可见）
+      var popupIds = ['alert_show', 'system_popup', 'C_alert_ok', 'alert_ok'];
       for (var i = 0; i < popupIds.length; i++) {
         var popupEl = document.getElementById(popupIds[i]);
         if (popupEl) {
@@ -284,15 +368,14 @@ async function detectLoginState(page) {
             return { state: 'POPUP_ACTIVE', detail: '弹窗激活(.on): ' + popupIds[i] };
           }
           var ps = getComputedStyle(popupEl);
-          // visibility: collapse 等同于 hidden，也需要排除
-          var isVisible = ps.display !== 'none' && ps.visibility !== 'hidden' && ps.visibility !== 'collapse' && ps.opacity !== '0';
-          if (isVisible) {
+          var isVisiblePopup = ps.display !== 'none' && ps.visibility !== 'hidden' && ps.visibility !== 'collapse' && ps.opacity !== '0';
+          if (isVisiblePopup) {
             return { state: 'POPUP_ACTIVE', detail: '弹窗激活(可见): ' + popupIds[i] };
           }
         }
       }
 
-      // 优先级4: 已登录（主页特征）
+      // 优先级5: 已登录（主页特征 + loginuser cookie）
       var bodyText = document.body.textContent || "";
       var hasMainFeature = (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
                            (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
@@ -300,27 +383,39 @@ async function detectLoginState(page) {
         var sportEl = document.getElementById("old_ft_live_league");
         if (sportEl && getComputedStyle(sportEl).display !== 'none') hasMainFeature = true;
       }
+      if (!hasMainFeature) {
+        var nav = document.getElementById("today_page") || document.getElementById("live_page");
+        if (nav && isVisible(nav)) hasMainFeature = true;
+      }
+      if (!hasMainFeature) {
+        var symbol = document.getElementById("symbol_ft");
+        if (symbol && isVisible(symbol)) hasMainFeature = true;
+      }
+      // ★ 额外检测：loginuser cookie 存在说明已登录（对标 autoLogin.js L88）
+      if (!hasMainFeature && document.cookie.includes('loginuser=')) {
+        hasMainFeature = true;
+      }
       var accShow = document.getElementById("acc_show");
       var loginHidden = !accShow || getComputedStyle(accShow).display === 'none';
       if (loginHidden && bodyText.includes("In-Play")) hasMainFeature = true;
 
       if (hasMainFeature) {
-        return { state: 'LOGGED_IN', detail: '主页特征可见' };
+        return { state: 'LOGGED_IN', detail: '已登录 (frame: ' + (window.frameElement ? 'iframe' : 'main') + ')' };
       }
 
-      // 优先级5: 登录页面（#usr 可见）
+      // 优先级6: 登录页面（#usr 可见）
       var usrEl = document.querySelector('#usr');
       if (usrEl && usrEl.offsetParent !== null) {
-        return { state: 'LOGIN_PAGE', detail: '登录页面' };
+        return { state: 'LOGIN_PAGE', detail: '登录页面 (frame: ' + (window.frameElement ? 'iframe' : 'main') + ')' };
       }
 
-      // 优先级6: 密码错误
+      // 优先级7: 密码错误
       var errEl = document.getElementById("text_error");
       if (errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0) {
         return { state: 'LOGIN_ERROR', detail: errEl.textContent.trim() };
       }
 
-      // 优先级7: 其他
+      // 优先级8: 其他
       return { state: 'WAIT_RESPONSE', detail: '等待响应' };
     } catch (err) {
       return { state: 'WAIT_RESPONSE', detail: '检测异常: ' + (err.message || '') };
@@ -328,130 +423,241 @@ async function detectLoginState(page) {
   };
 
   try {
-    // 先检测主 frame
-    var result = await page.evaluate(detectFn);
-    if (result.state !== 'WAIT_RESPONSE') return result;
-
-    // 主 frame 无有效状态，遍历 iframe 检测
+    // 遍历所有 frame（包括主 frame 和 iframe），与 autoLogin.js detectPageState 一致
     for (const frame of page.frames()) {
-      if (frame === page.mainFrame()) continue;
       try {
-        var frameResult = await frame.evaluate(detectFn);
-        if (frameResult.state !== 'WAIT_RESPONSE') {
-          frameResult.detail += ' (iframe)';
-          return frameResult;
-        }
+        var result = await frame.evaluate(detectFn);
+        if (result.state && result.state !== 'WAIT_RESPONSE') return result;
       } catch (_) {}
     }
 
-    return result; // 返回主 frame 的 WAIT_RESPONSE
+    return { state: 'WAIT_RESPONSE', detail: '所有 frame 均无有效状态' };
   } catch (err) {
     return { state: 'WAIT_RESPONSE', detail: 'evaluate异常: ' + (err.message || '') };
   }
 }
 
 /**
- * 强制清理所有弹窗容器（兜底机制）
+ * 强制清理所有弹窗容器（兜底机制）- 遍历所有 frame
  */
 async function forceCleanupPopups(page) {
   try {
-    return await page.evaluate(() => {
-      let cleaned = false;
-      const dialogIds = ["C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "alert_kick", "system_popup", "alert_show"];
-      for (const id of dialogIds) {
-        const el = document.getElementById(id);
-        if (el) {
-          if (el.classList.contains("on")) { el.classList.remove("on"); cleaned = true; }
-          el.style.display = 'none';
-        }
-      }
-      if (document.body) {
-        document.body.classList.remove("scroll_lock", "locked");
-        document.body.style.overflow = "";
-      }
-      return cleaned;
-    });
+    // ★ 遍历所有 frame 执行清理（对标 autoLogin.js 的全 frame 处理）
+    for (const frame of page.frames()) {
+      try {
+        const cleaned = await frame.evaluate(() => {
+          let cleaned = false;
+          const dialogIds = ["C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "alert_kick", "system_popup", "alert_show"];
+          for (const id of dialogIds) {
+            const el = document.getElementById(id);
+            if (el) {
+              if (el.classList.contains("on")) { el.classList.remove("on"); cleaned = true; }
+              el.style.display = 'none';
+            }
+          }
+          if (document.body) {
+            document.body.classList.remove("scroll_lock", "locked");
+            document.body.style.overflow = "";
+          }
+          return cleaned;
+        });
+        if (cleaned) return true;
+      } catch (_) {}
+    }
+    return false;
   } catch (_) { return false; }
 }
 
 /**
+ * 处理简易密码确认弹窗：点击"否/NO"关闭弹窗（对标 autoLogin.js handlePasscodeDialog）
+ */
+async function handlePasscodeDialog(page) {
+  console.log("[登录步骤] 检测到简易密码确认弹窗，正在关闭...");
+  const isContextError = (err) => err.message && (
+    err.message.includes("Execution context was destroyed") || err.message.includes("detached Frame")
+  );
+
+  // ★ 遍历所有 frame 查找和点击按钮（与 autoLogin.js 一致的全 frame 策略）
+  for (const frame of page.frames()) {
+    try {
+      const clicked = await frame.evaluate(() => {
+        const isVisible = (el) => {
+          if (!el) return false;
+          const s = getComputedStyle(el);
+          return s.display !== 'none' && s.visibility !== 'hidden' && s.visibility !== 'collapse';
+        };
+
+        // 尝试多种取消按钮选择器
+        const cancelSelectors = [
+          ".btn_cancel", "#C_no_btn", "#no_btn", "#C_cancel_btn",
+          "[class*='popup'] [class*='close']",
+        ];
+        const cancelTexts = ["NO", "否", "No", "no", "CANCEL", "取消"];
+
+        // 1. 通过选择器找取消按钮
+        for (const sel of cancelSelectors) {
+          const el = document.querySelector(sel);
+          if (el && isVisible(el)) {
+            try { el.click(); return true; } catch(_) {}
+          }
+        }
+
+        // 2. 通过文本找按钮
+        const allButtons = Array.from(document.querySelectorAll("button, a, div[role='button'], .btn"));
+        for (const btn of allButtons) {
+          const text = (btn.textContent || "").trim().toUpperCase();
+          if (cancelTexts.includes(text) && isVisible(btn)) {
+            try { btn.click(); return true; } catch(_) {}
+          }
+        }
+
+        // 3. 通过 OK/确认 按钮（有些弹窗只有一个确认按钮）
+        const okSelectors = [".btn_confirm", ".btn_submit", "#C_ok_btn", "#ok_btn"];
+        for (const sel of okSelectors) {
+          const el = document.querySelector(sel);
+          if (el && isVisible(el)) {
+            try { el.click(); return true; } catch(_) {}
+          }
+        }
+
+        return false;
+      });
+      if (clicked) {
+        console.log("[登录步骤] 已通过页面内点击关闭简易密码确认弹窗");
+        await randomDelay(500, 1000);
+
+        // ★ 弹窗关闭后检测状态，如果仍为 LOGIN_PAGE 则刷新页面（对标 autoLogin.js L604-613）
+        try {
+          const afterPopupState = await detectLoginState(page);
+          console.log("[登录诊断] 弹窗关闭后状态: " + afterPopupState.state + " (" + afterPopupState.detail + ")");
+          if (afterPopupState.state === 'LOGGED_IN') {
+            console.log("[登录步骤] 弹窗关闭后检测到已登录！");
+            return { action: 'success' };
+          }
+          if (afterPopupState.state === 'LOGIN_PAGE') {
+            console.log("[登录步骤] 弹窗关闭后仍为 LOGIN_PAGE，尝试刷新页面...");
+            await page.reload({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+            await randomDelay(3000, 4000);
+            const reloadedState = await detectLoginState(page);
+            console.log("[登录诊断] 刷新后状态: " + reloadedState.state + " (" + reloadedState.detail + ")");
+            if (reloadedState.state === 'LOGGED_IN') {
+              return { action: 'success' };
+            }
+          }
+        } catch (_) {}
+
+        return { action: 'retry_login' };
+      }
+    } catch (err) {
+      if (isContextError(err)) {
+        console.log("[登录步骤] handlePasscodeDialog: 页面导航中，等待后重试...");
+        await randomDelay(2000, 3000);
+        continue; // 重试下一个 frame 或重新尝试
+      }
+    }
+  }
+
+  // 所有 frame 都没找到可点击的按钮，强制清理
+  const forceCleaned = await forceCleanupPopups(page);
+  if (forceCleaned) {
+    console.log("[登录步骤] 已强制清理弹窗容器");
+    return { action: 'retry_login' };
+  }
+
+  console.warn("[登录步骤] 无法关闭简易密码确认弹窗");
+  return { action: 'failed' };
+}
+
+/**
  * 带自诊断的弹窗处理：先尝试点击按钮，失败则输出弹窗 HTML 结构
+ * ★ 遍历所有 frame 查找和点击按钮
  */
 async function handlePopupWithDiagnostics(page, popupCount, MAX_POPUP) {
   console.log("[登录步骤] 第5步：处理弹窗 (" + popupCount + "/" + MAX_POPUP + ")");
 
-  // 1. 尝试点击取消/否/确认按钮
+  // 1. 尝试点击取消/否/确认按钮（遍历所有 frame）
   let clickResult = false;
-  try {
-    clickResult = await page.evaluate(() => {
-      const isVisible = (el) => {
-        const s = getComputedStyle(el);
-        return s.display !== 'none' && s.visibility !== 'hidden';
-      };
-      let clicked = false;
+  for (const frame of page.frames()) {
+    try {
+      const clicked = await frame.evaluate(() => {
+        const isVisible = (el) => {
+          if (!el) return false;
+          const s = getComputedStyle(el);
+          return s.display !== 'none' && s.visibility !== 'hidden' && s.visibility !== 'collapse';
+        };
+        let clicked = false;
 
-      // 点击取消/否
-      document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, #C_cancel_btn, [class*='popup'] [class*='close']").forEach(btn => {
-        if (!isVisible(btn)) return;
-        const text = (btn.textContent || "").trim().toUpperCase();
-        if (text === "NO" || text === "否" || text === "CANCEL" || text === "取消" || btn.id === "C_no_btn" || btn.id === "no_btn" || btn.id === "C_cancel_btn") {
-          btn.click(); clicked = true;
-        }
-      });
-
-      // fallback: 点击任意可见 .btn_cancel
-      if (!clicked) {
-        document.querySelectorAll(".btn_cancel").forEach(btn => {
-          if (!isVisible(btn)) return;
-          btn.click(); clicked = true;
-        });
-      }
-
-      // 点击确认/OK（某些弹窗需要确认才能关闭）
-      if (!clicked) {
-        document.querySelectorAll('[class*="msg_popup"] .btn, .btn_confirm, .btn_submit, #C_ok_btn, #ok_btn, .btn_sure').forEach(btn => {
+        // 点击取消/否
+        document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, #C_cancel_btn, [class*='popup'] [class*='close']").forEach(btn => {
           if (!isVisible(btn)) return;
           const text = (btn.textContent || "").trim().toUpperCase();
-          if (text === "OK" || text === "确认" || text === "确定" || text === "SUBMIT" || text === "提交" || text === "是") {
+          if (text === "NO" || text === "否" || text === "CANCEL" || text === "取消" || btn.id === "C_no_btn" || btn.id === "no_btn" || btn.id === "C_cancel_btn") {
             btn.click(); clicked = true;
           }
         });
-      }
 
-      return clicked;
-    });
-  } catch (_) {}
+        // fallback: 点击任意可见 .btn_cancel
+        if (!clicked) {
+          document.querySelectorAll(".btn_cancel").forEach(btn => {
+            if (!isVisible(btn)) return;
+            btn.click(); clicked = true;
+          });
+        }
+
+        // 点击确认/OK（某些弹窗需要确认才能关闭）
+        if (!clicked) {
+          document.querySelectorAll('[class*="msg_popup"] .btn, .btn_confirm, .btn_submit, #C_ok_btn, #ok_btn, .btn_sure').forEach(btn => {
+            if (!isVisible(btn)) return;
+            const text = (btn.textContent || "").trim().toUpperCase();
+            if (text === "OK" || text === "确认" || text === "确定" || text === "SUBMIT" || text === "提交" || text === "是") {
+              btn.click(); clicked = true;
+            }
+          });
+        }
+
+        return clicked;
+      });
+      if (clicked) { clickResult = true; break; }
+    } catch (_) {}
+  }
 
   // 2. 强制清理弹窗容器
   const forceCleaned = await forceCleanupPopups(page);
 
-  // 3. 自诊断：首次弹窗时输出弹窗 HTML 结构
+  // 3. 自诊断：首次弹窗时输出弹窗 HTML 结构（遍历所有 frame）
   if (popupCount === 1) {
     try {
-      const popupDiagnosis = await page.evaluate(() => {
-        const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'alert_kick', 'C_alert_ok', 'alert_ok'];
-        const results = [];
-        for (const id of popupIds) {
-          const el = document.getElementById(id);
-          if (el) {
-            results.push({
-              id,
-              hasOnClass: el.classList.contains('on'),
-              display: getComputedStyle(el).display,
-              visibility: getComputedStyle(el).visibility,
-              opacity: getComputedStyle(el).opacity,
-              innerHTML: el.innerHTML.substring(0, 300)
-            });
-          }
-        }
-        // 也输出 body 文本前 200 字符和当前 URL
-        return {
-          popups: results,
-          url: window.location.href,
-          bodySample: (document.body?.textContent || "").substring(0, 200)
-        };
-      });
-      console.log("[登录诊断] 当前检测到的弹窗HTML结构:", JSON.stringify(popupDiagnosis, null, 2));
+      const allResults = [];
+      for (const frame of page.frames()) {
+        try {
+          const popupDiagnosis = await frame.evaluate(() => {
+            const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'alert_kick', 'C_alert_ok', 'alert_ok'];
+            const results = [];
+            for (const id of popupIds) {
+              const el = document.getElementById(id);
+              if (el) {
+                results.push({
+                  id,
+                  hasOnClass: el.classList.contains('on'),
+                  display: getComputedStyle(el).display,
+                  visibility: getComputedStyle(el).visibility,
+                  opacity: getComputedStyle(el).opacity,
+                  innerHTML: el.innerHTML.substring(0, 300)
+                });
+              }
+            }
+            return results.length > 0 ? {
+              frameUrl: window.location.href,
+              popups: results,
+              bodySample: (document.body?.textContent || "").substring(0, 200)
+            } : null;
+          });
+          if (popupDiagnosis) allResults.push(popupDiagnosis);
+        } catch (_) {}
+      }
+      if (allResults.length > 0) {
+        console.log("[登录诊断] 当前检测到的弹窗HTML结构:", JSON.stringify(allResults, null, 2));
+      }
     } catch (_) {}
   }
 
@@ -625,6 +831,19 @@ async function ensureLogin() {
         Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
       });
 
+      // ★ 第0步：清除浏览器 Cookie 和缓存（对标 autoLogin.js L546-553，避免旧会话干扰）
+      console.log("[登录步骤] 第0步：清除浏览器 Cookie 和缓存");
+      try {
+        const client = await page.target().createCDPSession();
+        await client.send("Network.clearBrowserCookies");
+        await client.send("Network.clearBrowserCache");
+        console.log("[登录步骤] 已清除浏览器 Cookie 和缓存");
+      } catch (e) {
+        console.warn("[登录步骤] 清除 Cookie/缓存失败:", e.message);
+      }
+
+      // 第1步：导航到登录页
+      console.log("[登录步骤] 第1步：导航到登录页");
       await page.goto(HG_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
       // 条件等待：检测登录表单或主页特征出现（替代固定 sleep 4s）
       try {
@@ -753,19 +972,101 @@ async function ensureLogin() {
       }
 
       // 轮询检测登录结果（最多 60 秒）
-      console.log("[登录步骤] 第3步：轮询等待登录结果（最多60s）");
+      console.log("[登录步骤] 第5步：轮询等待登录结果（最多60s）");
       let loginResult = null;
-      const popupCount = { passcodePage: 0, kickedOut: 0, popupActive: 0 };
+      const popupCount = { passcodePage: 0, passcodeDialog: 0, kickedOut: 0, popupActive: 0 };
       const MAX_POPUP = 5;
       const loginStartTime = Date.now();
       const LOGIN_POLL_TIMEOUT = 60000;
       let waitResponseCount = 0;
       let loginPageCount = 0;
+      // ★ 死循环断路器：追踪连续相同状态
+      let lastState = '';
+      let consecutiveSameState = 0;
+      const MAX_CONSECUTIVE_SAME_STATE = 10;
 
       while (Date.now() - loginStartTime < LOGIN_POLL_TIMEOUT) {
         await new Promise(r => setTimeout(r, 1000));
         const detected = await detectLoginState(page);
         if (!detected || !detected.state) continue;
+
+        // ★ 死循环断路器：连续相同状态检测
+        if (detected.state === lastState && (detected.state === 'LOGIN_PAGE' || detected.state === 'POPUP_ACTIVE' || detected.state === 'WAIT_RESPONSE')) {
+          consecutiveSameState++;
+          if (consecutiveSameState >= MAX_CONSECUTIVE_SAME_STATE) {
+            console.log("[登录诊断] 断路器触发: 连续" + consecutiveSameState + "次检测到 " + detected.state + "，执行刷新页面");
+            try {
+              // 刷新页面 + 重新清除 Cookie/缓存
+              try {
+                const client = await page.target().createCDPSession();
+                await client.send("Network.clearBrowserCookies");
+                await client.send("Network.clearBrowserCache");
+                console.log("[登录诊断] 断路器: 已重新清除 Cookie/缓存");
+              } catch (_) {}
+              await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+              await new Promise(r => setTimeout(r, 3000));
+              // 重新输入凭据+点击登录
+              for (const frame of page.frames()) {
+                try {
+                  const filled = await frame.evaluate((usr, pw) => {
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                      window.HTMLInputElement.prototype, "value"
+                    ).set;
+                    const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+                    const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+                    if (u) {
+                      u.focus();
+                      nativeInputValueSetter.call(u, usr);
+                      u.dispatchEvent(new Event("input", { bubbles: true }));
+                      u.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                    if (p) {
+                      p.focus();
+                      nativeInputValueSetter.call(p, pw);
+                      p.dispatchEvent(new Event("input", { bubbles: true }));
+                      p.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                    return !!(u && p);
+                  }, username, password);
+                  if (filled) {
+                    await new Promise(r => setTimeout(r, 500));
+                    const btn = await frame.$("#btn_login, input[type='submit']");
+                    if (btn) {
+                      await btn.click();
+                    } else {
+                      await frame.evaluate(() => {
+                        const b = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+                        if (b) b.click();
+                      });
+                    }
+                    console.log("[登录诊断] 断路器: 已重新输入凭据并点击登录");
+                    break;
+                  }
+                } catch (_) {}
+              }
+              consecutiveSameState = 0; // 重置计数器
+            } catch (e) {
+              console.warn("[登录诊断] 断路器刷新失败:", e.message);
+            }
+            // 如果刷新后仍连续相同状态，再给 5 次机会后标记失败
+            if (consecutiveSameState >= MAX_CONSECUTIVE_SAME_STATE + 5) {
+              console.log("[登录步骤] ❌ 断路器刷新后仍无法突破，登录失败");
+              lastLoginErrorDetail = "dead_loop_breaker:连续" + consecutiveSameState + "次" + detected.state;
+              await saveDebugScreenshot(page, "deadloop-" + loginAttempt);
+              loginResult = { success: false };
+              break;
+            }
+          }
+        } else {
+          consecutiveSameState = 0;
+        }
+        lastState = detected.state;
+
+        // 45s 警告
+        const elapsed = Date.now() - loginStartTime;
+        if (elapsed > 45000 && elapsed < 46000) {
+          console.log("[登录诊断] 登录已耗时 45s，即将超时。当前状态: " + detected.state + " (" + detected.detail + ")");
+        }
 
         switch (detected.state) {
           case 'PASSCODE_PAGE':
@@ -777,7 +1078,7 @@ async function ensureLogin() {
               loginResult = { success: false };
               break;
             }
-            console.log("[登录步骤] 第4步：检测页面状态 → 简易密码页面 (" + popupCount.passcodePage + "/3)");
+            console.log("[登录步骤] 检测页面状态 → 简易密码设置页面 (" + popupCount.passcodePage + "/3)");
             // ★ 在所有 frame 中查找并点击 #back_login
             for (const frame of page.frames()) {
               try {
@@ -818,10 +1119,17 @@ async function ensureLogin() {
                 }, reUser, rePwd);
                 if (filled) {
                   await new Promise(r => setTimeout(r, 500));
-                  await frame.evaluate(() => {
-                    const btn = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
-                    if (btn) btn.click();
-                  });
+                  // ★ 使用 Puppeteer click（与 autoLogin.js 一致）
+                  const btn = await frame.$("#btn_login, input[type='submit']");
+                  if (btn) {
+                    await btn.click();
+                    console.log("[登录步骤] 已通过 Puppeteer click 重新点击登录按钮");
+                  } else {
+                    await frame.evaluate(() => {
+                      const b = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+                      if (b) b.click();
+                    });
+                  }
                   break;
                 }
               } catch (_) {}
@@ -838,14 +1146,84 @@ async function ensureLogin() {
               loginResult = { success: false };
               break;
             }
-            console.log("[登录步骤] 第4步：检测页面状态 → 被踢出 (" + popupCount.kickedOut + "/2)");
-            await page.evaluate(() => {
-              const btn = document.querySelector("#kick_ok_btn");
-              if (btn) btn.click();
-            });
+            console.log("[登录步骤] 检测页面状态 → 被踢出 (" + popupCount.kickedOut + "/2)");
+            // ★ 遍历所有 frame 点击 #kick_ok_btn
+            for (const frame of page.frames()) {
+              try {
+                const clicked = await frame.evaluate(() => {
+                  const btn = document.querySelector("#kick_ok_btn");
+                  if (btn) { btn.click(); return true; }
+                  return false;
+                });
+                if (clicked) break;
+              } catch (_) {}
+            }
             await new Promise(r => setTimeout(r, 1000));
             await forceCleanupPopups(page);
             console.log("[登录步骤] 已处理被踢出弹窗");
+            break;
+
+          case 'PASSCODE_DIALOG':
+            // ★ 新增：简易密码确认弹窗专门处理（对标 autoLogin.js PASSCODE_DIALOG）
+            popupCount.passcodeDialog++;
+            if (popupCount.passcodeDialog > MAX_POPUP) {
+              console.log("[登录步骤] ❌ 简易密码确认弹窗超过 " + MAX_POPUP + " 次，登录失败");
+              lastLoginErrorDetail = "popup_loop_timeout(passcodeDialog)";
+              await saveDebugScreenshot(page, "passcode-dialog-loop-" + loginAttempt);
+              loginResult = { success: false };
+              break;
+            }
+            console.log("[登录步骤] 检测页面状态 → 简易密码确认弹窗 (" + popupCount.passcodeDialog + "/" + MAX_POPUP + ")");
+            const dialogResult = await handlePasscodeDialog(page);
+            if (dialogResult.action === 'success') {
+              console.log("[登录步骤] ✅ 弹窗关闭后检测到已登录！");
+              loginResult = { success: true };
+              break;
+            }
+            if (dialogResult.action === 'retry_login') {
+              // 弹窗关闭后需要重新登录
+              console.log("[登录步骤] 弹窗已关闭，等待页面稳定后重新登录...");
+              await new Promise(r => setTimeout(r, 2000));
+              // 重新输入凭据+点击登录
+              for (const frame of page.frames()) {
+                try {
+                  const filled = await frame.evaluate((usr, pw) => {
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                      window.HTMLInputElement.prototype, "value"
+                    ).set;
+                    const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+                    const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+                    if (u) {
+                      u.focus();
+                      nativeInputValueSetter.call(u, usr);
+                      u.dispatchEvent(new Event("input", { bubbles: true }));
+                      u.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                    if (p) {
+                      p.focus();
+                      nativeInputValueSetter.call(p, pw);
+                      p.dispatchEvent(new Event("input", { bubbles: true }));
+                      p.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                    return !!(u && p);
+                  }, username, password);
+                  if (filled) {
+                    await new Promise(r => setTimeout(r, 500));
+                    const btn = await frame.$("#btn_login, input[type='submit']");
+                    if (btn) {
+                      await btn.click();
+                    } else {
+                      await frame.evaluate(() => {
+                        const b = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+                        if (b) b.click();
+                      });
+                    }
+                    console.log("[登录步骤] 弹窗关闭后已重新输入凭据并点击登录");
+                    break;
+                  }
+                } catch (_) {}
+              }
+            }
             break;
 
           case 'POPUP_ACTIVE':
@@ -871,7 +1249,7 @@ async function ensureLogin() {
             // 还在登录页面，可能凭据未正确填入或登录按钮未生效
             loginPageCount = (loginPageCount || 0) + 1;
             if (loginPageCount <= 3) {
-              console.log("[登录步骤] 第4步：检测页面状态 → 登录页面，尝试重新输入凭据并点击登录 (" + loginPageCount + "/3)");
+              console.log("[登录步骤] 检测页面状态 → 登录页面，尝试重新输入凭据并点击登录 (" + loginPageCount + "/3)");
               try {
                 // 遍历所有 frame 重新输入凭据
                 for (const frame of page.frames()) {
@@ -916,26 +1294,35 @@ async function ensureLogin() {
               } catch (_) {}
             } else if (loginPageCount === 4) {
               // 第 4 次仍在登录页面，输出诊断信息
-              console.log("[登录步骤] 第4步：检测页面状态 → 登录页面（已重试 3 次，输出诊断）");
+              console.log("[登录步骤] 检测页面状态 → 登录页面（已重试 3 次，输出诊断）");
               try {
-                const loginDiag = await page.evaluate(() => {
-                  const u = document.querySelector("#usr, input[name='username']");
-                  const p = document.querySelector("#pwd, input[name='password']");
-                  const btn = document.querySelector("#btn_login, input[type='submit']");
-                  const errEl = document.getElementById("text_error");
-                  return {
-                    usrValue: u ? u.value : 'NOT_FOUND',
-                    pwdValue: p ? (p.value ? '***' : 'EMPTY') : 'NOT_FOUND',
-                    btnExists: !!btn,
-                    btnVisible: btn ? (btn.offsetParent !== null) : false,
-                    errorText: errEl ? errEl.textContent.trim() : '',
-                    url: window.location.href
-                  };
-                });
-                console.log("[登录诊断] 登录页面状态:", JSON.stringify(loginDiag, null, 2));
+                // ★ 遍历所有 frame 输出诊断
+                for (const frame of page.frames()) {
+                  try {
+                    const loginDiag = await frame.evaluate(() => {
+                      const u = document.querySelector("#usr, input[name='username']");
+                      const p = document.querySelector("#pwd, input[name='password']");
+                      const btn = document.querySelector("#btn_login, input[type='submit']");
+                      const errEl = document.getElementById("text_error");
+                      if (!u && !p) return null; // 此 frame 无登录表单
+                      return {
+                        frameUrl: window.location.href,
+                        usrValue: u ? u.value : 'NOT_FOUND',
+                        pwdValue: p ? (p.value ? '***' : 'EMPTY') : 'NOT_FOUND',
+                        btnExists: !!btn,
+                        btnVisible: btn ? (btn.offsetParent !== null) : false,
+                        errorText: errEl ? errEl.textContent.trim() : '',
+                        url: window.location.href
+                      };
+                    });
+                    if (loginDiag) {
+                      console.log("[登录诊断] 登录页面状态:", JSON.stringify(loginDiag, null, 2));
+                    }
+                  } catch (_) {}
+                }
               } catch (_) {}
             } else {
-              console.log("[登录步骤] 第4步：检测页面状态 → 登录页面（等待中）");
+              console.log("[登录步骤] 检测页面状态 → 登录页面（等待中）");
             }
             break;
 
@@ -952,7 +1339,7 @@ async function ensureLogin() {
             waitResponseCount++;
             // 每 5 次输出一次诊断信息
             if (waitResponseCount % 5 === 0) {
-              console.log("[登录步骤] 第4步：检测页面状态 → 等待响应 (" + waitResponseCount + "次, " + Math.round((Date.now() - loginStartTime) / 1000) + "s)");
+              console.log("[登录步骤] 检测页面状态 → 等待响应 (" + waitResponseCount + "次, " + Math.round((Date.now() - loginStartTime) / 1000) + "s)");
               // 每 10 次输出页面诊断
               if (waitResponseCount % 10 === 0) {
                 try {
@@ -975,9 +1362,18 @@ async function ensureLogin() {
         if (loginResult) break;
       }
 
-      // 登录超时 => 重试
+      // 登录超时 => 输出诊断摘要
       if (!loginResult) {
-        console.error("[cornerCrawler] 登录超时（60s）(attempt " + loginAttempt + "/" + MAX_LOGIN_RETRIES + ")");
+        console.error("[登录诊断] 登录超时（60s），诊断摘要: " + JSON.stringify({
+          passcodePage: popupCount.passcodePage,
+          passcodeDialog: popupCount.passcodeDialog,
+          kickedOut: popupCount.kickedOut,
+          popupActive: popupCount.popupActive,
+          loginPageCount,
+          waitResponseCount,
+          lastState,
+          consecutiveSameState
+        }));
         lastLoginErrorDetail = "login_timeout:登录超时（60s）";
         await saveDebugScreenshot(page, "timeout-" + loginAttempt);
         continue;
