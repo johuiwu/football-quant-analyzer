@@ -9,7 +9,7 @@ import { getBaseUrl, updateCredentials } from "./credentialManager.js";
 import { HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
 
 // ---- 请求配置 ----
-const DEFAULT_TIMEOUT = 15000;
+const DEFAULT_TIMEOUT = 30000;
 const MAX_REDIRECTS = 0;
 
 // ---- 域名回退机制 ----
@@ -22,7 +22,13 @@ let _workingDomainTime = 0;
  * @returns {string[]}
  */
 function _getAllDomains() {
-  const primary = getBaseUrl() || HG_URL;
+  let primary = getBaseUrl() || HG_URL;
+  // ★ 过滤 IP 地址形式的 apiDomain（IP 地址通常不可达，CDN IP 不等于真实服务器地址）
+  const IP_REGEX = /^https?:\/\/\d+\.\d+\.\d+\.\d+/;
+  if (IP_REGEX.test(primary)) {
+    console.log("[hgApiClient] apiDomain 为 IP 地址，跳过: " + primary);
+    primary = HG_URL;
+  }
   const all = [primary];
   for (const d of FALLBACK_DOMAINS) {
     if (d !== primary) all.push(d);
@@ -253,7 +259,8 @@ async function postTransformPhp(ver, cookieStr, params) {
       return result;
     } catch (err) {
       const isNetworkError = err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" ||
-        err.code === "ECONNRESET" || err.code === "ENOTFOUND" || err.code === "EAI_FAIL";
+        err.code === "ECONNRESET" || err.code === "ENOTFOUND" || err.code === "EAI_FAIL" ||
+        err.code === "ECONNABORTED";
 
       if (isNetworkError) {
         console.warn("[hgApiClient] 域名不可达: " + domain + " (" + err.code + ")，尝试下一个...");

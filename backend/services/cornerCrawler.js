@@ -1407,6 +1407,46 @@ async function ensureLogin() {
         });
       } catch (e) {}
 
+      // ★ 登录成功后，主动从页面提取 uid/ver 并写入 credentialManager（对标 autoLogin.js）
+      // 不依赖 chk_login 响应拦截（异步的，可能延迟或丢失）
+      try {
+        let extractedUid = null;
+        let extractedVer = null;
+        // 遍历所有 frame 提取 uid/ver
+        for (const frame of page.frames()) {
+          try {
+            const info = await frame.evaluate(() => {
+              try {
+                const uid = top.uid || window.uid || "";
+                const ver = top.ver || window.ver || "";
+                const chDomain = window._CHDomain || "";
+                return { uid, ver, chDomain };
+              } catch (e) { return { uid: "", ver: "", chDomain: "" }; }
+            });
+            if (info.uid && info.ver) {
+              extractedUid = info.uid;
+              extractedVer = info.ver;
+              console.log("[凭证同步] 从页面 DOM 提取 uid/ver 成功 (frame: " + frame.url().substring(0, 60) + ")");
+              break;
+            }
+          } catch (_) {}
+        }
+        // 如果 DOM 提取失败，使用 chk_login 拦截的缓存
+        if (!extractedUid && cachedSessionInfo?.uid) {
+          extractedUid = cachedSessionInfo.uid;
+          extractedVer = cachedSessionInfo.ver;
+          console.log("[凭证同步] 使用 chk_login 拦截的 uid/ver");
+        }
+        if (extractedUid && extractedVer) {
+          updateCredentials({ uid: extractedUid, ver: extractedVer, apiDomain: null });
+          console.log("[凭证同步] uid=" + extractedUid.substring(0, 10) + "..., ver=" + extractedVer.substring(0, 10) + "..., 写入 credentialManager 成功（apiDomain 已清理）");
+        } else {
+          console.warn("[凭证同步] 未能提取 uid/ver，后续纯 HTTP 请求可能失败");
+        }
+      } catch (e) {
+        console.warn("[凭证同步] 凭证同步失败:", e.message);
+      }
+
       try {
         const saved = await page.cookies();
         setLoginCookies(saved);
