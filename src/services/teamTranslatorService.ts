@@ -13,9 +13,13 @@ const MAX_CACHE_SIZE = 1000;
 const SETTLE_DELAY = 200;
 const MAX_CONCURRENCY = 5;
 
+// localStorage 可用性检测（Electron/SSR 环境可能不可用）
+const hasLocalStorage = typeof localStorage !== 'undefined';
+
 // ==================== 缓存操作 ====================
 
 function getTranslationCache(): Record<string, string> {
+  if (!hasLocalStorage) return {};
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return {};
@@ -30,6 +34,7 @@ function getTranslationCache(): Record<string, string> {
 }
 
 function setTranslationCache(enName: string, zhName: string): void {
+  if (!hasLocalStorage) return;
   try {
     const cache = getTranslationCache();
     cache[enName] = zhName;
@@ -124,8 +129,9 @@ async function callTranslateApi(enName: string): Promise<string> {
     }
 
     const data = await response.json();
-    const zhName: string | undefined = data?.translatedName || data?.zhName || data?.name;
-    if (zhName && typeof zhName === 'string' && zhName.trim()) {
+    // 匹配后端返回的 { success, translated } 字段
+    const zhName: string | undefined = data?.translated;
+    if (data?.success && zhName && typeof zhName === 'string' && zhName.trim() && zhName.trim() !== enName) {
       setTranslationCache(enName, zhName.trim());
       return zhName.trim();
     }
