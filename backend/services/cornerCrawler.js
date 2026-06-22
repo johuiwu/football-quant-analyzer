@@ -676,6 +676,13 @@ async function ensureLogin() {
             p.dispatchEvent(new Event("change", { bubbles: true }));
           }
         }, username, password);
+        // 验证凭据是否已填入
+        const filledValues = await targetFrame.evaluate(() => {
+          const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+          const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+          return { usr: u ? u.value : 'NOT_FOUND', pwd: p ? (p.value ? '***' : 'EMPTY') : 'NOT_FOUND' };
+        });
+        console.log("[登录步骤] 凭据填入验证: usr=" + filledValues.usr + ", pwd=" + filledValues.pwd);
       } catch (e) {
         // 回退：使用 Puppeteer type 方法
         console.log("[登录步骤] evaluate 填写失败，回退到 type 方式:", e.message);
@@ -753,6 +760,7 @@ async function ensureLogin() {
       const loginStartTime = Date.now();
       const LOGIN_POLL_TIMEOUT = 60000;
       let waitResponseCount = 0;
+      let loginPageCount = 0;
 
       while (Date.now() - loginStartTime < LOGIN_POLL_TIMEOUT) {
         await new Promise(r => setTimeout(r, 1000));
@@ -860,8 +868,75 @@ async function ensureLogin() {
             break;
 
           case 'LOGIN_PAGE':
-            // 还在登录页面，可能需要重新点击登录
-            console.log("[登录步骤] 第4步：检测页面状态 → 登录页面（等待中）");
+            // 还在登录页面，可能凭据未正确填入或登录按钮未生效
+            loginPageCount = (loginPageCount || 0) + 1;
+            if (loginPageCount <= 3) {
+              console.log("[登录步骤] 第4步：检测页面状态 → 登录页面，尝试重新输入凭据并点击登录 (" + loginPageCount + "/3)");
+              try {
+                // 遍历所有 frame 重新输入凭据
+                for (const frame of page.frames()) {
+                  try {
+                    const filled = await frame.evaluate((usr, pw) => {
+                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype, "value"
+                      ).set;
+                      const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+                      const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+                      if (u) {
+                        u.focus();
+                        nativeInputValueSetter.call(u, usr);
+                        u.dispatchEvent(new Event("input", { bubbles: true }));
+                        u.dispatchEvent(new Event("change", { bubbles: true }));
+                      }
+                      if (p) {
+                        p.focus();
+                        nativeInputValueSetter.call(p, pw);
+                        p.dispatchEvent(new Event("input", { bubbles: true }));
+                        p.dispatchEvent(new Event("change", { bubbles: true }));
+                      }
+                      return !!(u && p);
+                    }, username, password);
+                    if (filled) {
+                      await new Promise(r => setTimeout(r, 500));
+                      // 使用 Puppeteer click 点击登录按钮
+                      const btn = await frame.$("#btn_login, input[type='submit']");
+                      if (btn) {
+                        await btn.click();
+                        console.log("[登录步骤] 已重新点击登录按钮");
+                      } else {
+                        await frame.evaluate(() => {
+                          const b = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+                          if (b) b.click();
+                        });
+                      }
+                      break;
+                    }
+                  } catch (_) {}
+                }
+              } catch (_) {}
+            } else if (loginPageCount === 4) {
+              // 第 4 次仍在登录页面，输出诊断信息
+              console.log("[登录步骤] 第4步：检测页面状态 → 登录页面（已重试 3 次，输出诊断）");
+              try {
+                const loginDiag = await page.evaluate(() => {
+                  const u = document.querySelector("#usr, input[name='username']");
+                  const p = document.querySelector("#pwd, input[name='password']");
+                  const btn = document.querySelector("#btn_login, input[type='submit']");
+                  const errEl = document.getElementById("text_error");
+                  return {
+                    usrValue: u ? u.value : 'NOT_FOUND',
+                    pwdValue: p ? (p.value ? '***' : 'EMPTY') : 'NOT_FOUND',
+                    btnExists: !!btn,
+                    btnVisible: btn ? (btn.offsetParent !== null) : false,
+                    errorText: errEl ? errEl.textContent.trim() : '',
+                    url: window.location.href
+                  };
+                });
+                console.log("[登录诊断] 登录页面状态:", JSON.stringify(loginDiag, null, 2));
+              } catch (_) {}
+            } else {
+              console.log("[登录步骤] 第4步：检测页面状态 → 登录页面（等待中）");
+            }
             break;
 
           case 'LOGIN_ERROR':
