@@ -221,6 +221,10 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
  */
 async function processAutoBetsForMatches(matches) {
   const betConfig = getBetConfig();
+
+  // ★ 自动投注开关前置检查：未启用则直接返回，避免无意义的数据库写入
+  if (!betConfig.autoBetEnabled) return;
+
   // ★ 去重锁：过滤掉正在处理中的比赛
   const matchesToProcess = matches.filter(m => !processingMatchIds.has(m.matchId));
   if (matchesToProcess.length === 0) return;
@@ -231,8 +235,6 @@ async function processAutoBetsForMatches(matches) {
   }
 
   try {
-  // ★ 不再提前 return：即使 isRealMode=false 或 autoBetEnabled=false，
-  // 也要进入投注函数生成 skipped 记录，让用户在投注记录中看到策略触发了但未执行
   for (const match of matchesToProcess) {
     // ★ 空数组时跳过所有比赛（无追踪比赛 = 不投注）
     if (betConfig.trackedMatchIds.length === 0) {
@@ -424,8 +426,10 @@ async function pollOnce() {
       }, sharedPage, (endedMatchId) => {
         // 比赛结束回调：从 cachedMatches 中移除已结束的比赛
         const before = cachedMatches.length;
+        const endedMatch = cachedMatches.find(m => m.matchId === endedMatchId);
         cachedMatches = cachedMatches.filter(m => m.matchId !== endedMatchId);
-        console.log(`[cornerService] 比赛结束移除: matchId=${endedMatchId}, 缓存 ${before}->${cachedMatches.length}`);
+        const matchInfo = endedMatch ? `${endedMatch.homeTeam} vs ${endedMatch.awayTeam}` : '未知';
+        console.log(`[cornerService] 比赛结束移除: matchId=${endedMatchId}, ${matchInfo}, 缓存 ${before}->${cachedMatches.length}`);
       });
     }
   }
@@ -674,7 +678,13 @@ export async function getLiveCornerData(filterMatchId) {
   const generatedAt = new Date().toISOString();
 
   // 过滤已结束的比赛（liveStatus 不为 "live" 的视为已结束）
-  const liveMatches = cachedMatches.filter(m => !m.liveStatus || m.liveStatus === "live");
+  const liveMatches = cachedMatches.filter(m => {
+    // liveStatus check: only include matches that are live or have no status set
+    const isLiveByStatus = !m.liveStatus || m.liveStatus === "live";
+    // elapsedMinutes check: filter out matches that have clearly ended (>=130 min)
+    const isLiveByTime = (m.elapsedMinutes || 0) < 130;
+    return isLiveByStatus && isLiveByTime;
+  });
 
   // 检查缓存是否有效（有数据且未过期）
   const now = Date.now();
