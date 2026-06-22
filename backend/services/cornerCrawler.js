@@ -655,12 +655,45 @@ async function ensureLogin() {
           }
         } catch (_) {}
       }
-      await targetFrame.evaluate((usr, pw) => {
-        const u = document.getElementById('usr') || document.querySelector("input[name='username']");
-        const p = document.getElementById('pwd') || document.querySelector("input[name='password']");
-        if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-        if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-      }, username, password);
+      // ★ 使用 nativeInputValueSetter（与 autoLogin.js 一致），确保 React 等框架能检测到值变化
+      try {
+        await targetFrame.evaluate((usr, pw) => {
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, "value"
+          ).set;
+          const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+          if (u) {
+            u.focus();
+            nativeInputValueSetter.call(u, usr);
+            u.dispatchEvent(new Event("input", { bubbles: true }));
+            u.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+          if (p) {
+            p.focus();
+            nativeInputValueSetter.call(p, pw);
+            p.dispatchEvent(new Event("input", { bubbles: true }));
+            p.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        }, username, password);
+      } catch (e) {
+        // 回退：使用 Puppeteer type 方法
+        console.log("[登录步骤] evaluate 填写失败，回退到 type 方式:", e.message);
+        try {
+          const usernameInput = await targetFrame.$("#usr, input[name='username'], input[type='text']");
+          if (usernameInput) {
+            await usernameInput.evaluate(el => el.focus());
+            await usernameInput.type(username, { delay: 50 });
+          }
+          const passwordInput = await targetFrame.$("#pwd, input[name='password'], input[type='password']");
+          if (passwordInput) {
+            await passwordInput.evaluate(el => el.focus());
+            await passwordInput.type(password, { delay: 50 });
+          }
+        } catch (e2) {
+          console.log("[登录步骤] type 方式也失败:", e2.message);
+        }
+      }
 
       // 勾选「记住我」
       try {
@@ -720,16 +753,29 @@ async function ensureLogin() {
             }
             await new Promise(r => setTimeout(r, 1500));
             console.log("[登录步骤] 已点击普通登入，等待登录页面加载后重新登录...");
-            // 重新输入账号密码（遍历所有 frame）
+            // 重新输入账号密码（遍历所有 frame，使用 nativeInputValueSetter）
             const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
             const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
             for (const frame of page.frames()) {
               try {
                 const filled = await frame.evaluate((usr, pw) => {
-                  const u = document.getElementById('usr') || document.querySelector("input[name='username']");
-                  const p = document.getElementById('pwd') || document.querySelector("input[name='password']");
-                  if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-                  if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, "value"
+                  ).set;
+                  const u = document.querySelector("#usr, input[name='username'], input[type='text']");
+                  const p = document.querySelector("#pwd, input[name='password'], input[type='password']");
+                  if (u) {
+                    u.focus();
+                    nativeInputValueSetter.call(u, usr);
+                    u.dispatchEvent(new Event("input", { bubbles: true }));
+                    u.dispatchEvent(new Event("change", { bubbles: true }));
+                  }
+                  if (p) {
+                    p.focus();
+                    nativeInputValueSetter.call(p, pw);
+                    p.dispatchEvent(new Event("input", { bubbles: true }));
+                    p.dispatchEvent(new Event("change", { bubbles: true }));
+                  }
                   return !!(u && p);
                 }, reUser, rePwd);
                 if (filled) {
