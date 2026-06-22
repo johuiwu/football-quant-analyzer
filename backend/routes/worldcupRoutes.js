@@ -6,7 +6,8 @@ import { WORLD_CUP_TEAMS, WORLD_CUP_FIXTURES_2026, worldcupTeamIdToName } from '
 import { fetchMultipleTeamsRecentStats, fetchWorldCupMatchResults } from '../services/worldcupDataFetcher.js';
 import { fetchStandings } from '../services/worldcupStandingsCrawler.js';
 
-const TEAM_STATS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.ts');
+const TEAM_STATS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.json');
+const TEAM_STATS_TS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.ts');
 
 const router = Router();
 
@@ -210,8 +211,32 @@ function isEstimatedDefault(stats) {
   return false;
 }
 
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function migrateFromTsFile() {
+  try {
+    if (!fs.existsSync(TEAM_STATS_TS_FILE)) return;
+    const content = fs.readFileSync(TEAM_STATS_TS_FILE, 'utf-8');
+    const stats = {};
+    const regex = /(\w+):\s*\{([^}]+)\}/g;
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      const teamId = match[1];
+      if (teamId === 'default' || teamId === 'export' || teamId === 'const') continue;
+      const fieldsStr = match[2];
+      const fields = {};
+      const fieldRegex = /(\w+):\s*([\d.]+)/g;
+      let fm;
+      while ((fm = fieldRegex.exec(fieldsStr)) !== null) {
+        fields[fm[1]] = parseFloat(fm[2]);
+      }
+      if (Object.keys(fields).length >= 5) {
+        stats[teamId] = fields;
+      }
+    }
+    fs.writeFileSync(TEAM_STATS_FILE, JSON.stringify(stats, null, 2), 'utf-8');
+    console.log(`[worldcupRoutes] Migrated ${Object.keys(stats).length} team stats from TS to JSON`);
+  } catch (error) {
+    console.error('[worldcupRoutes] Migration from TS failed:', error.message);
+  }
 }
 
 async function fetchLivescoreCategory(category) {
@@ -276,27 +301,18 @@ function convertToSystemStats(livescoreData) {
   return results;
 }
 
-/** 从 worldcup_team_stats.ts 文件中读取所有球队统计数据 */
+/** 从 worldcup_team_stats.json 文件中读取所有球队统计数据 */
 function readStatsFromFile() {
-  const content = fs.readFileSync(TEAM_STATS_FILE, 'utf-8');
-  const stats = {};
-  const regex = /(\w+):\s*\{([^}]+)\}/g;
-  let match;
-  while ((match = regex.exec(content)) !== null) {
-    const teamId = match[1];
-    if (teamId === 'default' || teamId === 'export' || teamId === 'const') continue;
-    const fieldsStr = match[2];
-    const fields = {};
-    const fieldRegex = /(\w+):\s*([\d.]+)/g;
-    let fm;
-    while ((fm = fieldRegex.exec(fieldsStr)) !== null) {
-      fields[fm[1]] = parseFloat(fm[2]);
-    }
-    if (Object.keys(fields).length >= 5) {
-      stats[teamId] = fields;
-    }
+  if (!fs.existsSync(TEAM_STATS_FILE)) {
+    migrateFromTsFile();
   }
-  return stats;
+  try {
+    const content = fs.readFileSync(TEAM_STATS_FILE, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('[worldcupRoutes] Failed to read stats JSON:', error.message);
+    return {};
+  }
 }
 
 // ---- 获取所有球队统计数据端点 ----
@@ -317,34 +333,44 @@ router.post('/worldcup/refresh-team-stats', async (req, res) => {
     const apiData = await fetchAllLivescoreStats();
     const converted = convertToSystemStats(apiData);
 
-    const content = fs.readFileSync(TEAM_STATS_FILE, 'utf-8');
+    // Read current stats from JSON file
+    const currentStats = readStatsFromFile();
     let updated = 0;
-    let newContent = content;
 
     for (const [teamId, stats] of Object.entries(converted)) {
-      // 检查是否需要跳过（已有真实数据）
-      const lineRegex = new RegExp(`${escapeRegex(teamId)}:\\s*\\{([^}]+)\\}`, 'g');
-      const lineMatch = lineRegex.exec(content);
-      if (lineMatch) {
-        // Always update with API data (remove isEstimatedDefault check)
-      }
-
-      const replacement = `${teamId}: { avgXgFor: ${stats.avgXgFor.toFixed(1)}, avgXgAgainst: ${stats.avgXgAgainst.toFixed(1)}, avgPossession: ${Math.round(stats.avgPossession)}, avgShots: ${stats.avgShots.toFixed(1)}, avgShotsOnTarget: ${stats.avgShotsOnTarget.toFixed(1)}, avgGoalsFor: ${stats.avgGoalsFor.toFixed(1)}, avgGoalsAgainst: ${stats.avgGoalsAgainst.toFixed(1)}, avgCorners: ${stats.avgCorners.toFixed(1)}, winRate: ${stats.winRate.toFixed(2)} }`;
-
-      if (new RegExp(`(${escapeRegex(teamId)}:\\s*\\{)[^}]+(\\})`).test(newContent)) {
-        newContent = newContent.replace(
-          new RegExp(`(${escapeRegex(teamId)}:\\s*\\{)[^}]+(\\})`),
-          replacement
-        );
-        updated++;
-      }
+      currentStats[teamId] = {
+        avgXgFor: stats.avgXgFor,
+        avgXgAgainst: stats.avgXgAgainst,
+        avgPossession: Math.round(stats.avgPossession),
+        avgShots: stats.avgShots,
+        avgShotsOnTarget: stats.avgShotsOnTarget,
+        avgGoalsFor: stats.avgGoalsFor,
+        avgGoalsAgainst: stats.avgGoalsAgainst,
+        avgCorners: stats.avgCorners,
+        winRate: stats.winRate,
+      };
+      updated++;
     }
 
+    // Backup and write JSON file
     if (updated > 0) {
-      if (!fs.existsSync(TEAM_STATS_FILE + '.bak')) {
+      if (!fs.existsSync(TEAM_STATS_FILE + '.bak') && fs.existsSync(TEAM_STATS_FILE)) {
         fs.copyFileSync(TEAM_STATS_FILE, TEAM_STATS_FILE + '.bak');
       }
-      fs.writeFileSync(TEAM_STATS_FILE, newContent, 'utf-8');
+      fs.writeFileSync(TEAM_STATS_FILE, JSON.stringify(currentStats, null, 2), 'utf-8');
+    }
+
+    // Also update in-memory teamRecentStatsMap for prediction services
+    for (const [teamId, stats] of Object.entries(converted)) {
+      teamRecentStatsMap[teamId] = [{
+        xg: stats.avgXgFor,
+        xga: stats.avgXgAgainst,
+        possession: stats.avgPossession,
+        shotsOnTarget: stats.avgShotsOnTarget,
+        corners: stats.avgCorners,
+        goalsFor: stats.avgGoalsFor,
+        goalsAgainst: stats.avgGoalsAgainst,
+      }];
     }
 
     res.json({ success: true, updated, total: Object.keys(converted).length });

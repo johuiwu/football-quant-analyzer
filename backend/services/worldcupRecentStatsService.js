@@ -40,12 +40,27 @@ export function calculateXgExpectedGoals(homeRecentStats, awayRecentStats, stage
   return { homeExpectedGoals: null, awayExpectedGoals: null, source: 'none' };
 }
 
-import { getTeamStats } from '../../src/data/worldcup_team_stats.js';
+import fs from 'fs';
+import path from 'path';
+import { getTeamStats as getTeamStatsFromTs } from '../../src/data/worldcup_team_stats.js';
+
+const TEAM_STATS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.json');
+
+function getTeamStatsFromFile(teamId) {
+  try {
+    if (!fs.existsSync(TEAM_STATS_FILE)) return null;
+    const content = fs.readFileSync(TEAM_STATS_FILE, 'utf-8');
+    const stats = JSON.parse(content);
+    return stats[teamId] || null;
+  } catch {
+    return null;
+  }
+}
 
 export function getFallbackExpectedGoals(homeTeamId, awayTeamId, stage) {
   const stageFactor = STAGE_FACTORS[stage] || 1.0;
-  const home = getTeamStats(homeTeamId);
-  const away = getTeamStats(awayTeamId);
+  const home = getTeamStatsFromFile(homeTeamId) || getTeamStatsFromTs(homeTeamId);
+  const away = getTeamStatsFromFile(awayTeamId) || getTeamStatsFromTs(awayTeamId);
   const homeX = home.avgXgFor || 1.0;
   const homeXA = home.avgXgAgainst || 1.0;
   const awayX = away.avgXgFor || 1.0;

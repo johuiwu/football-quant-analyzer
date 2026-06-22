@@ -1,6 +1,19 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getTeamStats } from '../../src/data/worldcup_team_stats.js';
+import { getTeamStats as getTeamStatsFromTs } from '../../src/data/worldcup_team_stats.js';
+
+const TEAM_STATS_FILE = join(process.cwd(), 'src', 'data', 'worldcup_team_stats.json');
+
+function getTeamStatsFromFile(teamId) {
+  try {
+    if (!existsSync(TEAM_STATS_FILE)) return null;
+    const content = readFileSync(TEAM_STATS_FILE, 'utf-8');
+    const stats = JSON.parse(content);
+    return stats[teamId] || null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── 内联 Elo 评分数据（来自 world-cup-2026-prediction-model/data/elo-calibrated.json） ───
 const ELO_RATINGS = {
@@ -125,8 +138,8 @@ export async function predictWithExternalModel(homeTeamId, awayTeamId) {
   if (ratingA == null) throw new Error(`外部模型无 ${homeExternal} (${homeTeamId}) 的 Elo 评分`);
   if (ratingB == null) throw new Error(`外部模型无 ${awayExternal} (${awayTeamId}) 的 Elo 评分`);
 
-  const homeStats = getTeamStats(homeTeamId);
-  const awayStats = getTeamStats(awayTeamId);
+  const homeStats = getTeamStatsFromFile(homeTeamId) || getTeamStatsFromTs(homeTeamId);
+  const awayStats = getTeamStatsFromFile(awayTeamId) || getTeamStatsFromTs(awayTeamId);
   const homeForm = applyFormAdjustment(ratingA, homeStats?.winRate);
   const awayForm = applyFormAdjustment(ratingB, awayStats?.winRate);
 
