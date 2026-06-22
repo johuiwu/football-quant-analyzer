@@ -1,18 +1,13 @@
 version: 2.8.5
 files:
-  # blockmap 差分更新元数据 (137KB) — Gitee 直连秒下
-  - url: https://gitee.com/johuiwu/football-quant-analyzer/releases/attach_files/football-quant-analyzer-setup-2.8.5.exe.blockmap
-    sha512: UY+dHnlaXz3spX9WxfBBWmTvfAqo0B/CbZjP0d7WUZFXZcUae+hH25BovxVF66q0E4bniJm0uFX45laHCKT/SQ==
-    size: 137204
-  # blockmap 备选 (GitHub)
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.5/football-quant-analyzer-setup-2.8.5.exe.blockmap
-    sha512: UY+dHnlaXz3spX9WxfBBWmTvfAqo0B/CbZjP0d7WUZFXZcUae+hH25BovxVF66q0E4bniJm0uFX45laHCKT/SQ==
-    size: 137204
-  # 完整安装包 (124MB) — 仅首次安装或全量更新时需要，走 GitHub + 代理加速
-  # 老用户通过 blockmap 差分更新只需下载几MB~几十MB的变化部分
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.5/football-quant-analyzer-setup-2.8.5.exe
+  # 完整安装包 — 走 kkgithub.com 国内镜像 (5~10MB/s)
+  - url: https://kkgithub.com/https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.5/football-quant-analyzer-setup-2.8.5.exe
     sha512: nZGYOdlUP7iwLUTdvmiMhbmhHVQEdDDF4nOIpyuSQsj4QWXEr5+k2Xcx6ENUkxVaZgSM0G7kgUmerTpBfBAKDw==
     size: 130228842
+  # 差分更新元数据 — 也走镜像（137KB，秒下）
+  - url: https://kkgithub.com/https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.5/football-quant-analyzer-setup-2.8.5.exe.blockmap
+    sha512: UY+dHnlaXz3spX9WxfBBWmTvfAqo0B/CbZjP0d7WUZFXZcUae+hH25BovxVF66q0E4bniJm0uFX45laHCKT/SQ==
+    size: 137204
 path: football-quant-analyzer-setup-2.8.5.exe
 sha512: nZGYOdlUP7iwLUTdvmiMhbmhHVQEdDDF4nOIpyuSQsj4QWXEr5+k2Xcx6ENUkxVaZgSM0G7kgUmerTpBfBAKDw==
 releaseDate: '2026-06-22T09:40:04.686Z'
