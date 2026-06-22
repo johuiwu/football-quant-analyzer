@@ -82,9 +82,9 @@ export interface CornerSettings {
   hgPassword: string;
   balance: number;
   refreshInterval: number;
-  strongHandicapThreshold: number; // @todo 规划中 - 将作为全局盘口兜底限制，当前未接入任何判断逻辑
-  handicapUpperLimit: number; // @todo 规划中
-  handicapLowerLimit: number; // @todo 规划中
+  strongHandicapThreshold: number; // 盘口绝对值>=此值时区分强弱队，用于leadSide判断
+  handicapUpperLimit: number; // 全局盘口上限，超过此值的比赛不触发任何策略
+  handicapLowerLimit: number; // 全局盘口下限，低于此值的比赛不触发任何策略
   betAmount: number;
   pollInterval: number;
   isRealMode: boolean;
@@ -193,7 +193,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     betDirection: "over",
     minCurrentCorners: 0,
     maxCurrentCorners: 99,
-    leadSide: "any",
+    leadSide: "strong",
   },
   {
     id: 3,
@@ -207,8 +207,8 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     cornerHandicapUpper: 2.0,
     targetOdds: 0.8,
     maxOdds: 1.10,
-    betDirection: "over",
-    minCurrentCorners: 5,
+    betDirection: "under",
+    minCurrentCorners: 3,
     maxCurrentCorners: 9,
     leadSide: "any",
   },
@@ -227,7 +227,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     betDirection: "over",
     minCurrentCorners: 0,
     maxCurrentCorners: 99,
-    leadSide: "any",
+    leadSide: "strong",
   },
   {
     id: 5,
@@ -406,6 +406,19 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         })
       }).catch(() => {});
     }
+    // 全局盘口设置变更时同步到后端
+    if ('strongHandicapThreshold' in partial || 'handicapUpperLimit' in partial || 'handicapLowerLimit' in partial) {
+      const s = get().settings;
+      fetch('/api/corner/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          strongHandicapThreshold: s.strongHandicapThreshold,
+          handicapUpperLimit: s.handicapUpperLimit,
+          handicapLowerLimit: s.handicapLowerLimit,
+        })
+      }).catch(() => {});
+    }
   },
 
   // 一次性同步所有配置到后端（用于页面初始化时确保前后端一致）
@@ -425,6 +438,16 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
     }).catch(() => {});
     // ★ 同步策略到后端，确保后端重启后策略不丢失
     syncStrategiesToBackend(get().strategies);
+    // ★ 同步全局设置到后端（盘口分界线、上下限）
+    fetch('/api/corner/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        strongHandicapThreshold: s.strongHandicapThreshold,
+        handicapUpperLimit: s.handicapUpperLimit,
+        handicapLowerLimit: s.handicapLowerLimit,
+      })
+    }).catch(() => {});
   },
 
   updateBalance: (balance) =>

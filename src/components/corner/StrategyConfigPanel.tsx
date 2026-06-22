@@ -12,9 +12,9 @@ const errorClass = "text-[9px] text-rose-400 mt-0.5 block font-sans";
 // 默认值映射（用于显示"默认: X"提示）
 const DEFAULT_VALUES: Record<string, Record<string, number | string>> = {
   "1": { playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -1.25, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 3, maxCurrentCorners: 7, leadSide: "any", betDirection: "over" },
-  "2": { playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any", betDirection: "over" },
-  "3": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 5, maxCurrentCorners: 9, leadSide: "any", betDirection: "over" },
-  "4": { playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any", betDirection: "over" },
+  "2": { playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong", betDirection: "over" },
+  "3": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 3, maxCurrentCorners: 9, leadSide: "any", betDirection: "under" },
+  "4": { playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong", betDirection: "over" },
   "5": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any", betDirection: "over" },
   "6": { playTimeStart: 55, playTimeEnd: 75, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 2, maxCurrentCorners: 8, leadSide: "any", betDirection: "over" },
   "7": { playTimeStart: 60, playTimeEnd: 80, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 3, maxCurrentCorners: 5, leadSide: "any", betDirection: "over" },
@@ -168,7 +168,7 @@ export default function StrategyConfigPanel() {
       </div>
 
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        配置 5 套角球投注策略的条件参数。左侧调整策略触发条件，右侧管理账号与系统设置。
+        配置 7 套角球投注策略的条件参数。左侧调整策略触发条件，右侧管理账号与系统设置。
       </p>
 
       {/* 方向冲突警告 */}

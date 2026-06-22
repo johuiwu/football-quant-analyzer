@@ -55,7 +55,7 @@ export function resolveStrategyOdds(match, strategy) {
  * @param {Object} strategy - 策略配置 { enabled, playTimeStart, playTimeEnd, cornerHandicapLower, cornerHandicapUpper, targetOdds, leadGoals, leadGoalsWeak }
  * @returns {boolean} 是否触发
  */
-export function evaluateSingleStrategy(match, strategy) {
+export function evaluateSingleStrategy(match, strategy, globalSettings) {
   if (!strategy.enabled) return false;
 
   const currentMinute = match.elapsedMinutes ?? match.currentMinute ?? match.elapsed_minutes ?? 0;
@@ -107,14 +107,19 @@ export function evaluateSingleStrategy(match, strategy) {
   const maxCorners = strategy.maxCurrentCorners ?? 99;
   if (totalCorners < minCorners || totalCorners > maxCorners) return false;
 
-  // 领先方身份判断（leadSide 字段）
+  // 领先方身份判断（leadSide 字段）- 需结合 strongHandicapThreshold
   if (strategy.leadSide && strategy.leadSide !== "any" && goalDiff > 0) {
-    const homeLeading = homeScore > awayScore;
-    // 盘口正值表示主队让球（主队为强队），负值表示客队让球（客队为强队）
-    const homeIsStrong = handicap >= 0;
-    const strongTeamLeading = (homeIsStrong && homeLeading) || (!homeIsStrong && !homeLeading);
-    if (strategy.leadSide === "strong" && !strongTeamLeading) return false;
-    if (strategy.leadSide === "weak" && strongTeamLeading) return false;
+    const threshold = globalSettings?.strongHandicapThreshold ?? 1;
+    const isStrongWeakMatchup = Math.abs(handicap) >= threshold;
+    if (isStrongWeakMatchup) {
+      // 盘口足够深，可以区分强弱队
+      const homeLeading = homeScore > awayScore;
+      const homeIsStrong = handicap >= 0;
+      const strongTeamLeading = (homeIsStrong && homeLeading) || (!homeIsStrong && !homeLeading);
+      if (strategy.leadSide === "strong" && !strongTeamLeading) return false;
+      if (strategy.leadSide === "weak" && strongTeamLeading) return false;
+    }
+    // 盘口太浅（< threshold），无法区分强弱队，leadSide 条件不生效，视为 "any"
   }
 
   // 比分条件检查
@@ -143,8 +148,16 @@ export function evaluateSingleStrategy(match, strategy) {
  * @param {Array} strategies - 策略列表
  * @returns {Array<number|string>} 触发的策略ID数组
  */
-export function evaluateStrategies(match, strategies) {
+export function evaluateStrategies(match, strategies, globalSettings) {
   if (!match || !strategies || !Array.isArray(strategies)) return [];
+
+  // 全局盘口兜底检查
+  const handicap = match.handicap ?? match.cornerHandicap ?? 0;
+  if (globalSettings) {
+    if (handicap < (globalSettings.handicapLowerLimit ?? -1.25)) return [];
+    if (handicap > (globalSettings.handicapUpperLimit ?? 3.5)) return [];
+  }
+
   const key = cacheKey(match, strategies);
   const cached = evaluationCache.get(key);
   if (cached !== undefined) {
@@ -155,7 +168,7 @@ export function evaluateStrategies(match, strategies) {
     }
   }
   const result = strategies
-    .filter(s => evaluateSingleStrategy(match, s))
+    .filter(s => evaluateSingleStrategy(match, s, globalSettings))
     .map(s => s.id);
 
   // 策略间方向冲突互斥：如果同一场比赛触发了多个策略且 betDirection 存在 over/under 冲突，只保留 id 最小的策略

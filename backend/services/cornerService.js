@@ -63,15 +63,34 @@ const pollingAnalytics = {
 // ======================== 策略配置 ========================
 export const DEFAULT_STRATEGIES = [
   { id: 1, enabled: false, name: "策略一 · 走地角球(35'-55')", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -1.25, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 3, maxCurrentCorners: 7, leadSide: "any" },
-  { id: 2, enabled: false, name: "策略二 · 领先比分(50'-77')", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any" },
-  { id: 3, enabled: false, name: "策略三 · 比分平局(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 5, maxCurrentCorners: 9, leadSide: "any" },
-  { id: 4, enabled: false, name: "策略四 · 领先追角(60'-99')", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any" },
+  { id: 2, enabled: false, name: "策略二 · 领先比分(50'-77')", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong" },
+  { id: 3, enabled: false, name: "策略三 · 比分平局(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.8, maxOdds: 1.10, betDirection: "under", minCurrentCorners: 3, maxCurrentCorners: 9, leadSide: "any" },
+  { id: 4, enabled: false, name: "策略四 · 领先追角(60'-99')", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong" },
   { id: 5, enabled: false, name: "策略五 · 尾声角球(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any" },
   { id: 6, enabled: false, name: "策略六 · 逆风角球(55'-75')", playTimeStart: 55, playTimeEnd: 75, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 2, maxCurrentCorners: 8, leadSide: "any" },
   { id: 7, enabled: false, name: "策略七 · 均值回归(60'-80')", playTimeStart: 60, playTimeEnd: 80, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 3, maxCurrentCorners: 5, leadSide: "any" },
 ];
 
 let activeStrategies = DEFAULT_STRATEGIES;
+
+// ======================== 全局设置 ========================
+const DEFAULT_CORNER_SETTINGS = {
+  strongHandicapThreshold: 1,
+  handicapUpperLimit: 3.5,
+  handicapLowerLimit: -1.25,
+};
+
+let activeCornerSettings = { ...DEFAULT_CORNER_SETTINGS };
+
+export function getCornerSettings() {
+  return activeCornerSettings;
+}
+
+export function setCornerSettings(settings) {
+  if (settings && typeof settings === "object") {
+    activeCornerSettings = { ...DEFAULT_CORNER_SETTINGS, ...settings };
+  }
+}
 
 export function setCornerStrategies(strategies) {
   if (strategies && Array.isArray(strategies) && strategies.length > 0) {
@@ -170,7 +189,7 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
     console.log("[cornerService] 数据变化: " + changes.length + " 项, 涉及 " + changedMatchIds.length + " 场比赛, 触发策略评估");
     for (const match of matches) {
       if (changedMatchIds.includes(match.matchId)) {
-        const triggeredIds = evaluateStrategies(match, activeStrategies);
+        const triggeredIds = evaluateStrategies(match, activeStrategies, activeCornerSettings);
         match.triggeredStrategies = triggeredIds;
         for (const sid of triggeredIds) {
           const strategy = activeStrategies.find(s => s.id === sid);
@@ -705,8 +724,8 @@ export async function getLiveCornerData(filterMatchId) {
 
 // ======================== 策略评估引擎（委托给共享模块 cornerEvaluator.js） ========================
 // 前端统一使用后端 API 返回的 triggeredStrategies，不再本地评估
-export function evaluateStrategies(match, strategies) {
-  return evaluateCornerStrategies(match, strategies);
+export function evaluateStrategies(match, strategies, globalSettings) {
+  return evaluateCornerStrategies(match, strategies, globalSettings);
 }
 
 // ======================== 回测模拟单步执行 ========================

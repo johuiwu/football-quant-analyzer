@@ -86,6 +86,48 @@ router.get("/corner/strategies/check", async (req, res) => {
   }
 });
 
+// ======================== GET /api/corner/settings ========================
+router.get("/corner/settings", async (req, res) => {
+  try {
+    const { getCornerSettings } = await import("../services/cornerService.js");
+    res.json({ success: true, data: getCornerSettings() });
+  } catch (err) {
+    console.error("[cornerRoutes] GET /corner/settings error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== PUT /api/corner/settings ========================
+router.put("/corner/settings", async (req, res) => {
+  try {
+    const { setCornerSettings } = await import("../services/cornerService.js");
+    const settings = req.body || {};
+    // 参数验证
+    const errors = [];
+    if (settings.strongHandicapThreshold !== undefined && (settings.strongHandicapThreshold < 0 || settings.strongHandicapThreshold > 5)) {
+      errors.push("strongHandicapThreshold需在0-5之间");
+    }
+    if (settings.handicapUpperLimit !== undefined && (settings.handicapUpperLimit < -5 || settings.handicapUpperLimit > 10)) {
+      errors.push("handicapUpperLimit需在-5到10之间");
+    }
+    if (settings.handicapLowerLimit !== undefined && (settings.handicapLowerLimit < -5 || settings.handicapLowerLimit > 10)) {
+      errors.push("handicapLowerLimit需在-5到10之间");
+    }
+    if (settings.handicapLowerLimit !== undefined && settings.handicapUpperLimit !== undefined && settings.handicapLowerLimit >= settings.handicapUpperLimit) {
+      errors.push("handicapLowerLimit必须小于handicapUpperLimit");
+    }
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, error: "参数验证失败", details: errors });
+    }
+    setCornerSettings(settings);
+    console.log("[cornerRoutes] 全局设置已同步:", settings);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[cornerRoutes] PUT /corner/settings error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ======================== GET /api/corner/strategies/default ========================
 router.get("/corner/strategies/default", async (req, res) => {
   try {

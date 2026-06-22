@@ -87,7 +87,7 @@ export default function SettingsPanel() {
             />
           </div>
           <div>
-            <label className={labelClass}>强弱盘口分界线</label>
+            <label className={labelClass}>强弱盘口分界线 <span className="text-[9px] text-slate-600">（盘口≥此值时区分强弱队）</span></label>
             <input
               type="number"
               className={inputClass}
@@ -98,7 +98,7 @@ export default function SettingsPanel() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>盘口上限</label>
+              <label className={labelClass}>盘口上限 <span className="text-[9px] text-slate-600">（超过不触发）</span></label>
               <input
                 type="number"
                 className={inputClass}
@@ -108,7 +108,7 @@ export default function SettingsPanel() {
               />
             </div>
             <div>
-              <label className={labelClass}>盘口下限</label>
+              <label className={labelClass}>盘口下限 <span className="text-[9px] text-slate-600">（低于不触发）</span></label>
               <input
                 type="number"
                 className={inputClass}
@@ -118,6 +118,9 @@ export default function SettingsPanel() {
               />
             </div>
           </div>
+          {settings.handicapLowerLimit >= settings.handicapUpperLimit && (
+            <span className="text-[9px] text-rose-400 block font-sans">盘口下限必须小于上限</span>
+          )}
         </div>
       </div>
 
