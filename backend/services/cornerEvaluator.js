@@ -97,6 +97,25 @@ export function evaluateSingleStrategy(match, strategy) {
   }
   // 赔率条件检查
   if (odds < strategy.targetOdds) return false;
+  // 赔率上限检查
+  const maxOdds = strategy.maxOdds ?? 1.10;
+  if (odds > maxOdds) return false;
+
+  // 角球数绝对值范围检查
+  const totalCorners = homeCorners + awayCorners;
+  const minCorners = strategy.minCurrentCorners ?? 0;
+  const maxCorners = strategy.maxCurrentCorners ?? 99;
+  if (totalCorners < minCorners || totalCorners > maxCorners) return false;
+
+  // 领先方身份判断（leadSide 字段）
+  if (strategy.leadSide && strategy.leadSide !== "any" && goalDiff > 0) {
+    const homeLeading = homeScore > awayScore;
+    // 盘口正值表示主队让球（主队为强队），负值表示客队让球（客队为强队）
+    const homeIsStrong = handicap >= 0;
+    const strongTeamLeading = (homeIsStrong && homeLeading) || (!homeIsStrong && !homeLeading);
+    if (strategy.leadSide === "strong" && !strongTeamLeading) return false;
+    if (strategy.leadSide === "weak" && strongTeamLeading) return false;
+  }
 
   // 比分条件检查
   // leadGoals >= 20 → 哨兵值，不做比分限制（如策略一 leadGoals=99）
@@ -138,6 +157,22 @@ export function evaluateStrategies(match, strategies) {
   const result = strategies
     .filter(s => evaluateSingleStrategy(match, s))
     .map(s => s.id);
+
+  // 策略间方向冲突互斥：如果同一场比赛触发了多个策略且 betDirection 存在 over/under 冲突，只保留 id 最小的策略
+  if (result.length > 1) {
+    const triggeredStrategies = strategies.filter(s => result.includes(s.id));
+    const hasOver = triggeredStrategies.some(s => s.betDirection === "over");
+    const hasUnder = triggeredStrategies.some(s => s.betDirection === "under");
+    if (hasOver && hasUnder) {
+      // 方向冲突：只保留 id 最小的策略（优先级最高）
+      const minId = Math.min(...result);
+      console.log(`[策略互斥] 比赛${match.matchId || ''}触发策略${result.join(',')}存在over/under冲突，保留策略${minId}`);
+      const filteredResult = [minId];
+      evaluationCache.set(key, { value: filteredResult, timestamp: Date.now() });
+      return filteredResult;
+    }
+  }
+
   if (evaluationCache.size >= EVALUATION_CACHE_MAX) {
     const firstKey = evaluationCache.keys().next().value;
     evaluationCache.delete(firstKey);

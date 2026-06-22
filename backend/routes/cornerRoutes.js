@@ -104,6 +104,64 @@ router.put("/corner/strategies", async (req, res) => {
     if (!strategies || !Array.isArray(strategies) || strategies.length === 0) {
       return res.status(400).json({ success: false, error: "请提供有效的策略列表" });
     }
+
+    // 参数验证
+    const VALID_BET_DIRECTIONS = ["auto", "over", "under", "home", "away"];
+    const VALID_LEAD_SIDES = ["any", "strong", "weak"];
+    const errors = [];
+
+    for (const s of strategies) {
+      if (typeof s.id !== 'number' || s.id < 1 || s.id > 10) {
+        errors.push(`策略id必须为1-10的数字`);
+      }
+      if (s.playTimeStart !== undefined && (s.playTimeStart < 0 || s.playTimeStart > 120)) {
+        errors.push(`策略${s.id}: playTimeStart需在0-120之间`);
+      }
+      if (s.playTimeEnd !== undefined && (s.playTimeEnd < 0 || s.playTimeEnd > 120)) {
+        errors.push(`策略${s.id}: playTimeEnd需在0-120之间`);
+      }
+      if (s.playTimeStart !== undefined && s.playTimeEnd !== undefined && s.playTimeStart >= s.playTimeEnd) {
+        errors.push(`策略${s.id}: playTimeStart必须小于playTimeEnd`);
+      }
+      if (s.cornerHandicapLower !== undefined && s.cornerHandicapUpper !== undefined && s.cornerHandicapLower > s.cornerHandicapUpper) {
+        errors.push(`策略${s.id}: cornerHandicapLower不能大于cornerHandicapUpper`);
+      }
+      if (s.targetOdds !== undefined && (s.targetOdds < 0 || s.targetOdds > 3)) {
+        errors.push(`策略${s.id}: targetOdds需在0-3之间`);
+      }
+      if (s.maxOdds !== undefined && (s.maxOdds < 0 || s.maxOdds > 3)) {
+        errors.push(`策略${s.id}: maxOdds需在0-3之间`);
+      }
+      if (s.targetOdds !== undefined && s.maxOdds !== undefined && s.targetOdds > s.maxOdds) {
+        errors.push(`策略${s.id}: targetOdds不能大于maxOdds`);
+      }
+      if (s.betDirection && !VALID_BET_DIRECTIONS.includes(s.betDirection)) {
+        errors.push(`策略${s.id}: betDirection必须为${VALID_BET_DIRECTIONS.join('/')}`);
+      }
+      if (s.leadSide && !VALID_LEAD_SIDES.includes(s.leadSide)) {
+        errors.push(`策略${s.id}: leadSide必须为${VALID_LEAD_SIDES.join('/')}`);
+      }
+      if (s.leadGoals !== undefined && (s.leadGoals < 0 || s.leadGoals > 20)) {
+        errors.push(`策略${s.id}: leadGoals需在0-20之间`);
+      }
+      if (s.leadGoalsWeak !== undefined && (s.leadGoalsWeak < 0 || s.leadGoalsWeak > 5)) {
+        errors.push(`策略${s.id}: leadGoalsWeak需在0-5之间`);
+      }
+      if (s.minCurrentCorners !== undefined && (s.minCurrentCorners < 0 || s.minCurrentCorners > 30)) {
+        errors.push(`策略${s.id}: minCurrentCorners需在0-30之间`);
+      }
+      if (s.maxCurrentCorners !== undefined && (s.maxCurrentCorners < 0 || s.maxCurrentCorners > 30)) {
+        errors.push(`策略${s.id}: maxCurrentCorners需在0-30之间`);
+      }
+      if (s.minCurrentCorners !== undefined && s.maxCurrentCorners !== undefined && s.minCurrentCorners > s.maxCurrentCorners) {
+        errors.push(`策略${s.id}: minCurrentCorners不能大于maxCurrentCorners`);
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ success: false, error: "参数验证失败", details: errors });
+    }
+
     setCornerStrategies(strategies);
     console.log("[cornerRoutes] 策略已同步，数量:", strategies.length);
     res.json({ success: true, count: strategies.length });

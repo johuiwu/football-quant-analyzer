@@ -15,7 +15,11 @@ export interface CornerStrategy {
   cornerHandicapLower: number;
   cornerHandicapUpper: number;
   targetOdds: number;
+  maxOdds: number;
   betDirection: "over" | "under" | "home" | "away" | "auto";
+  minCurrentCorners: number;
+  maxCurrentCorners: number;
+  leadSide: "any" | "strong" | "weak";
 }
 
 /** 盘口条目 */
@@ -168,7 +172,11 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     cornerHandicapLower: -1.25,
     cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    maxOdds: 1.10,
     betDirection: "over",
+    minCurrentCorners: 3,
+    maxCurrentCorners: 7,
+    leadSide: "any",
   },
   {
     id: 2,
@@ -181,7 +189,11 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     cornerHandicapLower: -0.75,
     cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    maxOdds: 1.10,
     betDirection: "over",
+    minCurrentCorners: 0,
+    maxCurrentCorners: 99,
+    leadSide: "any",
   },
   {
     id: 3,
@@ -192,9 +204,13 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     leadGoals: 0,
     leadGoalsWeak: 0,
     cornerHandicapLower: 0,
-    cornerHandicapUpper: 1.5,
+    cornerHandicapUpper: 2.0,
     targetOdds: 0.8,
-    betDirection: "under",
+    maxOdds: 1.10,
+    betDirection: "over",
+    minCurrentCorners: 5,
+    maxCurrentCorners: 9,
+    leadSide: "any",
   },
   {
     id: 4,
@@ -207,7 +223,11 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     cornerHandicapLower: 0,
     cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    maxOdds: 1.10,
     betDirection: "over",
+    minCurrentCorners: 0,
+    maxCurrentCorners: 99,
+    leadSide: "any",
   },
   {
     id: 5,
@@ -216,11 +236,15 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     playTimeStart: 70,
     playTimeEnd: 99,
     leadGoals: 1,
-    leadGoalsWeak: 0,
+    leadGoalsWeak: 1,
     cornerHandicapLower: 0,
     cornerHandicapUpper: 2.5,
     targetOdds: 0.8,
+    maxOdds: 1.10,
     betDirection: "over",
+    minCurrentCorners: 0,
+    maxCurrentCorners: 99,
+    leadSide: "any",
   },
 ];
 
