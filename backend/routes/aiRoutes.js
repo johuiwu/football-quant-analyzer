@@ -389,4 +389,73 @@ router.post('/export-python', (req, res) => {
 });
 
 
+// ======================== 翻译并发限流信号量 ========================
+const translateSemaphore = {
+  maxConcurrency: 3,
+  currentCount: 0,
+  queue: [],
+  acquire() {
+    return new Promise((resolve) => {
+      if (this.currentCount < this.maxConcurrency) {
+        this.currentCount++;
+        resolve();
+      } else {
+        this.queue.push(resolve);
+      }
+    });
+  },
+  release() {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      next();
+    } else {
+      this.currentCount--;
+    }
+  },
+};
+
+// ======================== POST /ai-translate-team ========================
+router.post('/ai-translate-team', async (req, res) => {
+  const { name } = req.body;
+
+  if (!name || typeof name !== 'string') {
+    return res.json({ success: false, translated: name || '' });
+  }
+
+  // API Key 未配置时直接返回原名
+  if (!isDeepSeekKeyConfigured()) {
+    return res.json({ success: false, translated: name });
+  }
+
+  await translateSemaphore.acquire();
+  try {
+    const ai = getDeepSeekClient();
+
+    const response = await ai.chat.completions.create({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: '你是一个专业的足球术语翻译助手，只输出翻译结果。' },
+        { role: 'user', content: `请将以下足球队名翻译成中文，要求符合国内体育媒体习惯。只输出翻译结果，不要包含任何解释、标点符号或额外文字。如果有音译或意译标准，按常见译名处理。待翻译队名：${name}` }
+      ],
+      temperature: 0.1,
+      max_tokens: 50,
+    });
+
+    let translated = (response.choices[0].message.content || '').trim();
+    // 剔除多余字符：引号、空格、换行等
+    translated = translated.replace(/["""''「」『』\s\n\r]+/g, '').trim();
+
+    if (!translated) {
+      translated = name;
+    }
+
+    res.json({ success: true, translated });
+  } catch (err) {
+    console.error('AI translate error:', err);
+    res.json({ success: false, translated: name });
+  } finally {
+    translateSemaphore.release();
+  }
+});
+
 export default router;
