@@ -287,13 +287,15 @@ function convertToSystemStats(livescoreData) {
     const gC = goalsConceded?.gC || 0;
     const xGc = goalsConceded?.xGc || 0;
     results[teamId] = {
-      avgXgFor: goals.xG != null ? goals.xG / played : 0,
-      avgXgAgainst: played > 0 ? xGc / played : 0,
+      // goals.xG / goals.g 是总量值（API原始值），不做除法
+      // shots.pG / shots_on_target.pG 已是场均值（API已计算），直接使用
+      avgXgFor: goals.xG != null ? goals.xG : 0,
+      avgXgAgainst: xGc,
       avgPossession: 50,
       avgShots: shots?.pG || 0,
       avgShotsOnTarget: shotsOnTarget?.pG || 0,
-      avgGoalsFor: goals.g / played,
-      avgGoalsAgainst: played > 0 ? gC / played : 0,
+      avgGoalsFor: goals.g,
+      avgGoalsAgainst: gC,
       avgCorners: 3.5,
       winRate: played > 0 ? Math.max(0, Math.min(1, 0.5 + (goals.df || 0) / (played * 4))) : 0
     };
