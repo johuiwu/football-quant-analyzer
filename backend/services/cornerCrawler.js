@@ -707,13 +707,43 @@ async function ensureLogin() {
         }
       } catch (e) {}
 
-      // 点击登录按钮
+      // 点击登录按钮（使用 Puppeteer click，与 autoLogin.js 一致）
       await new Promise(r => setTimeout(r, 500));
       console.log("[登录步骤] 第2步：点击登录按钮");
-      await targetFrame.evaluate(() => {
-        const btn = document.getElementById('btn_login') || document.querySelector("input[type='submit'], button[type='submit']");
-        if (btn) btn.click();
-      });
+      const btnSelectors = ["#btn_login", "input[type='submit']", "button[type='submit']", "input[type='button']"];
+      let btnClicked = false;
+      for (const sel of btnSelectors) {
+        try {
+          const btn = await targetFrame.$(sel);
+          if (btn) {
+            const box = await btn.boundingBox();
+            if (box && box.width > 0 && box.height > 0) {
+              try {
+                await btn.click();
+                btnClicked = true;
+                console.log("[登录步骤] 已点击登录按钮 (" + sel + ")");
+                break;
+              } catch (clickErr) {
+                // Puppeteer click 失败，尝试 JS evaluate 点击
+                await targetFrame.evaluate((selector) => {
+                  const el = document.querySelector(selector);
+                  if (el) el.click();
+                }, sel);
+                btnClicked = true;
+                console.log("[登录步骤] 已通过 JS 点击登录按钮 (" + sel + ")");
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      if (!btnClicked) {
+        console.log("[登录步骤] ⚠️ 未找到可点击的登录按钮，尝试 JS 点击 #btn_login");
+        await targetFrame.evaluate(() => {
+          const btn = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+          if (btn) btn.click();
+        });
+      }
 
       // 轮询检测登录结果（最多 60 秒）
       console.log("[登录步骤] 第3步：轮询等待登录结果（最多60s）");
