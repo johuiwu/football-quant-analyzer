@@ -529,14 +529,14 @@ export default function DashboardPage() {
                       <option value={-0.5} className="bg-slate-900 text-slate-200">主让半球 (-0.5)</option>
                       <option value={-0.25} className="bg-slate-900 text-slate-200">主让平手/半球 (-0.25)</option>
                       <option value={0.0} className="bg-slate-900 text-slate-200">平手 (0.0)</option>
-                      <option value={0.25} className="bg-slate-900 text-slate-200">受让平手/半球 (+0.25)</option>
-                      <option value={0.5} className="bg-slate-900 text-slate-200">受让半球 (+0.5)</option>
-                      <option value={0.75} className="bg-slate-900 text-slate-200">受让半球/一球 (+0.75)</option>
-                      <option value={1.0} className="bg-slate-900 text-slate-200">受让一球 (+1.0)</option>
-                      <option value={1.25} className="bg-slate-900 text-slate-200">受让一球/球半 (+1.25)</option>
-                      <option value={1.5} className="bg-slate-900 text-slate-200">受让球半 (+1.5)</option>
-                      <option value={1.75} className="bg-slate-900 text-slate-200">受让球半/两球 (+1.75)</option>
-                      <option value={2.0} className="bg-slate-900 text-slate-200">受让两球 (+2.0)</option>
+                      <option value={0.25} className="bg-slate-900 text-slate-200">客让平手/半球 (+0.25)</option>
+                      <option value={0.5} className="bg-slate-900 text-slate-200">客让半球 (+0.5)</option>
+                      <option value={0.75} className="bg-slate-900 text-slate-200">客让半球/一球 (+0.75)</option>
+                      <option value={1.0} className="bg-slate-900 text-slate-200">客让一球 (+1.0)</option>
+                      <option value={1.25} className="bg-slate-900 text-slate-200">客让一球/球半 (+1.25)</option>
+                      <option value={1.5} className="bg-slate-900 text-slate-200">客让球半 (+1.5)</option>
+                      <option value={1.75} className="bg-slate-900 text-slate-200">客让球半/两球 (+1.75)</option>
+                      <option value={2.0} className="bg-slate-900 text-slate-200">客让两球 (+2.0)</option>
                     </select>
                   </div>
 

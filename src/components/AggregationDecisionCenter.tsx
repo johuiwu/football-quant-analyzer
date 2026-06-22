@@ -275,7 +275,7 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
               </span>
               {(handicap ?? 0) !== 0 && (
                 <span className="text-xs text-slate-400 self-center">
-                  （基于亚盘 {(handicap ?? 0) > 0 ? '受让' : '让'} {Math.abs(handicap ?? 0)} 球优化）
+                  （基于亚盘 {(handicap ?? 0) > 0 ? '客让' : '让'} {Math.abs(handicap ?? 0)} 球优化）
                 </span>
               )}
             </div>

@@ -1,7 +1,7 @@
-﻿import React, { useMemo } from "react";
+import React, { useMemo } from "react";
 import { AsianHandicapParams } from "../../utils/quantModel";
 
-// 亚盘盘口选项：严格按主让→平手→受让排列
+// 亚盘盘口选项：严格按主让→平手→客让排列
 const HANDICAP_OPTIONS = [
   { label: "主让两球 (-2.0)", value: -2.0 },
   { label: "主让球半/两球 (-1.75)", value: -1.75 },
@@ -12,14 +12,14 @@ const HANDICAP_OPTIONS = [
   { label: "主让半球 (-0.5)", value: -0.5 },
   { label: "主让平手/半球 (-0.25)", value: -0.25 },
   { label: "平手 (0.0)", value: 0.0 },
-  { label: "受让平手/半球 (+0.25)", value: 0.25 },
-  { label: "受让半球 (+0.5)", value: 0.5 },
-  { label: "受让半球/一球 (+0.75)", value: 0.75 },
-  { label: "受让一球 (+1.0)", value: 1.0 },
-  { label: "受让一球/球半 (+1.25)", value: 1.25 },
-  { label: "受让球半 (+1.5)", value: 1.5 },
-  { label: "受让球半/两球 (+1.75)", value: 1.75 },
-  { label: "受让两球 (+2.0)", value: 2.0 },
+  { label: "客让平手/半球 (+0.25)", value: 0.25 },
+  { label: "客让半球 (+0.5)", value: 0.5 },
+  { label: "客让半球/一球 (+0.75)", value: 0.75 },
+  { label: "客让一球 (+1.0)", value: 1.0 },
+  { label: "客让一球/球半 (+1.25)", value: 1.25 },
+  { label: "客让球半 (+1.5)", value: 1.5 },
+  { label: "客让球半/两球 (+1.75)", value: 1.75 },
+  { label: "客让两球 (+2.0)", value: 2.0 },
 ];
 
 interface OddsParametersPanelProps {

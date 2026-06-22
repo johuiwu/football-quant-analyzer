@@ -427,6 +427,13 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
           if (storeStrat) return { ...s, isActive: storeStrat.enabled, betDirection: storeStrat.betDirection };
           return s;
         }));
+        // ★ 初始化时：若 cornerStore 策略全部禁用（首次加载/后端重启），推送 CornerSystem 本地默认策略到后端
+        const allDisabled = storeStrategies.every((s: any) => !s.enabled);
+        if (allDisabled) {
+          setTimeout(() => {
+            syncStrategiesToBackend(strategies, plan1, plan2, plan3, plan4, plan5);
+          }, 500);
+        }
       }
     } catch (_) {}
   }, []);

@@ -2682,8 +2682,8 @@ export function checkHandicapCoverage(
       netGoals,
       requiredMargin,
       reason: covered
-        ? `预期净胜 ${netGoals.toFixed(2)} 球，主队受让${handicap}球下保持不败，足以覆盖盘口`
-        : `预期净负 ${Math.abs(netGoals).toFixed(2)} 球，无法覆盖受让${handicap}球盘口`
+        ? `预期净胜 ${netGoals.toFixed(2)} 球，主队被客让${handicap}球下保持不败，足以覆盖盘口`
+        : `预期净负 ${Math.abs(netGoals).toFixed(2)} 球，无法覆盖客让${handicap}球盘口`
     };
   }
 
