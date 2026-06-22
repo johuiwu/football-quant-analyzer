@@ -356,6 +356,8 @@ function setupAutoUpdater() {
 
   // 拦截 electron-updater 下载请求，将 GitHub URL 重写为加速代理 URL
   // 同时拦截 exe（完整下载/差分拼接）和 blockmap（差分更新元数据）
+  // 双源策略：latest.yml 中 Gitee URL 排第一（国内直连快），GitHub 排第二（走代理加速）
+  // Gitee 域名请求不拦截，直连即可；仅拦截 GitHub releases/download 和 objects.githubusercontent.com
   const { session } = require('electron');
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['https://github.com/*/releases/download/*', 'https://objects.githubusercontent.com/*'] },
@@ -370,7 +372,7 @@ function setupAutoUpdater() {
       }
       const proxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
       const rewrittenUrl = `${proxy}/${originalUrl}`;
-      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}/${GITHUB_MIRROR_PROXIES.length}个代理) [${isBlockmap ? 'blockmap' : 'exe'}]`);
+      console.log(`[autoUpdater] GitHub代理加速: ${proxy} (第${currentProxyIndex + 1}/${GITHUB_MIRROR_PROXIES.length}个代理) [${isBlockmap ? 'blockmap' : 'exe'}]`);
       callback({ redirectURL: rewrittenUrl });
     }
   );
