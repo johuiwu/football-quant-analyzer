@@ -39,8 +39,13 @@ export function resolveStrategyOdds(match, strategy) {
   if (cornerOU) {
     if (betDir === "over" && cornerOU.overOdds > 0) return cornerOU.overOdds;
     if (betDir === "under" && cornerOU.underOdds > 0) return cornerOU.underOdds;
+    // auto 方向：从 cornerOU 中提取有效赔率（优先 overOdds，其次 underOdds）
+    if (betDir === "auto" || betDir === "next") {
+      if (cornerOU.overOdds > 0) return cornerOU.overOdds;
+      if (cornerOU.underOdds > 0) return cornerOU.underOdds;
+    }
   }
-  // auto/home/away/next 或 cornerOU 中无对应方向赔率时 fallback
+  // home/away 或 cornerOU 中无对应方向赔率时 fallback
   return match.cornerOdds ?? match.odds ?? 0;
 }
 
