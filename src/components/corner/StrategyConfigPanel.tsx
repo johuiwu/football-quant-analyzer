@@ -112,7 +112,7 @@ export default function StrategyConfigPanel() {
     }
   };
 
-  // 检测策略间方向冲突
+  // 检测策略间方向冲突（仅当时间窗口、比分条件、盘口范围均有重叠时才算冲突）
   const directionConflicts = useMemo(() => {
     const conflicts: string[] = [];
     const enabled = strategies.filter(s => s.enabled);
@@ -124,6 +124,14 @@ export default function StrategyConfigPanel() {
           // 方向冲突
           if ((a.betDirection === "over" && b.betDirection === "under") ||
               (a.betDirection === "under" && b.betDirection === "over")) {
+            // 比分条件重叠检查：leadGoals>=20 为哨兵值（不限比分），否则检查范围是否有交集
+            const aMin = a.leadGoalsWeak ?? 0, aMax = a.leadGoals >= 20 ? Infinity : a.leadGoals;
+            const bMin = b.leadGoalsWeak ?? 0, bMax = b.leadGoals >= 20 ? Infinity : b.leadGoals;
+            const scoreOverlap = aMin <= bMax && bMin <= aMax;
+            if (!scoreOverlap) continue; // 比分条件互斥，不可能同时触发
+            // 盘口范围重叠检查
+            const hcpOverlap = a.cornerHandicapLower <= b.cornerHandicapUpper && b.cornerHandicapLower <= a.cornerHandicapUpper;
+            if (!hcpOverlap) continue; // 盘口范围互斥，不可能同时触发
             conflicts.push(`策略${a.id}与策略${b.id}: over/under方向冲突`);
           }
         }
