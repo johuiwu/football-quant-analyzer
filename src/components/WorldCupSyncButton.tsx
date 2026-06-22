@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { RefreshCw, Database } from 'lucide-react';
 import { syncWorldCupTeams } from '../services/apiService';
 import { useAppStore } from '../store/useAppStore';
+import { useWorldCupStore } from '../store/useWorldCupStore';
+import { WORLD_CUP_TEAMS, WorldCupTeam } from '../data/worldcup_data';
 
 export function WorldCupSyncButton() {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -10,6 +12,7 @@ export function WorldCupSyncButton() {
   const setTeams = useAppStore((s) => s.setTeams);
   const setTeamsSyncMsg = useAppStore((s) => s.setTeamsSyncMsg);
   const setTeamsSyncSource = useAppStore((s) => s.setTeamsSyncSource);
+  const setWcTeams = useWorldCupStore((s) => s.setTeams);
 
   const handleSync = async () => {
     const apiKey = localStorage.getItem('football_api_key');
@@ -30,6 +33,21 @@ export function WorldCupSyncButton() {
         const syncedIds = new Set(result.teams.map(t => t.id));
         const existingWc = teams.filter(t => t.league === 'WorldCup' && !syncedIds.has(t.id));
         setTeams([...nonWc, ...existingWc, ...result.teams]);
+        // Also update WorldCupStore so the WorldCup page reflects synced data
+        const existingWcMap = new Map<string, WorldCupTeam>(WORLD_CUP_TEAMS.map(t => [t.id, t]));
+        const wcTeams: WorldCupTeam[] = result.teams.map((t: any) => {
+          const existing = existingWcMap.get(t.id);
+          return {
+            id: t.id,
+            name: t.name,
+            nameCn: t.nameCn || existing?.nameCn || t.name,
+            fifaRank: existing?.fifaRank ?? 50,
+            continent: existing?.continent ?? '',
+            elo: existing?.elo ?? 1500,
+            weight: existing?.weight ?? 1.0,
+          };
+        });
+        setWcTeams(wcTeams);
         setSyncMsg(`✓ ${result.msg}（共 ${result.count} 支球队）`);
         setTeamsSyncMsg(result.msg);
         setTeamsSyncSource('api-football');

@@ -28,6 +28,7 @@ interface State {
 }
 
 interface Actions {
+  setTeams: (teams: WorldCupTeam[]) => void;
   fetchPredictions: (matchId?: string) => Promise<void>;
   fetchAllPredictions: (forceRefresh?: boolean) => Promise<void>;
   fetchGroupStage: () => Promise<void>;
@@ -53,6 +54,8 @@ let _fetchGroupAbortController: AbortController | null = null;
 
 export const useWorldCupStore = create<WorldCupStore>((set, get) => ({
   ...createInitialState(),
+
+  setTeams: (teams: WorldCupTeam[]) => set({ teams }),
 
   fetchPredictions: async (matchId?: string) => {
     const controller = new AbortController();
