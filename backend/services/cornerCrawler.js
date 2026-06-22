@@ -466,6 +466,8 @@ async function ensureLogin() {
       // 轮询检测登录结果（最多 60 秒）
       console.log("[cornerCrawler] 轮询等待登录结果（最多 60s）...");
       let loginResult = null;
+      const MAX_POPUP_COUNT = 5;
+      let passcodePopupCount = 0;
       for (let i = 0; i < 100; i++) {
         // 自适应轮询间隔：前10次500ms快速检测，之后1秒
         const pollDelay = i < 10 ? 500 : 1000;
@@ -485,11 +487,20 @@ async function ensureLogin() {
           // 检测简易密码页面（#back_login 按钮可见）
           const backLoginBtn = document.getElementById("back_login");
           const hasPasscodePage = backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
+          // ★ 基于元素可见性检测（与 hgCrawlerService detectLoginState 一致），不使用文本匹配
+          const hasPopupActive = (function() {
+            const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show'];
+            for (const id of popupIds) {
+              const el = document.getElementById(id);
+              if (el && el.classList.contains('on')) return true;
+            }
+            return false;
+          })();
+
           return {
             loginHidden, hasError, hasMyEvents, hasInPlaySoccer, hasSportSelector,
-            hasPasscode: bodyText.includes("Passcode Login") || bodyText.includes("简易密码"),
-            hasTwoFactor: bodyText.includes("普通登入"),
             hasPasscodePage,
+            hasPopupActive,
             currentUrl: window.location.href,
             bodyTextSample: bodyText.substring(0, 200)
           };
@@ -506,7 +517,7 @@ async function ensureLogin() {
         }
 
         // 简易密码页面 — 优先处理（必须在登录成功判断之前）
-        if (status.hasPasscodePage || status.hasTwoFactor) {
+        if (status.hasPasscodePage) {
           console.log("[cornerCrawler] 检测到简易密码页面，点击普通登入...");
           await page.evaluate(() => {
             const btn = document.querySelector("#back_login");
@@ -534,19 +545,45 @@ async function ensureLogin() {
         }
 
         // 登录成功
-        if (status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector) {
+        if (status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector || (status.loginHidden && status.hasInPlaySoccer)) {
           console.log("[cornerCrawler] ✅ 登录成功！（轮次 " + (i + 1) + "）");
           loginResult = { success: true };
           break;
         }
 
-        // 弹窗处理
-        if (status.hasPasscode) {
-          console.log("[cornerCrawler] 检测到密码弹窗，尝试关闭...");
-          await page.evaluate(() => {
-            const btn = document.querySelector("#C_no_btn, #no_btn, .btn_cancel");
-            if (btn) btn.click();
-          });
+        // 弹窗处理（基于元素可见性，与 hgCrawlerService 一致）
+        if (status.hasPopupActive) {
+          passcodePopupCount++;
+          if (passcodePopupCount > MAX_POPUP_COUNT) {
+            console.log("[cornerCrawler] 弹窗连续出现超过 " + MAX_POPUP_COUNT + " 次，跳过处理");
+          } else {
+            console.log("[cornerCrawler] 检测到激活弹窗，尝试关闭... (" + passcodePopupCount + "/" + MAX_POPUP_COUNT + ")");
+            await page.evaluate(() => {
+              // 1. 尝试点击可见的取消/否按钮
+              const isVisible = (el) => {
+                const s = getComputedStyle(el);
+                return s.display !== 'none' && s.visibility !== 'hidden';
+              };
+              let clicked = false;
+              document.querySelectorAll("#C_no_btn, #no_btn, .btn_cancel").forEach(btn => {
+                if (isVisible(btn)) { btn.click(); clicked = true; }
+              });
+              // 2. 强制清理弹窗容器（移除 .on 类）
+              const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup'];
+              for (const id of popupIds) {
+                const el = document.getElementById(id);
+                if (el && el.classList.contains('on')) el.classList.remove('on');
+              }
+              // 3. 清理 body 锁定类
+              if (document.body) {
+                document.body.classList.remove('scroll_lock', 'locked');
+                document.body.style.overflow = '';
+              }
+            });
+          }
+        } else {
+          // 弹窗已消失，重置计数器
+          passcodePopupCount = 0;
         }
 
         if (i % 5 === 4) {
