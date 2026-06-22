@@ -253,7 +253,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     playTimeStart: 55,
     playTimeEnd: 75,
     leadGoals: 1,
-    leadGoalsWeak: 0,
+    leadGoalsWeak: 1,
     cornerHandicapLower: -0.5,
     cornerHandicapUpper: 1.5,
     targetOdds: 0.8,

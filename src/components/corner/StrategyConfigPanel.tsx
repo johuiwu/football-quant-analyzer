@@ -16,7 +16,7 @@ const DEFAULT_VALUES: Record<string, Record<string, number | string>> = {
   "3": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 3, maxCurrentCorners: 9, leadSide: "any", betDirection: "under" },
   "4": { playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong", betDirection: "over" },
   "5": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any", betDirection: "over" },
-  "6": { playTimeStart: 55, playTimeEnd: 75, leadGoals: 1, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 2, maxCurrentCorners: 8, leadSide: "any", betDirection: "over" },
+  "6": { playTimeStart: 55, playTimeEnd: 75, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 2, maxCurrentCorners: 8, leadSide: "any", betDirection: "over" },
   "7": { playTimeStart: 60, playTimeEnd: 80, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 3, maxCurrentCorners: 5, leadSide: "any", betDirection: "over" },
 };
 
