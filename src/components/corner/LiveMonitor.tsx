@@ -6,6 +6,7 @@ import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
 
 import { useTeamTranslation } from '../../hooks/useTeamTranslation';
+import { getTranslatedLeagueName } from '../../services/teamTranslatorService';
 
 // ==================== 盘口分组配置 ====================
 
@@ -174,6 +175,17 @@ function TranslatedTeamName({ name }: { name: string }) {
   return <>{translated}</>;
 }
 
+function TranslatedLeagueName({ name }: { name: string }) {
+  const [translated, setTranslated] = useState(name);
+  useEffect(() => {
+    if (!name) return;
+    let cancelled = false;
+    getTranslatedLeagueName(name).then(r => { if (!cancelled) setTranslated(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [name]);
+  return <>{translated}</>;
+}
+
 // ==================== 比赛卡片 ====================
 
 interface MatchCardProps {
@@ -222,7 +234,7 @@ const MatchCard = React.memo(function MatchCard({
               <TranslatedTeamName name={row.homeTeam || "--"} /> <span className="text-slate-500 mx-1">vs</span> <TranslatedTeamName name={row.awayTeam || "--"} />
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">
-              {row.league || ""} {row.elapsedMinutes ? `· ${row.elapsedMinutes}'` : ""}
+              <TranslatedLeagueName name={row.league || ""} /> {row.elapsedMinutes ? `· ${row.elapsedMinutes}'` : ""}
             </div>
           </div>
         </div>
