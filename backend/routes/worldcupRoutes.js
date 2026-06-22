@@ -52,7 +52,7 @@ router.post('/worldcup/predict', async (req, res) => {
   }
 });
 
-router.post('/worldcup/predict-batch', (req, res) => {
+router.post('/worldcup/predict-batch', async (req, res) => {
   try {
     const { fixtures } = req.body;
 
