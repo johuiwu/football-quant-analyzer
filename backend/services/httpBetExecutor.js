@@ -497,7 +497,7 @@ export async function executeBetViaHttp(betData) {
   }
 
   // 2. 确定投注方向参数
-  const { wtype, choseTeam } = resolveBetDirection(betDirection, handicap);
+  const { wtype, choseTeam } = resolveBetDirection(betDirection, handicap, { cornerOU: betData.cornerOU });
   console.log(`[httpBet] 投注方向: wtype=${wtype} choseTeam=${choseTeam}`);
 
   // 3. FT_order_view
@@ -551,7 +551,7 @@ export async function executeBetViaHttp(betData) {
  * @param {number} handicap - 盘口值
  * @returns {{ wtype: string, choseTeam: string }}
  */
-function resolveBetDirection(direction, handicap) {
+function resolveBetDirection(direction, handicap, match) {
   switch (direction) {
     case "over":
       return { wtype: "ROU", choseTeam: "O" };
@@ -564,7 +564,11 @@ function resolveBetDirection(direction, handicap) {
       return { wtype: "RE", choseTeam: "C" };
     case "auto":
     default:
-      // 默认让球主队方向
+      // 智能方向选择：有大小球盘口时优先ROU，否则回退RE
+      if (match?.cornerOU && (match.cornerOU.overOdds > 0 || match.cornerOU.underOdds > 0)) {
+        const hcp = handicap != null ? handicap : 0;
+        return { wtype: "ROU", choseTeam: hcp >= 0 ? "O" : "U" };
+      }
       return { wtype: "RE", choseTeam: "H" };
   }
 }

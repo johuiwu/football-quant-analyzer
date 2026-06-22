@@ -201,7 +201,8 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
     amount: betConfig.amount,
     handicap: match.cornerHandicap || 0,
     strategyId: sid,
-    betDirection: betDirection || "auto"
+    betDirection: betDirection || "auto",
+    cornerOU: match.cornerOU || null
   };
 
   // ★ 先在 corner_bets 表中插入 pending 记录（确保无论投注成功/失败都有记录）
@@ -342,9 +343,9 @@ export async function checkDuplicateBet(matchId, strategyId) {
 
     return false;
   } catch (err) {
-    console.error("[cornerBetService] 查重失败:", err.message);
-    // 保守策略：查询失败时假定重复，避免在无法确认的情况下重复下单
-    return true;
+    console.error("[cornerBetService] 查重失败，降级放行:", err.message);
+    // 降级策略：查询失败时允许投注继续执行，避免数据库临时异常阻断所有投注
+    return false;
   }
 }
 
@@ -420,7 +421,8 @@ export async function processBetQueue() {
       amount: task.amount,
       handicap: task.handicap || 0,
       strategyId: String(task.strategyId),
-      betDirection: task.betDirection || "auto"
+      betDirection: task.betDirection || "auto",
+      cornerOU: task.cornerOU || null
     };
 
     // 自动重试逻辑

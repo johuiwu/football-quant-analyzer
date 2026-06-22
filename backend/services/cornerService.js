@@ -213,7 +213,12 @@ async function processAutoBetsForMatches(matches) {
   // ★ 不再提前 return：即使 isRealMode=false 或 autoBetEnabled=false，
   // 也要进入投注函数生成 skipped 记录，让用户在投注记录中看到策略触发了但未执行
   for (const match of matchesToProcess) {
-    if (betConfig.trackedMatchIds.length > 0 && !betConfig.trackedMatchIds.includes(match.matchId)) {
+    // ★ 空数组时跳过所有比赛（无追踪比赛 = 不投注）
+    if (betConfig.trackedMatchIds.length === 0) {
+      console.log("[cornerService] 无追踪比赛，跳过投注: matchId=" + match.matchId);
+      continue;
+    }
+    if (!betConfig.trackedMatchIds.includes(match.matchId)) {
       console.log("[cornerService] 比赛不在追踪白名单中: matchId=" + match.matchId);
       continue;
     }
@@ -349,26 +354,49 @@ async function pollOnce() {
             match.homeCorners = deltaData.homeCorners || 0;
             match.awayCorners = deltaData.awayCorners || 0;
 
-            // ★ 角球数变化时立即触发策略评估和自动投注
-            const triggeredIds = evaluateCornerStrategies(match, activeStrategies);
-            if (triggeredIds.length > 0) {
-              match.triggeredStrategies = triggeredIds;
-              console.log(`[cornerService] gismo 角球变化触发策略评估: matchId=${match.matchId}, 触发策略=[${triggeredIds.join(',')}]`);
-              // 保存触发记录
-              for (const sid of triggeredIds) {
-                const strategy = activeStrategies.find(s => s.id === sid);
-                const actualOdds = resolveStrategyOdds(match, strategy || {});
-                if (actualOdds > 0) {
-                  saveCornerTrigger(match, sid, actualOdds).catch(e =>
-                    console.error("[cornerService] gismo触发保存记录失败:", e.message)
-                  );
+            // ★ 角球数变化时异步刷新盘口 + 策略评估 + 自动投注
+            (async () => {
+              try {
+                const { fetchCornerData } = await import('./hgApiClient.js');
+                const { loadCredentials } = await import('./credentialManager.js');
+                const creds = loadCredentials();
+                if (creds?.uid && creds?.ver && creds?.cookieStr) {
+                  const cornerResult = await fetchCornerData(creds.uid, creds.ver, creds.cookieStr);
+                  if (!cornerResult.expired && cornerResult.matches) {
+                    const updatedMatch = cornerResult.matches.find(m => m.matchId === match.matchId);
+                    if (updatedMatch) {
+                      if (updatedMatch.cornerOU) match.cornerOU = updatedMatch.cornerOU;
+                      if (updatedMatch.cornerOdds !== undefined) match.cornerOdds = updatedMatch.cornerOdds;
+                      if (updatedMatch.cornerHandicap !== undefined) match.cornerHandicap = updatedMatch.cornerHandicap;
+                      if (updatedMatch.handicaps) match.handicaps = updatedMatch.handicaps;
+                      console.log(`[cornerService] gismo 角球变化时盘口已刷新: matchId=${match.matchId}`);
+                    }
+                  }
                 }
+              } catch (fetchErr) {
+                console.warn('[cornerService] gismo 角球变化时盘口刷新失败:', fetchErr.message);
               }
-              // 触发自动投注
-              processAutoBetsForMatches([match]).catch(e =>
-                console.error("[cornerService] gismo触发自动投注失败:", e.message)
-              );
-            }
+
+              // 策略评估（盘口刷新后）
+              const triggeredIds = evaluateCornerStrategies(match, activeStrategies);
+              if (triggeredIds.length > 0) {
+                match.triggeredStrategies = triggeredIds;
+                console.log(`[cornerService] gismo 角球变化触发策略评估: matchId=${match.matchId}, 触发策略=[${triggeredIds.join(',')}]`);
+                for (const sid of triggeredIds) {
+                  const strategy = activeStrategies.find(s => s.id === sid);
+                  const actualOdds = resolveStrategyOdds(match, strategy || {});
+                  if (actualOdds > 0) {
+                    saveCornerTrigger(match, sid, actualOdds).catch(e =>
+                      console.error("[cornerService] gismo触发保存记录失败:", e.message)
+                    );
+                  }
+                }
+                processAutoBetsForMatches([match]).catch(e =>
+                  console.error("[cornerService] gismo触发自动投注失败:", e.message)
+                );
+              }
+            })();
+            return; // 避免同步代码也执行策略评估
           }
           console.log(`[cornerService] gismo 更新: ${match.homeTeam} vs ${match.awayTeam}, ${deltaData.elapsedMinutes}'`);
         }
