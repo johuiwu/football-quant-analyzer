@@ -283,18 +283,17 @@ function convertToSystemStats(livescoreData) {
     const shotsOnTarget = data.shots_on_target;
     const cleanSheets = data.clean_sheets;
     if (!goals) continue;
-    const played = cleanSheets?.p || 0;
+    const played = cleanSheets?.p || 1;
     const gC = goalsConceded?.gC || 0;
     const xGc = goalsConceded?.xGc || 0;
     results[teamId] = {
-      totalPlayed: played,
-      avgXgFor: goals.xG != null ? goals.xG : 0,
-      avgXgAgainst: xGc,
+      avgXgFor: goals.xG != null ? goals.xG / played : 0,
+      avgXgAgainst: played > 0 ? xGc / played : 0,
       avgPossession: 50,
       avgShots: shots?.pG || 0,
       avgShotsOnTarget: shotsOnTarget?.pG || 0,
-      avgGoalsFor: goals.g,
-      avgGoalsAgainst: gC,
+      avgGoalsFor: goals.g / played,
+      avgGoalsAgainst: played > 0 ? gC / played : 0,
       avgCorners: 3.5,
       winRate: played > 0 ? Math.max(0, Math.min(1, 0.5 + (goals.df || 0) / (played * 4))) : 0
     };
