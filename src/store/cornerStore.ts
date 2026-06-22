@@ -343,7 +343,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       ),
     }));
     const strategies = get().strategies;
-    clearTimeout(__syncTimer);
+    if (__syncTimer) clearTimeout(__syncTimer);
     __syncTimer = setTimeout(() => syncStrategiesToBackend(strategies), 300);
   },
 
