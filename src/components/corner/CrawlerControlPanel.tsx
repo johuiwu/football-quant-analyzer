@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
-import { translateLeague, translateTime } from "../../data/cornerTranslations";
+import { translateTime } from "../../data/cornerTranslations";
 import { useTeamTranslation } from '../../hooks/useTeamTranslation';
+import { getTranslatedLeagueName } from '../../services/teamTranslatorService';
 
 interface CrawlerStatus {
   isLoggedIn: boolean;
@@ -24,6 +25,17 @@ interface ScheduleItem {
 
 function TranslatedTeamName({ name }: { name: string }) {
   const { translated } = useTeamTranslation(name);
+  return <>{translated}</>;
+}
+
+function TranslatedLeagueName({ name }: { name: string }) {
+  const [translated, setTranslated] = useState(name);
+  useEffect(() => {
+    if (!name) return;
+    let cancelled = false;
+    getTranslatedLeagueName(name).then(r => { if (!cancelled) setTranslated(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [name]);
   return <>{translated}</>;
 }
 
@@ -801,7 +813,7 @@ export default function CrawlerControlPanel() {
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400">{translateLeague(match.league)}</span>
+                        <span className="text-xs px-2 py-0.5 bg-slate-800 rounded text-slate-400"><TranslatedLeagueName name={match.league} /></span>
                         <span className="text-xs text-slate-500">{translateTime(match.time)}{match.elapsedMinutes ? ` · ${match.elapsedMinutes}'` : ""}</span>
                       </div>
                       <div className="flex items-center gap-4">
