@@ -5,6 +5,8 @@ import { useAppStore } from "../../store/useAppStore";
 import { useCornerStore } from "../../store/cornerStore";
 import type { HandicapEntry } from "../../store/cornerStore";
 
+import { useTeamTranslation } from '../../hooks/useTeamTranslation';
+
 // ==================== 盘口分组配置 ====================
 
 type OddsGroupKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "corner1X2" | "corner1X2Half" | "cornerOE" | "cornerOEHalf" | "mainHDP" | "mainOU";
@@ -165,6 +167,13 @@ const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handi
   );
 });
 
+// ==================== 翻译子组件 ====================
+
+function TranslatedTeamName({ name }: { name: string }) {
+  const { translated } = useTeamTranslation(name);
+  return <>{translated}</>;
+}
+
 // ==================== 比赛卡片 ====================
 
 interface MatchCardProps {
@@ -203,14 +212,14 @@ const MatchCard = React.memo(function MatchCard({
     : "border-slate-700/60 bg-slate-800/30 hover:bg-slate-800/50";
 
   return (
-    <div className={`rounded-xl border ${cardBorder} p-3 transition-colors`}>
+    <div data-match-id={row.matchId} className={`rounded-xl border ${cardBorder} p-3 transition-colors`}>
       {/* 比赛信息 */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           {isHighlighted && <span className="text-sm">🏆</span>}
           <div>
             <div className="text-sm font-semibold text-slate-200">
-              {row.homeTeam || "--"} <span className="text-slate-500 mx-1">vs</span> {row.awayTeam || "--"}
+              <TranslatedTeamName name={row.homeTeam || "--"} /> <span className="text-slate-500 mx-1">vs</span> <TranslatedTeamName name={row.awayTeam || "--"} />
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5">
               {row.league || ""} {row.elapsedMinutes ? `· ${row.elapsedMinutes}'` : ""}
