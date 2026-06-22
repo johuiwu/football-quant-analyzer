@@ -4,7 +4,6 @@
 
 import fs from "fs";
 import path from "path";
-import os from "os";
 import crypto from "crypto";
 import axios from "axios";
 import { getUid, setUid, loadCookiesFromDisk, saveCookiesToDisk, HG_URL, FALLBACK_DOMAINS } from "./browserPool.js";
@@ -58,7 +57,7 @@ const _AES_ALGO = "aes-256-cbc";
 
 function _deriveKey() {
   // 使用机器 hostname + 应用名派生 32 字节密钥，确保同机加解密一致
-  const hostname = os.hostname();
+  const hostname = (typeof os !== "undefined" && os.hostname) ? os.hostname() : "default-host";
   const secret = "足球竞彩量化分析系统:" + hostname;
   return crypto.createHash("sha256").update(secret).digest();
 }
@@ -442,7 +441,7 @@ export function loadFromDisk() {
     const raw = fs.readFileSync(CRED_PATH, "utf8");
     const data = JSON.parse(raw);
     if (!data.uid || !data.ver) return null;
-    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount, username: data.username, password: decryptPassword(data.password), apiDomain: data.apiDomain };
+    return { uid: data.uid, ver: data.ver, savedAt: data.savedAt, cookieCount: data.cookieCount, username: data.username, password: data.password, apiDomain: data.apiDomain };
   } catch {
     return null;
   }

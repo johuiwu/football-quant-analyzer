@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer';
 import { worldcupTeamIdToName } from '../../src/data/worldcup_data.js';
+import { detectLocalBrowser } from './browserPool.js';
 
 const STANDINGS_URL = 'https://www.livescore.com/en/football/international/world-cup-2026/standings/';
 const TIMEOUT = 30000;
@@ -66,9 +67,14 @@ export async function fetchStandings() {
     // headless 模式可配置
     const headless = process.env.CRAWLER_HEADLESS !== 'false' ? true : { headless: 'new' };
 
+    const browserPath = detectLocalBrowser();
+    if (!browserPath) {
+      return { success: false, error: "系统未安装 Chrome 或 Edge" };
+    }
+
     browser = await puppeteer.launch({
       headless,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      executablePath: browserPath,
       args,
     });
 

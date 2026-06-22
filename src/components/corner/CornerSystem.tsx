@@ -1,4 +1,3 @@
-// DEPRECATED: This component has been replaced by CrawlerControlPanel + LiveMonitor + StrategyConfigPanel. Safe to remove after verification.
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useCornerStore } from '../../store/cornerStore';
@@ -81,10 +80,10 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
   const [inputPass, setInputPass] = useState<string>('');
 
   // Left Column Config States
-  const [hgUsername, setHgUsername] = useState<string>('');
-  const [hgPassword, setHgPassword] = useState<string>('');
+  const [hgUsername, setHgUsername] = useState<string>('Aa60000888');
+  const [hgPassword, setHgPassword] = useState<string>('Aa60000888');
   const [hgBalance, setHgBalance] = useState<number>(60000);
-  const [hgUrl, setHgUrl] = useState<string>('');
+  const [hgUrl, setHgUrl] = useState<string>('https://www.hga038.com');
   const [earlyRefreshHours, setEarlyRefreshHours] = useState<number>(1);
   const [earlyWeakStrongDiff, setEarlyWeakStrongDiff] = useState<number>(-0.75);
   const [earlyHandicapMin, setEarlyHandicapMin] = useState<number>(-1.5);

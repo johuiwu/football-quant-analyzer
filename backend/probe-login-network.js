@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { detectLocalBrowser } from "./services/browserPool.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,7 +70,11 @@ async function probeLoginNetwork() {
       launchArgs.push("--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost");
     }
 
-    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+    const executablePath = detectLocalBrowser();
+    if (!executablePath) {
+      console.error("[探查] 错误：系统未安装 Chrome 或 Edge，请安装任意一款浏览器");
+      process.exit(1);
+    }
 
     browser = await puppeteer.launch({
       headless: false,

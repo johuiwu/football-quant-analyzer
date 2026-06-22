@@ -1,5 +1,6 @@
 import puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import { detectLocalBrowser } from "./browserPool.js";
 
 puppeteer.use(StealthPlugin());
 
@@ -144,9 +145,13 @@ export async function crawlQiumiwuFixtures() {
   let browser = null;
 
   try {
+    const browserPath = detectLocalBrowser();
+    if (!browserPath) {
+      return { success: false, error: "系统未安装 Chrome 或 Edge" };
+    }
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      executablePath: browserPath,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",

@@ -2,8 +2,7 @@ import { Router } from "express";
 import { getLiveCornerData, evaluateStrategies, DEFAULT_STRATEGIES, setCornerStrategies } from "../services/cornerService.js";
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus, getPollingAnalytics } from "../services/cornerService.js";
 import { getCornerHistory, saveCornerHistory, clearHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet, retryBet, getBetQueueStatus } from "../services/cornerBetService.js";
-import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag, extractBalance } from "../services/cornerCrawler.js";
-import { loginToHG as hgLoginToHG } from "../services/hgCrawlerService.js";
+import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag, extractBalance, loginToHG as cornerLoginToHG } from "../services/cornerCrawler.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
@@ -140,7 +139,7 @@ router.post("/corner/history", validateTypes({ matchId: "string", matchName: "st
 });
 
 // ======================== POST /api/corner/login ========================
-// ★ 复用 hgCrawlerService 的登录实现（已验证可用）
+// ★ 统一使用 cornerCrawler 的登录实现（内部含凭证验证）
 router.post("/corner/login", requireFields(["username", "password"]), validateLength({ username: { min: 1, max: 100 }, password: { min: 1, max: 100 } }), async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -148,23 +147,12 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
       return res.status(400).json({ success: false, error: "请提供用户名和密码" });
     }
 
-    // ★ Cookie 快速路径：先检查凭证是否有效，有效则直接返回成功
-    try {
-      const { loadAndValidate } = await import("../services/credentialManager.js");
-      const validCreds = await loadAndValidate();
-      if (validCreds && validCreds.uid && validCreds.ver) {
-        console.log("[cornerRoutes] /corner/login: 凭证有效，跳过浏览器登录");
-        resetBrowserClosedFlag();
-        return res.json({ success: true, method: "cookie_fastpath", message: "Cookie有效，已跳过浏览器登录" });
-      }
-    } catch (_) {}
-
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("登录超时，请重试")), 90000)
     );
 
     const result = await Promise.race([
-      hgLoginToHG({ username, password }),
+      cornerLoginToHG(username, password),
       timeoutPromise
     ]);
 
@@ -177,14 +165,14 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
       resetBrowserClosedFlag();
     }
 
-    // 根据失败原因提供友好建议（hgCrawler 返回 error 字段）
+    // 根据失败原因提供友好建议
     if (!result.success) {
       const errorMsg = result.error || "";
       let suggestion = "";
       if (errorMsg.includes("超时")) {
         suggestion = "网站可能暂时无法访问或被屏蔽，请检查网络或尝试设置 CRAWLER_HEADLESS=false 打开可见浏览器排查";
       } else if (errorMsg.includes("浏览器")) {
-        suggestion = "请确认 Chromium 已安装（npm install puppeteer 自动安装），或尝试设置环境变量 CRAWLER_HEADLESS=false";
+        suggestion = "请确认 Chrome 或 Edge 已安装，或尝试设置环境变量 CRAWLER_HEADLESS=false";
       } else if (errorMsg.includes("无法连接")) {
         suggestion = "浏览器页面连接失败，请重启服务后重试";
       } else {
