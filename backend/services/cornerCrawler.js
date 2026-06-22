@@ -1412,6 +1412,10 @@ async function ensureLogin() {
       try {
         let extractedUid = null;
         let extractedVer = null;
+
+        // 先等待 2s，让 chk_login 响应拦截有机会先捕获 uid/ver
+        await new Promise(r => setTimeout(r, 2000));
+
         // 遍历所有 frame 提取 uid/ver
         for (const frame of page.frames()) {
           try {
