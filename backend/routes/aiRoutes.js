@@ -442,8 +442,8 @@ router.post('/ai-translate-team', async (req, res) => {
     });
 
     let translated = (response.choices[0].message.content || '').trim();
-    // 剔除多余字符：引号、空格、换行等
-    translated = translated.replace(/["""''「」『』\s\n\r]+/g, '').trim();
+    // 剔除多余字符：引号、换行等，保留内部合法空格
+    translated = translated.replace(/["""''「」『』\n\r]+/g, '').trim();
 
     if (!translated) {
       translated = name;
