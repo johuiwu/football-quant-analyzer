@@ -59,17 +59,16 @@ router.post('/worldcup/predict-batch', (req, res) => {
       return res.status(400).json({ success: false, message: 'fixtures array required' });
     }
 
-    const results = fixtures.map(fixture => {
+    const results = [];
+    for (const fixture of fixtures) {
       const { fixtureId, homeTeamId, awayTeamId, stage } = fixture;
 
       const homeTeam = WORLD_CUP_TEAMS.find(t => t.id === homeTeamId);
       const awayTeam = WORLD_CUP_TEAMS.find(t => t.id === awayTeamId);
 
       if (!homeTeam || !awayTeam) {
-        return {
-          fixtureId,
-          error: 'Team not found'
-        };
+        results.push({ fixtureId, error: 'Team not found' });
+        continue;
       }
 
       const homeStats = teamRecentStatsMap[homeTeamId];
@@ -77,16 +76,16 @@ router.post('/worldcup/predict-batch', (req, res) => {
 
       let prediction;
       if (homeStats || awayStats) {
-        prediction = predictMatchWithStats(homeTeam, awayTeam, stage || 'group', homeStats, awayStats);
+        prediction = await predictMatchWithStats(homeTeam, awayTeam, stage || 'group', homeStats, awayStats);
       } else {
-        prediction = predictMatch(homeTeam, awayTeam, stage || 'group');
+        prediction = await predictMatch(homeTeam, awayTeam, stage || 'group');
       }
 
-      return {
+      results.push({
         fixtureId,
         ...prediction
-      };
-    });
+      });
+    }
 
     res.json({
       success: true,
@@ -467,6 +466,51 @@ router.post('/worldcup/refresh-standings', async (req, res) => {
     res.json(response);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/worldcup/sync-teams', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    if (!apiKey) {
+      return res.status(400).json({ success: false, msg: 'API Key is required' });
+    }
+
+    const response = await fetch('https://v3.football.api-sports.io/teams?league=1&season=2026', {
+      headers: { 'x-apisports-key': apiKey }
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, msg: `API-Football returned ${response.status}` });
+    }
+
+    const data = await response.json();
+
+    if (!data.response || data.response.length === 0) {
+      return res.json({ success: false, msg: '获取球队列表失败', count: 0, teams: [] });
+    }
+
+    // Build reverse mapping: English name → system teamId
+    const nameToTeamId = {};
+    for (const [teamId, info] of Object.entries(worldcupTeamIdToName)) {
+      if (info.en) nameToTeamId[info.en.toLowerCase()] = teamId;
+    }
+
+    const teams = data.response.map(item => {
+      const team = item.team;
+      const teamId = nameToTeamId[team.name.toLowerCase()] || `wc_${team.id}`;
+      return {
+        id: teamId,
+        name: team.name,
+        nameCn: worldcupTeamIdToName[teamId]?.cn || team.name,
+        league: 'WorldCup',
+        logo: team.logo,
+      };
+    });
+
+    res.json({ success: true, msg: '同步成功', count: teams.length, teams });
+  } catch (error) {
+    res.status(500).json({ success: false, msg: error.message });
   }
 });
 

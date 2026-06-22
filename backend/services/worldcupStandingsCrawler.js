@@ -65,7 +65,7 @@ export async function fetchStandings() {
     }
 
     // headless 模式可配置
-    const headless = process.env.CRAWLER_HEADLESS !== 'false' ? true : { headless: 'new' };
+    const headless = process.env.CRAWLER_HEADLESS === 'false' ? false : 'new';
 
     const browserPath = detectLocalBrowser();
     if (!browserPath) {
