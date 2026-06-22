@@ -251,6 +251,191 @@ async function handlePasscodePage(page, maxRetries = 3) {
   return { detected: true, handled: false };
 }
 
+/**
+ * 登录状态检测（对标 hgCrawlerService.detectLoginState）
+ * 优先级：PASSCODE_PAGE > KICKED_OUT > POPUP_ACTIVE > LOGGED_IN > LOGIN_PAGE > WAIT_RESPONSE
+ */
+async function detectLoginState(page) {
+  try {
+    return await page.evaluate(() => {
+      try {
+        // 优先级1: 简易密码页面（#back_login 可见）
+        var backLogin = document.getElementById('back_login');
+        if (backLogin) {
+          var s = getComputedStyle(backLogin);
+          if (s.display !== 'none' && s.visibility !== 'hidden') {
+            return { state: 'PASSCODE_PAGE', detail: '简易密码页面' };
+          }
+        }
+
+        // 优先级2: 被踢出（#alert_kick 容器激活）
+        var alertKick = document.getElementById('alert_kick');
+        if (alertKick && alertKick.classList.contains('on')) {
+          return { state: 'KICKED_OUT', detail: '被踢出登录' };
+        }
+
+        // 优先级3: 激活弹窗（容器 .on 类 或 display/visibility/opacity 可见）
+        var popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'C_alert_ok', 'alert_ok'];
+        for (var i = 0; i < popupIds.length; i++) {
+          var popupEl = document.getElementById(popupIds[i]);
+          if (popupEl) {
+            if (popupEl.classList.contains('on')) {
+              return { state: 'POPUP_ACTIVE', detail: '弹窗激活(.on): ' + popupIds[i] };
+            }
+            var ps = getComputedStyle(popupEl);
+            if (ps.display !== 'none' && ps.visibility !== 'hidden' && ps.opacity !== '0') {
+              return { state: 'POPUP_ACTIVE', detail: '弹窗激活(可见): ' + popupIds[i] };
+            }
+          }
+        }
+
+        // 优先级4: 已登录（主页特征）
+        var bodyText = document.body.textContent || "";
+        var hasMainFeature = (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
+                             (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
+        if (!hasMainFeature) {
+          var sportEl = document.getElementById("old_ft_live_league");
+          if (sportEl && getComputedStyle(sportEl).display !== 'none') hasMainFeature = true;
+        }
+        var accShow = document.getElementById("acc_show");
+        var loginHidden = !accShow || getComputedStyle(accShow).display === 'none';
+        if (loginHidden && bodyText.includes("In-Play")) hasMainFeature = true;
+
+        if (hasMainFeature) {
+          return { state: 'LOGGED_IN', detail: '主页特征可见' };
+        }
+
+        // 优先级5: 登录页面（#usr 可见）
+        var usrEl = document.querySelector('#usr');
+        if (usrEl && usrEl.offsetParent !== null) {
+          return { state: 'LOGIN_PAGE', detail: '登录页面' };
+        }
+
+        // 优先级6: 密码错误
+        var errEl = document.getElementById("text_error");
+        if (errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0) {
+          return { state: 'LOGIN_ERROR', detail: errEl.textContent.trim() };
+        }
+
+        // 优先级7: 其他
+        return { state: 'WAIT_RESPONSE', detail: '等待响应' };
+      } catch (err) {
+        return { state: 'WAIT_RESPONSE', detail: '检测异常: ' + (err.message || '') };
+      }
+    });
+  } catch (err) {
+    return { state: 'WAIT_RESPONSE', detail: 'evaluate异常: ' + (err.message || '') };
+  }
+}
+
+/**
+ * 强制清理所有弹窗容器（兜底机制）
+ */
+async function forceCleanupPopups(page) {
+  try {
+    return await page.evaluate(() => {
+      let cleaned = false;
+      const dialogIds = ["C_alert_confirm", "alert_confirm", "C_alert_ok", "alert_ok", "alert_kick", "system_popup", "alert_show"];
+      for (const id of dialogIds) {
+        const el = document.getElementById(id);
+        if (el) {
+          if (el.classList.contains("on")) { el.classList.remove("on"); cleaned = true; }
+          el.style.display = 'none';
+        }
+      }
+      if (document.body) {
+        document.body.classList.remove("scroll_lock", "locked");
+        document.body.style.overflow = "";
+      }
+      return cleaned;
+    });
+  } catch (_) { return false; }
+}
+
+/**
+ * 带自诊断的弹窗处理：先尝试点击按钮，失败则输出弹窗 HTML 结构
+ */
+async function handlePopupWithDiagnostics(page, popupCount, MAX_POPUP) {
+  console.log("[登录步骤] 第5步：处理弹窗 (" + popupCount + "/" + MAX_POPUP + ")");
+
+  // 1. 尝试点击取消/否/确认按钮
+  let clickResult = false;
+  try {
+    clickResult = await page.evaluate(() => {
+      const isVisible = (el) => {
+        const s = getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      let clicked = false;
+
+      // 点击取消/否
+      document.querySelectorAll(".btn_cancel, #C_no_btn, #no_btn, #C_cancel_btn, [class*='popup'] [class*='close']").forEach(btn => {
+        if (!isVisible(btn)) return;
+        const text = (btn.textContent || "").trim().toUpperCase();
+        if (text === "NO" || text === "否" || text === "CANCEL" || text === "取消" || btn.id === "C_no_btn" || btn.id === "no_btn" || btn.id === "C_cancel_btn") {
+          btn.click(); clicked = true;
+        }
+      });
+
+      // fallback: 点击任意可见 .btn_cancel
+      if (!clicked) {
+        document.querySelectorAll(".btn_cancel").forEach(btn => {
+          if (!isVisible(btn)) return;
+          btn.click(); clicked = true;
+        });
+      }
+
+      // 点击确认/OK（某些弹窗需要确认才能关闭）
+      if (!clicked) {
+        document.querySelectorAll('[class*="msg_popup"] .btn, .btn_confirm, .btn_submit, #C_ok_btn, #ok_btn, .btn_sure').forEach(btn => {
+          if (!isVisible(btn)) return;
+          const text = (btn.textContent || "").trim().toUpperCase();
+          if (text === "OK" || text === "确认" || text === "确定" || text === "SUBMIT" || text === "提交" || text === "是") {
+            btn.click(); clicked = true;
+          }
+        });
+      }
+
+      return clicked;
+    });
+  } catch (_) {}
+
+  // 2. 强制清理弹窗容器
+  const forceCleaned = await forceCleanupPopups(page);
+
+  // 3. 自诊断：首次弹窗时输出弹窗 HTML 结构
+  if (popupCount === 1) {
+    try {
+      const popupDiagnosis = await page.evaluate(() => {
+        const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'alert_kick', 'C_alert_ok', 'alert_ok'];
+        const results = [];
+        for (const id of popupIds) {
+          const el = document.getElementById(id);
+          if (el) {
+            results.push({
+              id,
+              hasOnClass: el.classList.contains('on'),
+              display: getComputedStyle(el).display,
+              visibility: getComputedStyle(el).visibility,
+              opacity: getComputedStyle(el).opacity,
+              innerHTML: el.innerHTML.substring(0, 300)
+            });
+          }
+        }
+        // 也输出 body 文本前 200 字符和当前 URL
+        return {
+          popups: results,
+          url: window.location.href,
+          bodySample: (document.body?.textContent || "").substring(0, 200)
+        };
+      });
+      console.log("[登录诊断] 当前检测到的弹窗HTML结构:", JSON.stringify(popupDiagnosis, null, 2));
+    } catch (_) {}
+  }
+
+  return clickResult || forceCleaned;
+}
+
 async function ensureLogin() {
   // 用户主动发起登录/启动监控，允许浏览器正常启动
   browserExplicitlyClosed = false;
@@ -435,7 +620,7 @@ async function ensureLogin() {
       const username = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
       const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
 
-      console.log("[cornerCrawler] 填入用户名密码...");
+      console.log("[登录步骤] 第1步：输入账号密码");
       await page.evaluate((usr, pw) => {
         const u = document.getElementById('usr');
         const p = document.getElementById('pwd');
@@ -457,138 +642,137 @@ async function ensureLogin() {
 
       // 点击登录按钮
       await new Promise(r => setTimeout(r, 500));
-      console.log("[cornerCrawler] 点击登录按钮...");
+      console.log("[登录步骤] 第2步：点击登录按钮");
       await page.evaluate(() => {
         const btn = document.getElementById('btn_login');
         if (btn) btn.click();
       });
 
       // 轮询检测登录结果（最多 60 秒）
-      console.log("[cornerCrawler] 轮询等待登录结果（最多 60s）...");
+      console.log("[登录步骤] 第3步：轮询等待登录结果（最多60s）");
       let loginResult = null;
-      const MAX_POPUP_COUNT = 5;
-      let passcodePopupCount = 0;
-      for (let i = 0; i < 100; i++) {
-        // 自适应轮询间隔：前10次500ms快速检测，之后1秒
-        const pollDelay = i < 10 ? 500 : 1000;
-        await new Promise(r => setTimeout(r, pollDelay));
-        await handlePopups(page);
+      const popupCount = { passcodePage: 0, kickedOut: 0, popupActive: 0 };
+      const MAX_POPUP = 5;
+      const loginStartTime = Date.now();
+      const LOGIN_POLL_TIMEOUT = 60000;
+      let waitResponseCount = 0;
 
-        const status = await page.evaluate(() => {
-          const body = document.body;
-          const bodyText = body ? body.textContent || "" : "";
-          const accShow = document.getElementById("acc_show");
-          const loginHidden = !accShow || accShow.style.display === "none" || (function(){ const s = getComputedStyle(accShow); return s.display === 'none' || s.visibility === 'hidden'; })();
-          const errEl = document.getElementById("text_error");
-          const hasError = errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0;
-          const hasMyEvents = bodyText.includes("My Events") || bodyText.includes("My Bets");
-          const hasInPlaySoccer = bodyText.includes("In-Play") && bodyText.includes("Soccer");
-          const hasSportSelector = (function(){ const el = document.getElementById("old_ft_live_league"); return el && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'; })();
-          // 检测简易密码页面（#back_login 按钮可见）
-          const backLoginBtn = document.getElementById("back_login");
-          const hasPasscodePage = backLoginBtn && getComputedStyle(backLoginBtn).display !== 'none' && getComputedStyle(backLoginBtn).visibility !== 'hidden';
-          // ★ 基于元素可见性检测（与 hgCrawlerService detectLoginState 一致），不使用文本匹配
-          const hasPopupActive = (function() {
-            const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show'];
-            for (const id of popupIds) {
-              const el = document.getElementById(id);
-              if (el && el.classList.contains('on')) return true;
+      while (Date.now() - loginStartTime < LOGIN_POLL_TIMEOUT) {
+        await new Promise(r => setTimeout(r, 1000));
+        const detected = await detectLoginState(page);
+        if (!detected || !detected.state) continue;
+
+        switch (detected.state) {
+          case 'PASSCODE_PAGE':
+            popupCount.passcodePage++;
+            if (popupCount.passcodePage > 3) {
+              console.log("[登录步骤] ❌ 简易密码页面超过 3 次，登录失败");
+              lastLoginErrorDetail = "popup_loop_timeout(passcodePage)";
+              await saveDebugScreenshot(page, "passcode-loop-" + loginAttempt);
+              loginResult = { success: false };
+              break;
             }
-            return false;
-          })();
-
-          return {
-            loginHidden, hasError, hasMyEvents, hasInPlaySoccer, hasSportSelector,
-            hasPasscodePage,
-            hasPopupActive,
-            currentUrl: window.location.href,
-            bodyTextSample: bodyText.substring(0, 200)
-          };
-        });
-
-        // 密码错误 => 不重试
-        if (status.hasError) {
-          const errMsg = await page.evaluate(() => document.getElementById("text_error")?.textContent || "未知错误");
-          console.error("[cornerCrawler] 登录失败（密码错误）: " + errMsg);
-          lastLoginErrorDetail = "login_wrong_password:" + errMsg;
-          await saveDebugScreenshot(page, "error-" + loginAttempt);
-          loginInProgress = false;
-          return null;
-        }
-
-        // 简易密码页面 — 优先处理（必须在登录成功判断之前）
-        if (status.hasPasscodePage) {
-          console.log("[cornerCrawler] 检测到简易密码页面，点击普通登入...");
-          await page.evaluate(() => {
-            const btn = document.querySelector("#back_login");
-            if (btn) btn.click();
-          });
-          await new Promise(r => setTimeout(r, 3000));
-          // 重新输入账号密码
-          console.log("[cornerCrawler] 重新输入账号密码...");
-          const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
-          const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
-          await page.evaluate((usr, pw) => {
-            const u = document.getElementById('usr');
-            const p = document.getElementById('pwd');
-            if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-            if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-          }, reUser, rePwd);
-          await new Promise(r => setTimeout(r, 500));
-          // 点击登录按钮
-          await page.evaluate(() => {
-            const btn = document.getElementById('btn_login');
-            if (btn) btn.click();
-          });
-          console.log("[cornerCrawler] 已重新点击登录按钮，继续等待...");
-          continue;
-        }
-
-        // 登录成功
-        if (status.hasMyEvents || status.hasInPlaySoccer || status.hasSportSelector || (status.loginHidden && status.hasInPlaySoccer)) {
-          console.log("[cornerCrawler] ✅ 登录成功！（轮次 " + (i + 1) + "）");
-          loginResult = { success: true };
-          break;
-        }
-
-        // 弹窗处理（基于元素可见性，与 hgCrawlerService 一致）
-        if (status.hasPopupActive) {
-          passcodePopupCount++;
-          if (passcodePopupCount > MAX_POPUP_COUNT) {
-            console.log("[cornerCrawler] 弹窗连续出现超过 " + MAX_POPUP_COUNT + " 次，跳过处理");
-          } else {
-            console.log("[cornerCrawler] 检测到激活弹窗，尝试关闭... (" + passcodePopupCount + "/" + MAX_POPUP_COUNT + ")");
+            console.log("[登录步骤] 第4步：检测页面状态 → 简易密码页面 (" + popupCount.passcodePage + "/3)");
             await page.evaluate(() => {
-              // 1. 尝试点击可见的取消/否按钮
-              const isVisible = (el) => {
-                const s = getComputedStyle(el);
-                return s.display !== 'none' && s.visibility !== 'hidden';
-              };
-              let clicked = false;
-              document.querySelectorAll("#C_no_btn, #no_btn, .btn_cancel").forEach(btn => {
-                if (isVisible(btn)) { btn.click(); clicked = true; }
-              });
-              // 2. 强制清理弹窗容器（移除 .on 类）
-              const popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup'];
-              for (const id of popupIds) {
-                const el = document.getElementById(id);
-                if (el && el.classList.contains('on')) el.classList.remove('on');
-              }
-              // 3. 清理 body 锁定类
-              if (document.body) {
-                document.body.classList.remove('scroll_lock', 'locked');
-                document.body.style.overflow = '';
-              }
+              const btn = document.querySelector("#back_login");
+              if (btn) btn.click();
             });
-          }
-        } else {
-          // 弹窗已消失，重置计数器
-          passcodePopupCount = 0;
+            await new Promise(r => setTimeout(r, 1500));
+            console.log("[登录步骤] 已点击普通登入，等待登录页面加载后重新登录...");
+            // 重新输入账号密码
+            const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
+            const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
+            await page.evaluate((usr, pw) => {
+              const u = document.getElementById('usr');
+              const p = document.getElementById('pwd');
+              if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
+              if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+            }, reUser, rePwd);
+            await new Promise(r => setTimeout(r, 500));
+            await page.evaluate(() => {
+              const btn = document.getElementById('btn_login');
+              if (btn) btn.click();
+            });
+            console.log("[登录步骤] 已重新输入账号密码并点击登录");
+            break;
+
+          case 'KICKED_OUT':
+            popupCount.kickedOut++;
+            if (popupCount.kickedOut > 2) {
+              console.log("[登录步骤] ❌ 被踢出超过 2 次，登录失败");
+              lastLoginErrorDetail = "login_kicked_out:账号在其他地方登录";
+              await saveDebugScreenshot(page, "kicked-out-" + loginAttempt);
+              loginResult = { success: false };
+              break;
+            }
+            console.log("[登录步骤] 第4步：检测页面状态 → 被踢出 (" + popupCount.kickedOut + "/2)");
+            await page.evaluate(() => {
+              const btn = document.querySelector("#kick_ok_btn");
+              if (btn) btn.click();
+            });
+            await new Promise(r => setTimeout(r, 1000));
+            await forceCleanupPopups(page);
+            console.log("[登录步骤] 已处理被踢出弹窗");
+            break;
+
+          case 'POPUP_ACTIVE':
+            popupCount.popupActive++;
+            if (popupCount.popupActive > MAX_POPUP) {
+              console.log("[登录步骤] ❌ 弹窗超过 " + MAX_POPUP + " 次，强制清理并登录失败");
+              await forceCleanupPopups(page);
+              lastLoginErrorDetail = "popup_loop_timeout(popupActive)";
+              await saveDebugScreenshot(page, "popup-loop-" + loginAttempt);
+              loginResult = { success: false };
+              break;
+            }
+            await handlePopupWithDiagnostics(page, popupCount.popupActive, MAX_POPUP);
+            await new Promise(r => setTimeout(r, 1000));
+            break;
+
+          case 'LOGGED_IN':
+            console.log("[登录步骤] 第6步：✅ 登录成功！(" + detected.detail + ")");
+            loginResult = { success: true };
+            break;
+
+          case 'LOGIN_PAGE':
+            // 还在登录页面，可能需要重新点击登录
+            console.log("[登录步骤] 第4步：检测页面状态 → 登录页面（等待中）");
+            break;
+
+          case 'LOGIN_ERROR':
+            const errMsg = detected.detail || "未知错误";
+            console.error("[登录步骤] ❌ 登录失败（密码错误）: " + errMsg);
+            lastLoginErrorDetail = "login_wrong_password:" + errMsg;
+            await saveDebugScreenshot(page, "error-" + loginAttempt);
+            loginResult = { success: false };
+            break;
+
+          case 'WAIT_RESPONSE':
+          default:
+            waitResponseCount++;
+            // 每 5 次输出一次诊断信息
+            if (waitResponseCount % 5 === 0) {
+              console.log("[登录步骤] 第4步：检测页面状态 → 等待响应 (" + waitResponseCount + "次, " + Math.round((Date.now() - loginStartTime) / 1000) + "s)");
+              // 每 10 次输出页面诊断
+              if (waitResponseCount % 10 === 0) {
+                try {
+                  const pageDiag = await page.evaluate(() => ({
+                    url: window.location.href,
+                    bodySample: (document.body?.textContent || "").substring(0, 200),
+                    visiblePopups: Array.from(document.querySelectorAll('[id*="alert"], [id*="popup"], [class*="popup"]')).filter(el => {
+                      const s = getComputedStyle(el);
+                      return s.display !== 'none' && s.visibility !== 'hidden' && el.offsetWidth > 0;
+                    }).map(el => ({ id: el.id, class: el.className.substring(0, 50), text: (el.textContent || "").substring(0, 100) }))
+                  }));
+                  console.log("[登录诊断] 页面状态:", JSON.stringify(pageDiag, null, 2));
+                } catch (_) {}
+              }
+            }
+            break;
         }
 
-        if (i % 5 === 4) {
-          console.log("[cornerCrawler] 登录轮询中... (" + (i + 1) + "/80) " + status.bodyTextSample.substring(0, 80));
-        }
+        // 如果有结果，退出循环
+        if (loginResult) break;
       }
 
       // 登录超时 => 重试
