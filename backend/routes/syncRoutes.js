@@ -143,14 +143,14 @@ router.get('/sync-standings', async (req, res) => {
                 const dbRow = await new Promise((resolve, reject) => {
                   const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
                     if (err) { reject(err); return; }
-                    db.get('SELECT season_xg, season_xga, season_xpts, season_ppda, season_ppda_allowed, season_npxgd, matches FROM teams WHERE team_id = ?', [team.id], (err2, row) => {
+                    db.get('SELECT season_xg, season_xga, season_xpts, season_ppda, season_ppda_allowed, season_npxgd FROM teams WHERE team_id = ?', [team.id], (err2, row) => {
                       db.close();
                       if (err2) reject(err2); else resolve(row);
                     });
                   });
                 });
                 if (dbRow && dbRow.season_xg > 0) {
-                  const played = dbRow.matches || standing.played || 38;
+                  const played = standing.played || 38;
                   understatAvgXG = dbRow.season_xg / played;
                   understatAvgXGA = dbRow.season_xga / played;
                   understatMeta = {
@@ -158,7 +158,7 @@ router.get('/sync-standings', async (req, res) => {
                     seasonPpda: dbRow.season_ppda || 0,
                     seasonPpdaAllowed: dbRow.season_ppda_allowed || 0,
                     seasonNpxgd: dbRow.season_npxgd || 0,
-                    matches: dbRow.matches || 0,
+                    matches: played,
                   };
                   console.log(`✅ [Understat 锁定] ${team.nameCn} 场均 xG: ${understatAvgXG.toFixed(2)} (xGA: ${understatAvgXGA.toFixed(2)})`);
                 }
