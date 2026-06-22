@@ -3181,19 +3181,35 @@ function buildHandicapsArray(m) {
     });
   }
   if (m.nextCorner) {
-    // 清理角球编号文本：支持中文数字和阿拉伯数字
+    // 解析角球编号：支持16进制编码（RNCB=11, RNCC=12, RNC4=4）
     let cornerText = (m.nextCorner.corner || "").trim();
-    const cnNumMap = {'一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10','十一':'11','十二':'12','十三':'13','十四':'14','十五':'15'};
     let cornerNum = "";
-    // 先尝试提取中文数字
-    const cnMatch = cornerText.match(/[一二三四五六七八九十]+/);
-    if (cnMatch && cnNumMap[cnMatch[0]]) {
-      cornerNum = cnNumMap[cnMatch[0]];
-    } else {
-      // 回退：提取阿拉伯数字
+
+    // 方法1：提取RNC后的16进制部分并解码
+    const rncMatch = cornerText.match(/RNC([0-9A-Fa-f]+)/i);
+    if (rncMatch) {
+      const hexVal = parseInt(rncMatch[1], 16);
+      if (!isNaN(hexVal) && hexVal > 0) cornerNum = String(hexVal);
+    }
+
+    // 方法2：回退提取中文数字
+    if (!cornerNum) {
+      const cnNumMap = {'一':'1','二':'2','三':'3','四':'4','五':'5','六':'6','七':'7','八':'8','九':'9','十':'10','十一':'11','十二':'12','十三':'13','十四':'14','十五':'15'};
+      const cnMatch = cornerText.match(/[一二三四五六七八九十]+/);
+      if (cnMatch && cnNumMap[cnMatch[0]]) cornerNum = cnNumMap[cnMatch[0]];
+    }
+
+    // 方法3：回退提取阿拉伯数字
+    if (!cornerNum) {
       cornerNum = cornerText.replace(/[^0-9]/g, "");
     }
-    if (!cornerNum) cornerNum = "0";
+
+    // 方法4：最终回退使用 totalCorners+1
+    if (!cornerNum) {
+      const totalCorners = m.totalCorners ?? m.homeCorners + m.awayCorners ?? 0;
+      cornerNum = String(totalCorners + 1);
+    }
+
     result.push({
       order: order++, category: "NEXT", categoryLabel: "NEXT CORNER",
       period: "full", line: cornerNum,
