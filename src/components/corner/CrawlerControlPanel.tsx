@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { RefreshCw, Play, StopCircle, Activity, Calendar, Trophy, Settings, ChevronDown, ChevronUp, Pause, TrendingUp, LogIn } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
-import { translateLeague, translateTeam, translateTime } from "../../data/cornerTranslations";
+import { translateLeague, translateTime } from "../../data/cornerTranslations";
+import { useTeamTranslation } from '../../hooks/useTeamTranslation';
 
 interface CrawlerStatus {
   isLoggedIn: boolean;
@@ -19,6 +20,11 @@ interface ScheduleItem {
   date: string;
   handicaps: any[];
   hasCornerOdds: boolean;
+}
+
+function TranslatedTeamName({ name }: { name: string }) {
+  const { translated } = useTeamTranslation(name);
+  return <>{translated}</>;
 }
 
 export default function CrawlerControlPanel() {
@@ -788,7 +794,7 @@ export default function CrawlerControlPanel() {
           ) : (
             (crawlerData.matches || []).map((match) => {
               return (
-                <div key={match.matchId} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
+                <div key={match.matchId} data-match-id={match.matchId} className="bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
                   <div
                     className="p-4 cursor-pointer flex items-center justify-between hover:bg-slate-800/50 transition-colors"
                     onClick={() => toggleMatchExpand(match.matchId)}
@@ -800,7 +806,7 @@ export default function CrawlerControlPanel() {
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-center">
-                          <div className="text-sm font-medium text-slate-200">{translateTeam(match.homeTeam)}</div>
+                          <div className="text-sm font-medium text-slate-200"><TranslatedTeamName name={match.homeTeam} /></div>
                         </div>
                         <div className="text-center">
                           <div className="text-lg font-bold text-slate-300">
@@ -809,7 +815,7 @@ export default function CrawlerControlPanel() {
                           {/* 角球数不展示，仅展示比分 */}
                         </div>
                         <div className="text-center">
-                          <div className="text-sm font-medium text-slate-200">{translateTeam(match.awayTeam)}</div>
+                          <div className="text-sm font-medium text-slate-200"><TranslatedTeamName name={match.awayTeam} /></div>
                         </div>
                       </div>
                     </div>
