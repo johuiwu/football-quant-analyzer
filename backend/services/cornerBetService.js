@@ -403,6 +403,17 @@ export async function processBetQueue() {
       return;
     }
 
+    // ★ 自动投注开关检查：关闭后不再执行投注
+    if (!betConfig.autoBetEnabled) {
+      console.log("[cornerBetService] 自动投注已关闭，跳过: bet#" + task.betId);
+      await run(
+        "UPDATE corner_bets SET status = 'skipped', error_reason = '自动投注未启用', executed_at = ? WHERE id = ?",
+        [new Date().toISOString(), task.betId]
+      );
+      isProcessing = false;
+      return;
+    }
+
     // ★ 非真实模式：标记为 skipped，不执行实际投注
     if (!betConfig.isRealMode) {
       await run(

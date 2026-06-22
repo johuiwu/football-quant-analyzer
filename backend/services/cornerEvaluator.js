@@ -39,6 +39,10 @@ export function resolveStrategyOdds(match, strategy) {
   if (cornerOU) {
     if (betDir === "over" && cornerOU.overOdds > 0) return cornerOU.overOdds;
     if (betDir === "under" && cornerOU.underOdds > 0) return cornerOU.underOdds;
+    // under 方向但 underOdds 缺失时输出警告
+    if (betDir === "under" && (!cornerOU.underOdds || cornerOU.underOdds <= 0)) {
+      console.warn(`[cornerEvaluator] underOdds缺失 matchId=${match.matchId}, 将使用fallback赔率`);
+    }
     // auto 方向：从 cornerOU 中提取有效赔率（优先 overOdds，其次 underOdds）
     if (betDir === "auto" || betDir === "next") {
       if (cornerOU.overOdds > 0) return cornerOU.overOdds;
