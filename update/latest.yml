@@ -1,11 +1,19 @@
 version: 2.8.6
 files:
-  # 完整安装包 — 走 kkgithub.com 国内镜像 (5~10MB/s)
-  - url: https://kkgithub.com/https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.6/football-quant-analyzer-setup-2.8.6.exe
+  # 主源: kkgithub.com 国内镜像 (5~10MB/s)
+  - url: https://kkgithub.com/johuiwu/football-quant-analyzer/releases/download/v2.8.6/football-quant-analyzer-setup-2.8.6.exe
     sha512: 3CN9AehF4r3ukVq06bTqklx2mnw2Q5Taba0LEAR6zpUY6SZDMrRS12p5V+Z/F7ufrQ5KtSHFrjd6dUk11ebs/g==
     size: 130235101
-  # 差分更新元数据 — 也走镜像（134KB，秒下）
-  - url: https://kkgithub.com/https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.6/football-quant-analyzer-setup-2.8.6.exe.blockmap
+  # 备选: GitHub 原始链接 (走拦截器代理加速)
+  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.6/football-quant-analyzer-setup-2.8.6.exe
+    sha512: 3CN9AehF4r3ukVq06bTqklx2mnw2Q5Taba0LEAR6zpUY6SZDMrRS12p5V+Z/F7ufrQ5KtSHFrjd6dUk11ebs/g==
+    size: 130235101
+  # blockmap: kkgithub.com 镜像 (134KB，秒下)
+  - url: https://kkgithub.com/johuiwu/football-quant-analyzer/releases/download/v2.8.6/football-quant-analyzer-setup-2.8.6.exe.blockmap
+    sha512: ZGK0rsiKL6cwPu8arAp/R7zKhLH7In7eF2djDPyl48+aAsMUXfiCSBf99t/ROXgHbYlAWBCJGvEyQoe+Q/ToOw==
+    size: 137275
+  # blockmap 备选: GitHub
+  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.6/football-quant-analyzer-setup-2.8.6.exe.blockmap
     sha512: ZGK0rsiKL6cwPu8arAp/R7zKhLH7In7eF2djDPyl48+aAsMUXfiCSBf99t/ROXgHbYlAWBCJGvEyQoe+Q/ToOw==
     size: 137275
 path: football-quant-analyzer-setup-2.8.6.exe

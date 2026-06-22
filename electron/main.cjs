@@ -356,8 +356,8 @@ function setupAutoUpdater() {
 
   // 拦截 electron-updater 下载请求，将 GitHub URL 重写为加速代理 URL
   // 同时拦截 exe（完整下载/差分拼接）和 blockmap（差分更新元数据）
-  // 双源策略：latest.yml 中 Gitee URL 排第一（国内直连快），GitHub 排第二（走代理加速）
-  // Gitee 域名请求不拦截，直连即可；仅拦截 GitHub releases/download 和 objects.githubusercontent.com
+  // 双源策略：latest.yml 中 kkgithub.com 镜像排第一（国内直连快），GitHub 原始链接排第二（走代理加速）
+  // kkgithub.com 域名请求不拦截，直连即可；仅拦截 github.com releases/download 和 objects.githubusercontent.com
   const { session } = require('electron');
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['https://github.com/*/releases/download/*', 'https://objects.githubusercontent.com/*'] },
@@ -427,6 +427,19 @@ function setupAutoUpdater() {
   autoUpdater.on("error", async (err) => {
     const msg = err.message || '';
     console.error("[autoUpdater] 更新出错:", msg);
+
+    // 下载失败诊断日志
+    const errUrl = err.config?.url || err.request?.res?.responseUrl || '(未知)';
+    let errType = 'unknown';
+    if (msg.includes('ENOTFOUND') || msg.includes('ERR_NAME_NOT_RESOLVED')) errType = 'DNS';
+    else if (msg.includes('ERR_SSL') || msg.includes('CERT')) errType = 'SSL';
+    else if (msg.includes('ETIMEDOUT') || msg.includes('TIMED_OUT')) errType = 'timeout';
+    else if (msg.includes('ECONNREFUSED') || msg.includes('ERR_CONNECTION_REFUSED')) errType = 'connection_refused';
+    else if (msg.includes('ECONNRESET') || msg.includes('ERR_CONNECTION_RESET')) errType = 'connection_reset';
+    else if (msg.includes('net::ERR')) errType = 'network';
+    else if (msg.includes('502') || msg.includes('503')) errType = 'server_error';
+    else if (msg.includes('sha512') || msg.includes('checksum')) errType = 'checksum_mismatch';
+    console.log(`[autoUpdater] 下载失败诊断: URL=${errUrl}, 错误类型=${errType}, 代理=${GITHUB_MIRROR_PROXIES[currentProxyIndex]}`);
 
     const isNetworkError = msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('net::ERR') ||
       msg.includes('ENOTFOUND') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') ||
