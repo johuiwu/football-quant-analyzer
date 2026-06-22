@@ -256,73 +256,95 @@ async function handlePasscodePage(page, maxRetries = 3) {
  * 优先级：PASSCODE_PAGE > KICKED_OUT > POPUP_ACTIVE > LOGGED_IN > LOGIN_PAGE > WAIT_RESPONSE
  */
 async function detectLoginState(page) {
-  try {
-    return await page.evaluate(() => {
-      try {
-        // 优先级1: 简易密码页面（#back_login 可见）
-        var backLogin = document.getElementById('back_login');
-        if (backLogin) {
-          var s = getComputedStyle(backLogin);
-          if (s.display !== 'none' && s.visibility !== 'hidden') {
-            return { state: 'PASSCODE_PAGE', detail: '简易密码页面' };
-          }
+  // ★ HG 网站使用 iframe，登录表单和内容可能在 iframe 中
+  // 必须遍历所有 frame 进行检测，不能只检测主 frame
+  const detectFn = () => {
+    try {
+      // 优先级1: 简易密码页面（#back_login 可见）
+      var backLogin = document.getElementById('back_login');
+      if (backLogin) {
+        var s = getComputedStyle(backLogin);
+        if (s.display !== 'none' && s.visibility !== 'hidden' && s.visibility !== 'collapse') {
+          return { state: 'PASSCODE_PAGE', detail: '简易密码页面' };
         }
-
-        // 优先级2: 被踢出（#alert_kick 容器激活）
-        var alertKick = document.getElementById('alert_kick');
-        if (alertKick && alertKick.classList.contains('on')) {
-          return { state: 'KICKED_OUT', detail: '被踢出登录' };
-        }
-
-        // 优先级3: 激活弹窗（容器 .on 类 或 display/visibility/opacity 可见）
-        var popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'C_alert_ok', 'alert_ok'];
-        for (var i = 0; i < popupIds.length; i++) {
-          var popupEl = document.getElementById(popupIds[i]);
-          if (popupEl) {
-            if (popupEl.classList.contains('on')) {
-              return { state: 'POPUP_ACTIVE', detail: '弹窗激活(.on): ' + popupIds[i] };
-            }
-            var ps = getComputedStyle(popupEl);
-            if (ps.display !== 'none' && ps.visibility !== 'hidden' && ps.opacity !== '0') {
-              return { state: 'POPUP_ACTIVE', detail: '弹窗激活(可见): ' + popupIds[i] };
-            }
-          }
-        }
-
-        // 优先级4: 已登录（主页特征）
-        var bodyText = document.body.textContent || "";
-        var hasMainFeature = (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
-                             (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
-        if (!hasMainFeature) {
-          var sportEl = document.getElementById("old_ft_live_league");
-          if (sportEl && getComputedStyle(sportEl).display !== 'none') hasMainFeature = true;
-        }
-        var accShow = document.getElementById("acc_show");
-        var loginHidden = !accShow || getComputedStyle(accShow).display === 'none';
-        if (loginHidden && bodyText.includes("In-Play")) hasMainFeature = true;
-
-        if (hasMainFeature) {
-          return { state: 'LOGGED_IN', detail: '主页特征可见' };
-        }
-
-        // 优先级5: 登录页面（#usr 可见）
-        var usrEl = document.querySelector('#usr');
-        if (usrEl && usrEl.offsetParent !== null) {
-          return { state: 'LOGIN_PAGE', detail: '登录页面' };
-        }
-
-        // 优先级6: 密码错误
-        var errEl = document.getElementById("text_error");
-        if (errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0) {
-          return { state: 'LOGIN_ERROR', detail: errEl.textContent.trim() };
-        }
-
-        // 优先级7: 其他
-        return { state: 'WAIT_RESPONSE', detail: '等待响应' };
-      } catch (err) {
-        return { state: 'WAIT_RESPONSE', detail: '检测异常: ' + (err.message || '') };
       }
-    });
+
+      // 优先级2: 被踢出（#alert_kick 容器激活）
+      var alertKick = document.getElementById('alert_kick');
+      if (alertKick && alertKick.classList.contains('on')) {
+        return { state: 'KICKED_OUT', detail: '被踢出登录' };
+      }
+
+      // 优先级3: 激活弹窗（容器 .on 类 或 display/visibility/opacity 可见）
+      var popupIds = ['C_alert_confirm', 'alert_confirm', 'alert_show', 'system_popup', 'C_alert_ok', 'alert_ok'];
+      for (var i = 0; i < popupIds.length; i++) {
+        var popupEl = document.getElementById(popupIds[i]);
+        if (popupEl) {
+          if (popupEl.classList.contains('on')) {
+            return { state: 'POPUP_ACTIVE', detail: '弹窗激活(.on): ' + popupIds[i] };
+          }
+          var ps = getComputedStyle(popupEl);
+          // visibility: collapse 等同于 hidden，也需要排除
+          var isVisible = ps.display !== 'none' && ps.visibility !== 'hidden' && ps.visibility !== 'collapse' && ps.opacity !== '0';
+          if (isVisible) {
+            return { state: 'POPUP_ACTIVE', detail: '弹窗激活(可见): ' + popupIds[i] };
+          }
+        }
+      }
+
+      // 优先级4: 已登录（主页特征）
+      var bodyText = document.body.textContent || "";
+      var hasMainFeature = (bodyText.includes("My Events") || bodyText.includes("My Bets")) ||
+                           (bodyText.includes("In-Play") && bodyText.includes("Soccer"));
+      if (!hasMainFeature) {
+        var sportEl = document.getElementById("old_ft_live_league");
+        if (sportEl && getComputedStyle(sportEl).display !== 'none') hasMainFeature = true;
+      }
+      var accShow = document.getElementById("acc_show");
+      var loginHidden = !accShow || getComputedStyle(accShow).display === 'none';
+      if (loginHidden && bodyText.includes("In-Play")) hasMainFeature = true;
+
+      if (hasMainFeature) {
+        return { state: 'LOGGED_IN', detail: '主页特征可见' };
+      }
+
+      // 优先级5: 登录页面（#usr 可见）
+      var usrEl = document.querySelector('#usr');
+      if (usrEl && usrEl.offsetParent !== null) {
+        return { state: 'LOGIN_PAGE', detail: '登录页面' };
+      }
+
+      // 优先级6: 密码错误
+      var errEl = document.getElementById("text_error");
+      if (errEl && errEl.style.display !== "none" && errEl.textContent.trim().length > 0) {
+        return { state: 'LOGIN_ERROR', detail: errEl.textContent.trim() };
+      }
+
+      // 优先级7: 其他
+      return { state: 'WAIT_RESPONSE', detail: '等待响应' };
+    } catch (err) {
+      return { state: 'WAIT_RESPONSE', detail: '检测异常: ' + (err.message || '') };
+    }
+  };
+
+  try {
+    // 先检测主 frame
+    var result = await page.evaluate(detectFn);
+    if (result.state !== 'WAIT_RESPONSE') return result;
+
+    // 主 frame 无有效状态，遍历 iframe 检测
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      try {
+        var frameResult = await frame.evaluate(detectFn);
+        if (frameResult.state !== 'WAIT_RESPONSE') {
+          frameResult.detail += ' (iframe)';
+          return frameResult;
+        }
+      } catch (_) {}
+    }
+
+    return result; // 返回主 frame 的 WAIT_RESPONSE
   } catch (err) {
     return { state: 'WAIT_RESPONSE', detail: 'evaluate异常: ' + (err.message || '') };
   }
@@ -621,9 +643,21 @@ async function ensureLogin() {
       const password = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
 
       console.log("[登录步骤] 第1步：输入账号密码");
-      await page.evaluate((usr, pw) => {
-        const u = document.getElementById('usr');
-        const p = document.getElementById('pwd');
+      // ★ HG 网站登录表单可能在 iframe 中，需要遍历所有 frame
+      let targetFrame = page.mainFrame();
+      for (const frame of page.frames()) {
+        try {
+          const hasUsr = await frame.$("#usr, input[name='username']");
+          if (hasUsr) {
+            targetFrame = frame;
+            console.log("[登录步骤] 在 " + (frame === page.mainFrame() ? "主frame" : "iframe") + " 中找到登录表单");
+            break;
+          }
+        } catch (_) {}
+      }
+      await targetFrame.evaluate((usr, pw) => {
+        const u = document.getElementById('usr') || document.querySelector("input[name='username']");
+        const p = document.getElementById('pwd') || document.querySelector("input[name='password']");
         if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
         if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
       }, username, password);
@@ -643,8 +677,8 @@ async function ensureLogin() {
       // 点击登录按钮
       await new Promise(r => setTimeout(r, 500));
       console.log("[登录步骤] 第2步：点击登录按钮");
-      await page.evaluate(() => {
-        const btn = document.getElementById('btn_login');
+      await targetFrame.evaluate(() => {
+        const btn = document.getElementById('btn_login') || document.querySelector("input[type='submit'], button[type='submit']");
         if (btn) btn.click();
       });
 
@@ -673,26 +707,41 @@ async function ensureLogin() {
               break;
             }
             console.log("[登录步骤] 第4步：检测页面状态 → 简易密码页面 (" + popupCount.passcodePage + "/3)");
-            await page.evaluate(() => {
-              const btn = document.querySelector("#back_login");
-              if (btn) btn.click();
-            });
+            // ★ 在所有 frame 中查找并点击 #back_login
+            for (const frame of page.frames()) {
+              try {
+                const clicked = await frame.evaluate(() => {
+                  const btn = document.querySelector("#back_login");
+                  if (btn) { btn.click(); return true; }
+                  return false;
+                });
+                if (clicked) break;
+              } catch (_) {}
+            }
             await new Promise(r => setTimeout(r, 1500));
             console.log("[登录步骤] 已点击普通登入，等待登录页面加载后重新登录...");
-            // 重新输入账号密码
+            // 重新输入账号密码（遍历所有 frame）
             const reUser = (runtimeCredentials && runtimeCredentials.username) || HG_USERNAME;
             const rePwd = (runtimeCredentials && runtimeCredentials.password) || HG_PASSWORD;
-            await page.evaluate((usr, pw) => {
-              const u = document.getElementById('usr');
-              const p = document.getElementById('pwd');
-              if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
-              if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
-            }, reUser, rePwd);
-            await new Promise(r => setTimeout(r, 500));
-            await page.evaluate(() => {
-              const btn = document.getElementById('btn_login');
-              if (btn) btn.click();
-            });
+            for (const frame of page.frames()) {
+              try {
+                const filled = await frame.evaluate((usr, pw) => {
+                  const u = document.getElementById('usr') || document.querySelector("input[name='username']");
+                  const p = document.getElementById('pwd') || document.querySelector("input[name='password']");
+                  if (u) { u.value = usr; u.dispatchEvent(new Event('input', { bubbles: true })); }
+                  if (p) { p.value = pw; p.dispatchEvent(new Event('input', { bubbles: true })); }
+                  return !!(u && p);
+                }, reUser, rePwd);
+                if (filled) {
+                  await new Promise(r => setTimeout(r, 500));
+                  await frame.evaluate(() => {
+                    const btn = document.getElementById('btn_login') || document.querySelector("input[type='submit']");
+                    if (btn) btn.click();
+                  });
+                  break;
+                }
+              } catch (_) {}
+            }
             console.log("[登录步骤] 已重新输入账号密码并点击登录");
             break;
 
