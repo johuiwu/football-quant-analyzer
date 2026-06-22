@@ -230,6 +230,7 @@ const COLUMNS: ColumnConfig[] = [
 function TeamsTab() {
   const teams = useWorldCupStore((s) => s.teams);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
   const [statsMap, setStatsMap] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState('elo');
@@ -288,15 +289,33 @@ function TeamsTab() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setRefreshMsg('');
     try {
-      await fetch('/api/worldcup/refresh-team-stats', { method: 'POST' });
+      const refreshRes = await fetch('/api/worldcup/refresh-team-stats', { method: 'POST' });
+      const refreshData = await refreshRes.json();
       await loadStats();
+      if (refreshData.success) {
+        const changedText = refreshData.changed > 0
+          ? `${refreshData.changed} 支球队数据有更新`
+          : '数据已是最新';
+        setRefreshMsg(`已刷新 ${refreshData.total} 支球队，${changedText}`);
+      } else {
+        setRefreshMsg('刷新失败: ' + (refreshData.message || '未知错误'));
+      }
     } catch (err) {
       console.error('刷新统计数据失败:', err);
+      setRefreshMsg('刷新失败');
     } finally {
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    if (refreshMsg) {
+      const timer = setTimeout(() => setRefreshMsg(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [refreshMsg]);
 
   if (loading) {
     return (
@@ -321,6 +340,11 @@ function TeamsTab() {
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           {refreshing ? '刷新中...' : '刷新统计数据'}
         </button>
+        {refreshMsg && (
+          <span className={`text-xs ${refreshMsg.includes('失败') ? 'text-rose-400' : 'text-emerald-400'}`}>
+            {refreshMsg}
+          </span>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">

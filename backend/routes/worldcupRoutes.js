@@ -287,7 +287,7 @@ function convertToSystemStats(livescoreData) {
     const gC = goalsConceded?.gC || 0;
     const xGc = goalsConceded?.xGc || 0;
     results[teamId] = {
-      avgXgFor: goals.xG != null ? goals.xG : 0,
+      avgXgFor: goals.xG != null ? goals.xG / played : 0,
       avgXgAgainst: played > 0 ? xGc / played : 0,
       avgPossession: 50,
       avgShots: shots?.pG || 0,
@@ -336,9 +336,10 @@ router.post('/worldcup/refresh-team-stats', async (req, res) => {
     // Read current stats from JSON file
     const currentStats = readStatsFromFile();
     let updated = 0;
+    let changed = 0;
 
     for (const [teamId, stats] of Object.entries(converted)) {
-      currentStats[teamId] = {
+      const newStats = {
         avgXgFor: stats.avgXgFor,
         avgXgAgainst: stats.avgXgAgainst,
         avgPossession: Math.round(stats.avgPossession),
@@ -349,6 +350,14 @@ router.post('/worldcup/refresh-team-stats', async (req, res) => {
         avgCorners: stats.avgCorners,
         winRate: stats.winRate,
       };
+
+      // Check if data actually changed
+      const oldStats = currentStats[teamId];
+      if (!oldStats || JSON.stringify(oldStats) !== JSON.stringify(newStats)) {
+        changed++;
+      }
+
+      currentStats[teamId] = newStats;
       updated++;
     }
 
@@ -373,7 +382,7 @@ router.post('/worldcup/refresh-team-stats', async (req, res) => {
       }];
     }
 
-    res.json({ success: true, updated, total: Object.keys(converted).length });
+    res.json({ success: true, updated, changed, total: Object.keys(converted).length });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
