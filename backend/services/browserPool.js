@@ -3,6 +3,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { execFileSync } from "child_process";
 
 puppeteer.use(StealthPlugin());
 
@@ -47,11 +48,39 @@ const FALLBACK_DOMAINS = [
 // ======================== 本地浏览器检测 ========================
 
 /**
+ * 通过 `where` 命令在 Windows 下搜索可执行文件路径
+ * @param {string} cmd 要搜索的命令名（如 'chrome' 或 'msedge'）
+ * @returns {string|null} 找到的完整路径，或 null
+ */
+function _resolveViaWhere(cmd) {
+  try {
+    const result = execFileSync('where', [cmd], {
+      encoding: 'utf-8',
+      timeout: 3000,
+      windowsHide: true,
+    });
+    // where 可能返回多行（取第一行）
+    const firstLine = result.split(/\r?\n/)[0]?.trim();
+    if (firstLine && fs.existsSync(firstLine)) {
+      return firstLine;
+    }
+  } catch (_) {
+    // where 命令失败（找不到或超时）→ 静默忽略
+  }
+  return null;
+}
+
+/**
  * 检测本地已安装的 Chrome 或 Edge 浏览器
- * 优先级：Chrome → Edge
+ * 按优先级依次尝试：
+ *   1. 固定安装路径（Program Files）
+ *   2. Windows `where` 命令行搜索
+ *   3. 环境变量 CHROME_PATH / EDGE_PATH
+ *   4. Program Files (x86) 备选路径
  * @returns {string|null} 浏览器可执行文件路径，或 null
  */
 export function detectLocalBrowser() {
+  // --- 优先级 1：标准安装路径 ---
   const candidates = [
     { path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', name: 'Chrome' },
     { path: 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe', name: 'Edge' },
@@ -62,7 +91,48 @@ export function detectLocalBrowser() {
       return browserPath;
     }
   }
-  console.error('[browserPool] 错误：系统未安装 Chrome 或 Edge，请安装任意一款浏览器再启用角球监控');
+
+  // --- 优先级 2：where 命令行搜索 ---
+  const whereCmds = [
+    { cmd: 'chrome', name: 'Chrome' },
+    { cmd: 'msedge', name: 'Edge' },
+  ];
+  for (const { cmd, name } of whereCmds) {
+    const resolved = _resolveViaWhere(cmd);
+    if (resolved) {
+      console.log(`[browserPool] 通过 where 找到本地 ${name} 浏览器 (路径: ${resolved})`);
+      return resolved;
+    }
+  }
+
+  // --- 优先级 3：环境变量 ---
+  const envVars = [
+    { key: 'CHROME_PATH', name: 'Chrome' },
+    { key: 'EDGE_PATH', name: 'Edge' },
+  ];
+  for (const { key, name } of envVars) {
+    const envPath = process.env[key];
+    if (envPath && fs.existsSync(envPath)) {
+      console.log(`[browserPool] 通过环境变量 ${key} 找到 ${name} 浏览器 (路径: ${envPath})`);
+      return envPath;
+    }
+  }
+
+  // --- 优先级 4：x86 备选路径 ---
+  const x86Candidates = [
+    { path: 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', name: 'Chrome (x86)' },
+    { path: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', name: 'Edge (x86)' },
+  ];
+  for (const { path: browserPath, name } of x86Candidates) {
+    if (fs.existsSync(browserPath)) {
+      console.log(`[browserPool] 使用本地 ${name} 浏览器 (路径: ${browserPath})`);
+      return browserPath;
+    }
+  }
+
+  console.error('[browserPool] 错误：系统未检测到 Chrome 或 Edge 浏览器');
+  console.error('[browserPool] 请安装 Google Chrome 或 Microsoft Edge 后重试');
+  console.error('[browserPool] 下载地址: https://www.google.com/chrome/ 或 https://www.microsoft.com/edge');
   return null;
 }
 
@@ -199,8 +269,9 @@ async function launchBrowser() {
     return bi;
   } catch (e) {
     const errMsg = e.message || String(e);
+    console.error("[Puppeteer错误] 详细原因:", errMsg);
     console.error("[browserPool] 浏览器启动失败:", errMsg);
-    if (errMsg.includes("chrome") || errMsg.includes("executable")) {
+    if (errMsg.includes("chrome") || errMsg.includes("executable") || errMsg.includes("spawn") || errMsg.includes("ENOENT")) {
       console.error("[browserPool] 提示: 请安装 Google Chrome 或 Microsoft Edge 浏览器");
     }
     isLaunching = false;

@@ -695,8 +695,8 @@ async function ensureLogin() {
 
   // ✗ 浏览器启动失败
   if (!bi) {
-    lastLoginErrorDetail = "browser_launch_failed:浏览器启动失败，请检查 Chromium 是否安装，或设置 CRAWLER_HEADLESS=false 试试";
-    console.error("[cornerCrawler] 浏览器未启动，登录中止");
+    lastLoginErrorDetail = "browser_launch_failed:您的电脑未检测到 Google Chrome 或 Microsoft Edge 浏览器，请安装任意一款后重试";
+    console.error("[cornerCrawler] 浏览器未启动，登录中止（未找到本地浏览器）");
     return null;
   }
 
@@ -810,8 +810,8 @@ async function ensureLogin() {
       await new Promise(r => setTimeout(r, 2000));
       const biRetry = await getSharedBrowser(false);
       if (!biRetry) {
-        lastLoginErrorDetail = "browser_launch_failed_retry";
-        console.error("[cornerCrawler] 重试时浏览器启动失败");
+        lastLoginErrorDetail = "browser_launch_failed_retry:您的电脑未检测到 Chrome 或 Edge 浏览器，请安装后重试";
+        console.error("[cornerCrawler] 重试时浏览器启动失败（未找到本地浏览器）");
         continue;
       }
     }
