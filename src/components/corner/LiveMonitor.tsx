@@ -169,70 +169,88 @@ const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handi
   );
 });
 
-// ==================== 常规盘口表格（聚合多条盘口线） ====================
+// ==================== 常规盘口表格（紧凑型：全场+半场同行展示） ====================
 
 const REGULAR_BORDER = "border-emerald-600/40 bg-emerald-900/10";
 const REGULAR_HEADER = "bg-emerald-700/30 text-emerald-300";
 
-/** 将同类别盘口聚合为横向表格 */
+/** 紧凑型表格：让球或大小球，全场和半场数据并列在同一表格中 */
 const RegularMarketTable = React.memo(function RegularMarketTable({
   title,
-  items,
+  fullItems,
+  halfItems,
   type,
 }: {
   title: string;
-  items: HandicapEntry[];
+  fullItems: HandicapEntry[];
+  halfItems: HandicapEntry[];
   type: "HDP" | "O/U";
 }) {
-  if (items.length === 0) return null;
+  if (fullItems.length === 0 && halfItems.length === 0) return null;
 
   const isOU = type === "O/U";
+  const sideLabels: [string, string] = isOU ? ["大", "小"] : ["主", "客"];
+
+  // 取全场的 key（盘口线），半场的 key 跟随
+  const fullKeys = fullItems.map((h) => String(h.line));
+  const halfKeys = halfItems.map((h) => String(h.line));
+
+  // 构建渲染：每个单元显示 "盘口线" + "赔率"
+  const renderCell = (h: HandicapEntry | undefined) => {
+    const locked = (h as any)?.locked === true;
+    if (!h) {
+      return (
+        <td className="px-2 py-1 text-center text-slate-600 text-[11px]">—</td>
+      );
+    }
+    return (
+      <td className="px-2 py-1 text-center">
+        <div className="text-[10px] text-slate-500">{fmtLine(h.line)}</div>
+        <div className={`text-[12px] font-semibold ${locked ? "text-slate-600" : "text-red-400"}`}>
+          {fmt(isOU ? h.odds?.over : h.odds?.home)}
+        </div>
+      </td>
+    );
+  };
+
+  const renderRow = (side: "top" | "bottom") => {
+    const getVal = (h: HandicapEntry | undefined) => {
+      if (!h) return undefined;
+      if (isOU) return side === "top" ? h.odds?.over : h.odds?.under;
+      return side === "top" ? h.odds?.home : h.odds?.away;
+    };
+    const fullItem = side === "top" ? fullItems[0] : fullItems[1];
+    const halfItem = side === "top" ? halfItems[0] : halfItems[1];
+    return (
+      <tr className="border-t border-emerald-700/20">
+        <td className="px-2 py-1 text-[10px] text-slate-500 text-center font-medium">{sideLabels[side === "top" ? 0 : 1]}</td>
+        <td className="px-2 py-1 text-center">
+          <div className="text-[10px] text-emerald-400/60">全</div>
+          {side === "top" ? renderCell(fullItem) : renderCell(fullItem)}
+        </td>
+        <td className="px-2 py-1 text-center">
+          <div className="text-[10px] text-emerald-400/60">半</div>
+          {side === "top" ? renderCell(halfItem) : renderCell(halfItem)}
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div className={`rounded-lg border ${REGULAR_BORDER} overflow-hidden`}>
-      <div className={`px-2 py-1 text-[10px] font-medium ${REGULAR_HEADER}`}>{title}</div>
+      <div className={`px-2 py-1 text-[10px] font-medium ${REGULAR_HEADER} text-center`}>{title}</div>
       <table className="w-full text-[11px]">
-        <thead>
-          <tr className="border-t border-emerald-700/30">
-            <th className="px-1.5 py-0.5 text-[9px] text-slate-500 font-normal w-6 text-center">
-              {isOU ? "盘口" : "盘口"}
-            </th>
-            {items.map((h, i) => (
-              <th key={i} className="px-1.5 py-0.5 text-[10px] text-emerald-300/80 font-semibold text-center">
-                {fmtLine(h.line)}
-              </th>
-            ))}
-          </tr>
-        </thead>
         <tbody>
-          <tr className="border-t border-emerald-700/20">
-            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">
-              {isOU ? "大" : "主"}
-            </td>
-            {items.map((h, i) => {
-              const locked = (h as any)?.locked === true;
-              const val = isOU ? h.odds?.over : h.odds?.home;
-              return (
-                <td key={i} className={`px-1.5 py-0.5 text-center font-semibold ${locked ? "text-slate-600" : "text-red-400"}`}>
-                  {fmt(val)}
-                </td>
-              );
-            })}
+          {/* 让球/大小球 标识行 */}
+          <tr>
+            <td className="px-2 py-0.5 text-[9px] text-slate-500 text-center w-6">—</td>
+            <td className="px-2 py-0.5 text-center text-[9px] text-emerald-400/70">全场</td>
+            <td className="px-2 py-0.5 text-center text-[9px] text-emerald-400/70">半场</td>
           </tr>
-          <tr className="border-t border-emerald-700/20">
-            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">
-              {isOU ? "小" : "客"}
-            </td>
-            {items.map((h, i) => {
-              const locked = (h as any)?.locked === true;
-              const val = isOU ? h.odds?.under : h.odds?.away;
-              return (
-                <td key={i} className={`px-1.5 py-0.5 text-center font-semibold ${locked ? "text-slate-600" : "text-red-400"}`}>
-                  {fmt(val)}
-                </td>
-              );
-            })}
-          </tr>
+          {/* 第一行（让球主/大球） */}
+          {renderRow("top")}
+          {/* 第二行（让球客/小球） */}
+          {renderRow("bottom")}
         </tbody>
       </table>
     </div>
@@ -441,20 +459,18 @@ const MatchCard = React.memo(function MatchCard({
         ))}
       </div>
 
-      {/* 常规盘口分组（让球/大小球） */}
+      {/* 常规盘口分组（让球/大小球） - 紧凑型：全场+半场同行展示 */}
       {hasRegularMarkets && (
         <div className="mt-2">
           <div className="text-[10px] text-emerald-400/80 font-medium mb-1">常规盘口</div>
           <div className="flex gap-2">
             {/* 左栏：让球 */}
-            <div className="flex-1 space-y-1.5">
-              <RegularMarketTable title="让球 (全场)" items={hdpFull} type="HDP" />
-              <RegularMarketTable title="让球 (半场)" items={hdpHalf} type="HDP" />
+            <div className="flex-1">
+              <RegularMarketTable title="让球" fullItems={hdpFull} halfItems={hdpHalf} type="HDP" />
             </div>
             {/* 右栏：大小球 */}
-            <div className="flex-1 space-y-1.5">
-              <RegularMarketTable title="大小球 (全场)" items={ouFull} type="O/U" />
-              <RegularMarketTable title="大小球 (半场)" items={ouHalf} type="O/U" />
+            <div className="flex-1">
+              <RegularMarketTable title="大小球" fullItems={ouFull} halfItems={ouHalf} type="O/U" />
             </div>
           </div>
           {/* 1X2 独赢（如有） */}
