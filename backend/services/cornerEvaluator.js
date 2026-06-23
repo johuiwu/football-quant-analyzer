@@ -89,18 +89,74 @@ export function quickAIProbability(match, strategy) {
 // ======================== 方向感知赔率解析 ========================
 
 /**
- * 方向感知赔率解析：根据策略投注方向返回实际盘口赔率
- * Over → cornerOU.overOdds, Under → cornerOU.underOdds, Auto/Home/Away → cornerOdds
+ * 方向感知赔率解析：根据策略投注方向和市场类型返回实际盘口赔率
+ * - over_under: Over → overOdds, Under → underOdds, Auto → 优先overOdds
+ * - handicap: Home → homeOdds, Away → awayOdds, Auto → 优先homeOdds
+ * - next_corner: Home → homeOdds, Away → awayOdds, Auto → 角球落后方自动选边
  * @param {Object} match - 比赛数据
- * @param {Object} strategy - 策略配置（需含 direction）
+ * @param {Object} strategy - 策略配置（需含 direction 和 market_type）
  * @returns {number} 实际赔率值，无效时返回 0
  */
 export function resolveStrategyOdds(match, strategy) {
-  const cornerOU = match.cornerOU;
-  // 兼容新字段 direction（首字母大写）和旧字段 betDirection（小写）
   const rawDir = strategy?.direction || strategy?.betDirection || "Auto";
   const betDir = rawDir.toLowerCase();
+  const marketType = strategy?.market_type || 'auto';
 
+  // ========== next_corner 市场类型专用逻辑 ==========
+  if (marketType === 'next_corner') {
+    const nextCorner = match.nextCorner || match.cornerOU;
+    const homeOdds = nextCorner?.homeOdds ?? nextCorner?.overOdds ?? 0;
+    const awayOdds = nextCorner?.awayOdds ?? nextCorner?.underOdds ?? 0;
+
+    if (betDir === "home" && homeOdds > 0) return homeOdds;
+    if (betDir === "away" && awayOdds > 0) return awayOdds;
+
+    // Auto 方向：next_corner 自动选边逻辑
+    if (betDir === "auto") {
+      const homeCorners = match.homeCorners ?? 0;
+      const awayCorners = match.awayCorners ?? 0;
+
+      if (homeCorners < awayCorners) {
+        // 主队角球落后，正在压上进攻，自动投注主队
+        console.log(`[NextCorner Auto] 主队角球落后(${homeCorners}<${awayCorners})，自动投注主队(Home), matchId=${match.matchId || ''}`);
+        return homeOdds || awayOdds;
+      } else if (awayCorners < homeCorners) {
+        // 客队角球落后，自动投注客队
+        console.log(`[NextCorner Auto] 客队角球落后(${awayCorners}<${homeCorners})，自动投注客队(Away), matchId=${match.matchId || ''}`);
+        return awayOdds || homeOdds;
+      } else {
+        // 角球数相等，选择赔率更低的那方（市场更看好）
+        const chosenSide = (homeOdds > 0 && awayOdds > 0 && awayOdds < homeOdds) ? 'Away' : 'Home';
+        const chosenOdds = chosenSide === 'Away' ? awayOdds : homeOdds;
+        console.log(`[NextCorner Auto] 角球数相等(${homeCorners}=${awayCorners})，选择赔率更低的${chosenSide}方(odds=${chosenOdds}), matchId=${match.matchId || ''}`);
+        return chosenOdds;
+      }
+    }
+
+    // fallback
+    return (homeOdds || awayOdds || match.cornerOdds) ?? 0;
+  }
+
+  // ========== handicap 市场类型专用逻辑 ==========
+  if (marketType === 'handicap') {
+    const cornerHDP = match.cornerHDP || match.cornerOU;
+    const homeOdds = cornerHDP?.homeOdds ?? 0;
+    const awayOdds = cornerHDP?.awayOdds ?? 0;
+
+    if (betDir === "home" && homeOdds > 0) return homeOdds;
+    if (betDir === "away" && awayOdds > 0) return awayOdds;
+
+    // Auto 方向：handicap 优先选 homeOdds
+    if (betDir === "auto") {
+      if (homeOdds > 0) return homeOdds;
+      if (awayOdds > 0) return awayOdds;
+    }
+
+    return (homeOdds || awayOdds || match.cornerOdds) ?? 0;
+  }
+
+  // ========== over_under / auto 市场类型（默认逻辑） ==========
+  const cornerOU = match.cornerOU;
   if (cornerOU) {
     if (betDir === "over" && cornerOU.overOdds > 0) return cornerOU.overOdds;
     if (betDir === "under" && cornerOU.underOdds > 0) return cornerOU.underOdds;
@@ -109,11 +165,12 @@ export function resolveStrategyOdds(match, strategy) {
       console.warn(`[cornerEvaluator] underOdds缺失 matchId=${match.matchId}, 将使用fallback赔率`);
     }
     // auto 方向：从 cornerOU 中提取有效赔率（优先 overOdds，其次 underOdds）
-    if (betDir === "auto" || betDir === "next") {
+    if (betDir === "auto") {
       if (cornerOU.overOdds > 0) return cornerOU.overOdds;
       if (cornerOU.underOdds > 0) return cornerOU.underOdds;
     }
   }
+
   // home/away 或 cornerOU 中无对应方向赔率时 fallback
   return match.cornerOdds ?? match.odds ?? 0;
 }

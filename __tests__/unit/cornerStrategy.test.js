@@ -356,4 +356,67 @@ describe('resolveStrategyOdds - 方向感知赔率解析', () => {
   it('旧字段 betDirection=under 应兼容返回 underOdds', () => {
     expect(resolveStrategyOdds(match, { betDirection: 'under' })).toBe(0.95);
   });
+
+  // ========== next_corner 自动选边测试 ==========
+  describe('next_corner 市场类型自动选边', () => {
+    const nextCornerMatch = {
+      ...match,
+      homeCorners: 3,
+      awayCorners: 5,
+      nextCorner: { homeOdds: 1.10, awayOdds: 0.80 },
+    };
+
+    it('next_corner + direction=Home 应返回 homeOdds', () => {
+      expect(resolveStrategyOdds(nextCornerMatch, { direction: 'Home', market_type: 'next_corner' })).toBe(1.10);
+    });
+
+    it('next_corner + direction=Away 应返回 awayOdds', () => {
+      expect(resolveStrategyOdds(nextCornerMatch, { direction: 'Away', market_type: 'next_corner' })).toBe(0.80);
+    });
+
+    it('next_corner + Auto + 主队角球落后 → 自动投注主队(Home)', () => {
+      const m = { ...nextCornerMatch, homeCorners: 3, awayCorners: 5 };
+      const result = resolveStrategyOdds(m, { direction: 'Auto', market_type: 'next_corner' });
+      expect(result).toBe(1.10); // homeOdds
+    });
+
+    it('next_corner + Auto + 客队角球落后 → 自动投注客队(Away)', () => {
+      const m = { ...nextCornerMatch, homeCorners: 5, awayCorners: 3 };
+      const result = resolveStrategyOdds(m, { direction: 'Auto', market_type: 'next_corner' });
+      expect(result).toBe(0.80); // awayOdds
+    });
+
+    it('next_corner + Auto + 角球数相等 → 选择赔率更低的那方', () => {
+      const m = { ...nextCornerMatch, homeCorners: 4, awayCorners: 4 };
+      const result = resolveStrategyOdds(m, { direction: 'Auto', market_type: 'next_corner' });
+      expect(result).toBe(0.80); // awayOdds < homeOdds，选 Away
+    });
+
+    it('next_corner 无 nextCorner 数据时 fallback 到 cornerOU', () => {
+      const m = { cornerOU: { overOdds: 0.90, underOdds: 0.95 }, homeCorners: 3, awayCorners: 5 };
+      const result = resolveStrategyOdds(m, { direction: 'Auto', market_type: 'next_corner' });
+      // fallback: overOdds as homeOdds
+      expect(result).toBe(0.90);
+    });
+  });
+
+  // ========== handicap 市场类型测试 ==========
+  describe('handicap 市场类型', () => {
+    const hdpMatch = {
+      ...match,
+      cornerHDP: { homeOdds: 0.95, awayOdds: 0.95 },
+    };
+
+    it('handicap + direction=Home 应返回 homeOdds', () => {
+      expect(resolveStrategyOdds(hdpMatch, { direction: 'Home', market_type: 'handicap' })).toBe(0.95);
+    });
+
+    it('handicap + direction=Away 应返回 awayOdds', () => {
+      expect(resolveStrategyOdds(hdpMatch, { direction: 'Away', market_type: 'handicap' })).toBe(0.95);
+    });
+
+    it('handicap + Auto 应优先返回 homeOdds', () => {
+      expect(resolveStrategyOdds(hdpMatch, { direction: 'Auto', market_type: 'handicap' })).toBe(0.95);
+    });
+  });
 });
