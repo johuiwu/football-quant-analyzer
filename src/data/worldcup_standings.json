@@ -1,0 +1,642 @@
+{
+  "success": true,
+  "groups": [
+    {
+      "name": "A组",
+      "teams": [
+        {
+          "teamId": "9025",
+          "name": "墨西哥",
+          "played": 2,
+          "wins": 2,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 3,
+          "goalsAgainst": 0,
+          "goalsDiff": 3,
+          "points": 6
+        },
+        {
+          "teamId": "6325",
+          "name": "韩国",
+          "played": 2,
+          "wins": 1,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalsDiff": 0,
+          "points": 3
+        },
+        {
+          "teamId": "9266",
+          "name": "捷克",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 3,
+          "goalsDiff": -1,
+          "points": 1
+        },
+        {
+          "teamId": "9287",
+          "name": "南非",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 3,
+          "goalsDiff": -2,
+          "points": 1
+        }
+      ]
+    },
+    {
+      "name": "B组",
+      "teams": [
+        {
+          "teamId": "335",
+          "name": "加拿大",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 7,
+          "goalsAgainst": 1,
+          "goalsDiff": 6,
+          "points": 4
+        },
+        {
+          "teamId": "9153",
+          "name": "瑞士",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 5,
+          "goalsAgainst": 2,
+          "goalsDiff": 3,
+          "points": 4
+        },
+        {
+          "teamId": "9034",
+          "name": "波黑",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 5,
+          "goalsDiff": -3,
+          "points": 1
+        },
+        {
+          "teamId": "7718",
+          "name": "卡塔尔",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 7,
+          "goalsDiff": -6,
+          "points": 1
+        }
+      ]
+    },
+    {
+      "name": "C组",
+      "teams": [
+        {
+          "teamId": "9010",
+          "name": "巴西",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 4,
+          "goalsAgainst": 1,
+          "goalsDiff": 3,
+          "points": 4
+        },
+        {
+          "teamId": "9111",
+          "name": "摩洛哥",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 2,
+          "goalsAgainst": 1,
+          "goalsDiff": 1,
+          "points": 4
+        },
+        {
+          "teamId": "9029",
+          "name": "苏格兰",
+          "played": 2,
+          "wins": 1,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 1,
+          "goalsDiff": 0,
+          "points": 3
+        },
+        {
+          "teamId": "9184",
+          "name": "海地",
+          "played": 2,
+          "wins": 0,
+          "draws": 0,
+          "losses": 2,
+          "goalsFor": 0,
+          "goalsAgainst": 4,
+          "goalsDiff": -4,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "name": "D组",
+      "teams": [
+        {
+          "teamId": "6188",
+          "name": "美国",
+          "played": 2,
+          "wins": 2,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 6,
+          "goalsAgainst": 1,
+          "goalsDiff": 5,
+          "points": 6
+        },
+        {
+          "teamId": "9592",
+          "name": "澳大利亚",
+          "played": 2,
+          "wins": 1,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalsDiff": 0,
+          "points": 3
+        },
+        {
+          "teamId": "8995",
+          "name": "巴拉圭",
+          "played": 2,
+          "wins": 1,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 4,
+          "goalsDiff": -2,
+          "points": 3
+        },
+        {
+          "teamId": "9136",
+          "name": "土耳其",
+          "played": 2,
+          "wins": 0,
+          "draws": 0,
+          "losses": 2,
+          "goalsFor": 0,
+          "goalsAgainst": 3,
+          "goalsDiff": -3,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "name": "E组",
+      "teams": [
+        {
+          "teamId": "9016",
+          "name": "德国",
+          "played": 2,
+          "wins": 2,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 9,
+          "goalsAgainst": 2,
+          "goalsDiff": 7,
+          "points": 6
+        },
+        {
+          "teamId": "9009",
+          "name": "科特迪瓦",
+          "played": 2,
+          "wins": 1,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalsDiff": 0,
+          "points": 3
+        },
+        {
+          "teamId": "8973",
+          "name": "厄瓜多尔",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 0,
+          "goalsAgainst": 1,
+          "goalsDiff": -1,
+          "points": 1
+        },
+        {
+          "teamId": "9567",
+          "name": "库拉索",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 7,
+          "goalsDiff": -6,
+          "points": 1
+        }
+      ]
+    },
+    {
+      "name": "F组",
+      "teams": [
+        {
+          "teamId": "8967",
+          "name": "荷兰",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 7,
+          "goalsAgainst": 3,
+          "goalsDiff": 4,
+          "points": 4
+        },
+        {
+          "teamId": "6326",
+          "name": "日本",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 6,
+          "goalsAgainst": 2,
+          "goalsDiff": 4,
+          "points": 4
+        },
+        {
+          "teamId": "3368",
+          "name": "瑞典",
+          "played": 2,
+          "wins": 1,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 6,
+          "goalsAgainst": 6,
+          "goalsDiff": 0,
+          "points": 3
+        },
+        {
+          "teamId": "9003",
+          "name": "突尼斯",
+          "played": 2,
+          "wins": 0,
+          "draws": 0,
+          "losses": 2,
+          "goalsFor": 1,
+          "goalsAgainst": 9,
+          "goalsDiff": -8,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "name": "G组",
+      "teams": [
+        {
+          "teamId": "9145",
+          "name": "埃及",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 4,
+          "goalsAgainst": 2,
+          "goalsDiff": 2,
+          "points": 4
+        },
+        {
+          "teamId": "9593",
+          "name": "伊朗",
+          "played": 2,
+          "wins": 0,
+          "draws": 2,
+          "losses": 0,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalsDiff": 0,
+          "points": 2
+        },
+        {
+          "teamId": "9109",
+          "name": "比利时",
+          "played": 2,
+          "wins": 0,
+          "draws": 2,
+          "losses": 0,
+          "goalsFor": 1,
+          "goalsAgainst": 1,
+          "goalsDiff": 0,
+          "points": 2
+        },
+        {
+          "teamId": "9237",
+          "name": "新西兰",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 3,
+          "goalsAgainst": 5,
+          "goalsDiff": -2,
+          "points": 1
+        }
+      ]
+    },
+    {
+      "name": "H组",
+      "teams": [
+        {
+          "teamId": "9182",
+          "name": "西班牙",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 4,
+          "goalsAgainst": 0,
+          "goalsDiff": 4,
+          "points": 4
+        },
+        {
+          "teamId": "9101",
+          "name": "乌拉圭",
+          "played": 2,
+          "wins": 0,
+          "draws": 2,
+          "losses": 0,
+          "goalsFor": 3,
+          "goalsAgainst": 3,
+          "goalsDiff": 0,
+          "points": 2
+        },
+        {
+          "teamId": "9066",
+          "name": "佛得角",
+          "played": 2,
+          "wins": 0,
+          "draws": 2,
+          "losses": 0,
+          "goalsFor": 2,
+          "goalsAgainst": 2,
+          "goalsDiff": 0,
+          "points": 2
+        },
+        {
+          "teamId": "7220",
+          "name": "沙特阿拉伯",
+          "played": 2,
+          "wins": 0,
+          "draws": 1,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 5,
+          "goalsDiff": -4,
+          "points": 1
+        }
+      ]
+    },
+    {
+      "name": "I组",
+      "teams": [
+        {
+          "teamId": "9204",
+          "name": "挪威",
+          "played": 1,
+          "wins": 1,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 4,
+          "goalsAgainst": 1,
+          "goalsDiff": 3,
+          "points": 3
+        },
+        {
+          "teamId": "9179",
+          "name": "法国",
+          "played": 1,
+          "wins": 1,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 3,
+          "goalsAgainst": 1,
+          "goalsDiff": 2,
+          "points": 3
+        },
+        {
+          "teamId": "9315",
+          "name": "塞内加尔",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 3,
+          "goalsDiff": -2,
+          "points": 0
+        },
+        {
+          "teamId": "7760",
+          "name": "伊拉克",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 4,
+          "goalsDiff": -3,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "name": "J组",
+      "teams": [
+        {
+          "teamId": "9100",
+          "name": "阿根廷",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 3,
+          "goalsAgainst": 0,
+          "goalsDiff": 3,
+          "points": 4
+        },
+        {
+          "teamId": "9161",
+          "name": "奥地利",
+          "played": 2,
+          "wins": 1,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 3,
+          "goalsAgainst": 1,
+          "goalsDiff": 2,
+          "points": 4
+        },
+        {
+          "teamId": "9068",
+          "name": "约旦",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 3,
+          "goalsDiff": -2,
+          "points": 0
+        },
+        {
+          "teamId": "9167",
+          "name": "阿尔及利亚",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 0,
+          "goalsAgainst": 3,
+          "goalsDiff": -3,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "name": "K组",
+      "teams": [
+        {
+          "teamId": "8974",
+          "name": "哥伦比亚",
+          "played": 1,
+          "wins": 1,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 3,
+          "goalsAgainst": 1,
+          "goalsDiff": 2,
+          "points": 3
+        },
+        {
+          "teamId": "6873",
+          "name": "民主刚果",
+          "played": 1,
+          "wins": 0,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 1,
+          "goalsAgainst": 1,
+          "goalsDiff": 0,
+          "points": 1
+        },
+        {
+          "teamId": "9295",
+          "name": "葡萄牙",
+          "played": 1,
+          "wins": 0,
+          "draws": 1,
+          "losses": 0,
+          "goalsFor": 1,
+          "goalsAgainst": 1,
+          "goalsDiff": 0,
+          "points": 1
+        },
+        {
+          "teamId": "8531",
+          "name": "乌兹别克斯坦",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 1,
+          "goalsAgainst": 3,
+          "goalsDiff": -2,
+          "points": 0
+        }
+      ]
+    },
+    {
+      "name": "L组",
+      "teams": [
+        {
+          "teamId": "9267",
+          "name": "英格兰",
+          "played": 1,
+          "wins": 1,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 4,
+          "goalsAgainst": 2,
+          "goalsDiff": 2,
+          "points": 3
+        },
+        {
+          "teamId": "9116",
+          "name": "加纳",
+          "played": 1,
+          "wins": 1,
+          "draws": 0,
+          "losses": 0,
+          "goalsFor": 1,
+          "goalsAgainst": 0,
+          "goalsDiff": 1,
+          "points": 3
+        },
+        {
+          "teamId": "9488",
+          "name": "巴拿马",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 0,
+          "goalsAgainst": 1,
+          "goalsDiff": -1,
+          "points": 0
+        },
+        {
+          "teamId": "9138",
+          "name": "克罗地亚",
+          "played": 1,
+          "wins": 0,
+          "draws": 0,
+          "losses": 1,
+          "goalsFor": 2,
+          "goalsAgainst": 4,
+          "goalsDiff": -2,
+          "points": 0
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-06-22T17:23:30.688Z"
+}

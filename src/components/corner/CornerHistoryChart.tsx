@@ -29,6 +29,28 @@ interface BetRecord {
 
 type SubTab = "trigger" | "bets";
 
+/**
+ * 统一时间格式化：将后端时间字符串转换为用户本地时间显示
+ * 支持格式：ISO带Z / ISO不带Z / SQLite格式 / 旧数据截断格式
+ */
+function formatTime(timeStr: string | null | undefined, showSeconds = true): string {
+  if (!timeStr || timeStr === "—") return "—";
+  try {
+    const normalized = timeStr.replace(" ", "T");
+    const d = new Date(normalized);
+    if (isNaN(d.getTime())) return timeStr.slice(0, 19);
+    const opts: Intl.DateTimeFormatOptions = {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+      hour12: false,
+    };
+    if (showSeconds) opts.second = "2-digit";
+    return d.toLocaleString("zh-CN", opts);
+  } catch {
+    return timeStr.slice(0, 19);
+  }
+}
+
 export default function CornerHistoryChart() {
   const historyFilterMatchId = useCornerStore((s) => s.historyFilterMatchId);
   const setHistoryFilterMatchId = useCornerStore((s) => s.setHistoryFilterMatchId);
