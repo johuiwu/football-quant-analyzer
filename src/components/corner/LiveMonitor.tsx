@@ -12,7 +12,7 @@ import { getTranslatedLeagueName } from '../../services/teamTranslatorService';
 
 type OddsGroupKey = "cornerOU" | "cornerOUHalf" | "cornerHDP" | "cornerHDPHalf" | "nextCorner" | "corner1X2" | "corner1X2Half" | "cornerOE" | "cornerOEHalf" | "mainHDP" | "mainOU";
 
-const ODDS_GROUPS: { key: OddsGroupKey; label: string; highlight?: boolean }[] = [
+const CORNER_ODDS_GROUPS: { key: OddsGroupKey; label: string; highlight?: boolean }[] = [
   { key: "cornerOU", label: "大小" },
   { key: "cornerOUHalf", label: "大小 半场" },
   { key: "cornerHDP", label: "让球" },
@@ -22,6 +22,9 @@ const ODDS_GROUPS: { key: OddsGroupKey; label: string; highlight?: boolean }[] =
   { key: "corner1X2Half", label: "独赢 半场" },
   { key: "cornerOE", label: "单/双" },
   { key: "cornerOEHalf", label: "单/双 半场" },
+];
+
+const REGULAR_ODDS_GROUPS: { key: OddsGroupKey; label: string }[] = [
   { key: "mainHDP", label: "主盘让球" },
   { key: "mainOU", label: "主盘大小" },
 ];
@@ -76,14 +79,23 @@ interface OddsGroupCardProps {
   label: string;
   handicap?: HandicapEntry;
   highlight?: boolean;
+  variant?: "corner" | "regular";
 }
 
-const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handicap, highlight }: OddsGroupCardProps) {
+const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handicap, highlight, variant = "corner" }: OddsGroupCardProps) {
   const locked = (handicap as any)?.locked === true;
   const selected = (handicap as any)?.isSelected === true;
 
-  const borderCls = highlight ? "border-blue-500/60 bg-blue-500/5" : "border-slate-700/60 bg-slate-800/40";
-  const headerBg = highlight ? "bg-blue-500/20 text-blue-300" : "bg-slate-700/60 text-slate-400";
+  const borderCls = variant === "regular"
+    ? "border-emerald-600/40 bg-emerald-900/10"
+    : highlight
+    ? "border-blue-500/60 bg-blue-500/5"
+    : "border-slate-700/60 bg-slate-800/40";
+  const headerBg = variant === "regular"
+    ? "bg-emerald-700/30 text-emerald-300"
+    : highlight
+    ? "bg-blue-500/20 text-blue-300"
+    : "bg-slate-700/60 text-slate-400";
 
   if (!handicap) {
     return (
@@ -216,6 +228,7 @@ const MatchCard = React.memo(function MatchCard({
 
   const handicaps = row.handicaps || [];
   const colData = mapHandicapsToColumns(handicaps);
+  const hasRegularMarkets = !!(colData["mainHDP"] || colData["mainOU"]);
 
   const cardBorder = isHighlighted
     ? "border-emerald-500/60 bg-emerald-500/5"
@@ -294,18 +307,37 @@ const MatchCard = React.memo(function MatchCard({
         </div>
       </div>
 
-      {/* 盘口分组 */}
+      {/* 角球盘口分组 */}
       <div className="grid grid-cols-8 gap-2">
-        {ODDS_GROUPS.map((group) => (
+        {CORNER_ODDS_GROUPS.map((group) => (
           <OddsGroupCard
             key={group.key}
             groupKey={group.key}
             label={group.label}
             handicap={colData[group.key]}
             highlight={group.highlight}
+            variant="corner"
           />
         ))}
       </div>
+
+      {/* 常规盘口分组（让球/大小球） */}
+      {hasRegularMarkets && (
+        <div className="mt-2">
+          <div className="text-[10px] text-emerald-400/80 font-medium mb-1">常规盘口</div>
+          <div className="grid grid-cols-8 gap-2">
+            {REGULAR_ODDS_GROUPS.map((group) => (
+              <OddsGroupCard
+                key={group.key}
+                groupKey={group.key}
+                label={group.label}
+                handicap={colData[group.key]}
+                variant="regular"
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 });
