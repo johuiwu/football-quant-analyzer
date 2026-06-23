@@ -308,14 +308,13 @@ function setupAutoUpdater() {
   let downloadRetryCount = 0;
   let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
 
-  // GitHub 下载加速代理列表（2026年6月实测，按大文件速度排序）
-  // 直连放最前：如果用户有 VPN/代理，直连 GitHub CDN 通常是最快的
+  // GitHub 下载加速代理列表（2026年6月更新）
   const GITHUB_MIRROR_PROXIES = [
-    'https://ghproxy.homeboyc.cn',   // 大文件专用，1GB+ 稳定不断连，实测 2-5MB/s
-    'https://gh-proxy.com',           // 多节点智能路由，实测 1.5-5MB/s
-    'https://ghproxy.net',            // 无广告，断点续传支持
-    'https://moeyy.cn/gh-proxy',      // 备用节点，稳定
-    'https://mirror.ghproxy.com',     // 备用镜像站
+    'https://gh-proxy.com',             // 多节点智能路由，国内稳定
+    'https://ghproxy.net',              // 无广告，支持断点续传
+    'https://gh.ddlc.top',              // 2026年新节点
+    'https://ghfast.top',               // 高速节点
+    'https://mirror.ghproxy.com',       // 备用镜像站
   ];
   let currentProxyIndex = 0;
   let benchmarkDone = false;
@@ -354,25 +353,31 @@ function setupAutoUpdater() {
     }
   }
 
-  // 拦截 electron-updater 下载请求，将 GitHub URL 重写为加速代理 URL
-  // 同时拦截 exe（完整下载/差分拼接）和 blockmap（差分更新元数据）
-  // 双源策略：latest.yml 中 kkgithub.com 镜像排第一（国内直连快），GitHub 原始链接排第二（走代理加速）
-  // kkgithub.com 域名请求不拦截，直连即可；仅拦截 github.com releases/download 和 objects.githubusercontent.com
+  // 拦截 electron-updater 下载请求，将 GitHub/镜像 URL 重写为加速代理 URL
+  // 拦截所有 exe/blockmap 下载请求（github.com、kkgithub.com、objects.githubusercontent.com 等）
+  // 这样无论 latest.yml 中哪个 URL 排第一，都能走加速代理
   const { session } = require('electron');
   session.defaultSession.webRequest.onBeforeRequest(
-    { urls: ['https://github.com/*/releases/download/*', 'https://objects.githubusercontent.com/*'] },
+    { urls: [
+      'https://github.com/*/releases/download/*',
+      'https://objects.githubusercontent.com/*',
+      'https://kkgithub.com/*/releases/download/*',
+      '*://*/releases/download/*.exe*',
+      '*://*/releases/download/*.blockmap*',
+    ] },
     (details, callback) => {
       const originalUrl = details.url;
       // 只拦截 exe 和 blockmap 下载请求
-      const isExe = originalUrl.endsWith('.exe') || originalUrl.includes('.exe?');
-      const isBlockmap = originalUrl.endsWith('.blockmap') || originalUrl.includes('.blockmap?');
+      const isExe = originalUrl.endsWith('.exe') || originalUrl.includes('.exe?') || originalUrl.includes('.exe&');
+      const isBlockmap = originalUrl.endsWith('.blockmap') || originalUrl.includes('.blockmap?') || originalUrl.includes('.blockmap&');
       if (!isExe && !isBlockmap) {
         callback({});
         return;
       }
       const proxy = GITHUB_MIRROR_PROXIES[currentProxyIndex];
       const rewrittenUrl = `${proxy}/${originalUrl}`;
-      console.log(`[autoUpdater] GitHub代理加速: ${proxy} (第${currentProxyIndex + 1}/${GITHUB_MIRROR_PROXIES.length}个代理) [${isBlockmap ? 'blockmap' : 'exe'}]`);
+      console.log(`[autoUpdater] 代理加速: ${proxy} (第${currentProxyIndex + 1}/${GITHUB_MIRROR_PROXIES.length}个) [${isBlockmap ? 'blockmap' : 'exe'}]`);
+      console.log(`[autoUpdater] 原始URL: ${originalUrl}`);
       callback({ redirectURL: rewrittenUrl });
     }
   );
