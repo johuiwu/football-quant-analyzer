@@ -482,6 +482,9 @@ async function submitBet(cred, wagersXml, gid, wtype) {
 export async function executeBetViaHttp(betData) {
   const { matchName, matchId, odds, amount, strategyId, betDirection = "auto", handicap } = betData;
 
+  // [CornerE2E] 节点4：投注执行（HTTP路径）
+  const betTarget = `${betDirection} ${handicap ?? ''}`.trim();
+  console.debug(`[CornerE2E][节点4-投注执行-HTTP] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${odds}, 策略: ${strategyId}`);
   console.log(`[httpBet] 开始纯HTTP投注: ${matchName} (${matchId}) 策略${strategyId} 方向${betDirection} 赔率${odds} 金额${amount}`);
 
   // 1. 加载凭证

@@ -266,7 +266,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const minuteMin = strategy.minute_min ?? strategy.playTimeStart ?? 0;
   const minuteMax = strategy.minute_max ?? strategy.playTimeEnd ?? 99;
   if (currentMinute < minuteMin || currentMinute > minuteMax) {
-    console.log(`[流水线-1级] 策略${strategy.id} 时间过滤未通过: ${currentMinute}' 不在 ${minuteMin}'-${minuteMax}' 范围内`);
+    console.debug(`[CornerE2E][节点2-1-时间过滤] 策略${strategy.id} 未通过: ${currentMinute}' 不在 ${minuteMin}'-${minuteMax}' 范围内`);
     return false;
   }
 
@@ -276,24 +276,24 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const matchHandicaps = match.handicaps || [];
   const filteredMarkets = filterMarketsByType(matchHandicaps, marketType, strategyPeriod);
 
-  // [链路追踪] 节点2：盘口类型过滤
+  // [CornerE2E] 节点2-2：盘口类型过滤
   if (filteredMarkets.length > 0) {
     const filteredTypes = filteredMarkets.map(m => `${m.category}${m.period && m.period !== 'full' ? '(' + m.period + ')' : ''}`).join(', ');
-    console.debug(`[链路追踪] 策略${strategy.id} 市场类型=${marketType}, period=${strategyPeriod}, 保留盘口: [${filteredTypes}]`);
+    console.debug(`[CornerE2E][节点2-2-市场类型过滤] 策略${strategy.id} 市场类型=${marketType}, period=${strategyPeriod}, 保留盘口: [${filteredTypes}]`);
   }
 
   // 如果策略指定了特定市场类型但该类型盘口不存在，则不触发
   if (marketType !== 'auto' && filteredMarkets.length === 0 && matchHandicaps.length > 0) {
-    console.log(`[流水线-2级] 策略${strategy.id} 盘口类型过滤未通过: market_type=${marketType}, 无匹配盘口`);
+    console.debug(`[CornerE2E][节点2-2-市场类型过滤] 策略${strategy.id} 未通过: market_type=${marketType}, 无匹配盘口`);
     return false;
   }
 
   // ========== 第3级：盘口归一化 ==========
   const handicap = normalizeHandicap(rawHandicap);
 
-  // [链路追踪] 节点3：盘口归一化
+  // [CornerE2E] 节点3：盘口归一化
   if (String(rawHandicap) !== String(handicap)) {
-    console.debug(`[链路追踪] 归一化转换: 原始盘口 "${rawHandicap}" -> 转换值 "${handicap}"`);
+    console.debug(`[CornerE2E][节点3-盘口归一化] 原始盘口 "${rawHandicap}" -> 转换值 "${handicap}"`);
   }
   // 检查 filteredMarkets 中的 line 值是否被归一化
   for (const fm of filteredMarkets) {
@@ -301,7 +301,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     const rawLine = fm.line;
     const normalizedLine = normalizeHandicap(rawLine);
     if (String(rawLine) !== String(normalizedLine)) {
-      console.debug(`[链路追踪] 归一化转换: 盘口line "${rawLine}"(${fm.category}) -> 转换值 "${normalizedLine}"`);
+      console.debug(`[CornerE2E][节点3-盘口归一化] 盘口line "${rawLine}"(${fm.category}) -> 转换值 "${normalizedLine}"`);
     }
   }
 
@@ -335,19 +335,19 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
       const absLine = Math.abs(effectiveLine);
       linePassed = absLine >= lineMin && absLine <= lineMax;
       if (!linePassed) {
-        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: |${effectiveLine}|(${marketType}) 不在 ${lineMin}~${lineMax} 范围内`);
+        console.debug(`[CornerE2E][节点4-盘口区间过滤] 策略${strategy.id} 未通过: |${effectiveLine}|(${marketType}) 不在 ${lineMin}~${lineMax} 范围内`);
       }
     } else {
       linePassed = effectiveLine >= lineMin && effectiveLine <= lineMax;
       if (!linePassed) {
-        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: ${effectiveLine}(${marketType}) 不在 ${lineMin}~${lineMax} 范围内`);
+        console.debug(`[CornerE2E][节点4-盘口区间过滤] 策略${strategy.id} 未通过: ${effectiveLine}(${marketType}) 不在 ${lineMin}~${lineMax} 范围内`);
       }
     }
     if (!linePassed) return false;
-    // [链路追踪] 节点4：盘口区间过滤通过
-    console.debug(`[链路追踪] 策略${strategy.id} 盘口区间过滤通过: ${effectiveLine}(${marketType}) 在 ${lineMin}~${lineMax} 范围内`);
+    // [CornerE2E] 节点4：盘口区间过滤通过
+    console.debug(`[CornerE2E][节点4-盘口区间过滤] 策略${strategy.id} 通过: ${effectiveLine}(${marketType}) 在 ${lineMin}~${lineMax} 范围内`);
   } else {
-    console.log(`[流水线-4级] 策略${strategy.id} next_corner类型，跳过盘口区间过滤`);
+    console.debug(`[CornerE2E][节点4-盘口区间过滤] 策略${strategy.id} next_corner类型，跳过盘口区间过滤`);
   }
 
   // ========== 第5级：赔率过滤 ==========
@@ -361,28 +361,28 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     return false;
   }
   if (odds < oddsMin) {
-    console.log(`[流水线-5级] 策略${strategy.id} 赔率下限未通过: ${odds} < ${oddsMin}`);
+    console.debug(`[CornerE2E][节点5-赔率过滤] 策略${strategy.id} 未通过下限: ${odds} < ${oddsMin}`);
     return false;
   }
   if (odds > oddsMax) {
-    console.log(`[流水线-5级] 策略${strategy.id} 赔率上限未通过: ${odds} > ${oddsMax}`);
+    console.debug(`[CornerE2E][节点5-赔率过滤] 策略${strategy.id} 未通过上限: ${odds} > ${oddsMax}`);
     return false;
   }
-  // [链路追踪] 节点5：赔率过滤通过
-  console.debug(`[链路追踪] 策略${strategy.id} 赔率过滤通过: ${odds} 在 ${oddsMin}~${oddsMax} 范围内`);
+  // [CornerE2E] 节点5：赔率过滤通过
+  console.debug(`[CornerE2E][节点5-赔率过滤] 策略${strategy.id} 通过: ${odds} 在 ${oddsMin}~${oddsMax} 范围内`);
 
   // ========== 第6级：AI评分过滤（可选） ==========
   const aiFilterEnabled = strategy.aiFilterEnabled ?? false;
   if (aiFilterEnabled) {
     const aiProb = quickAIProbability(match, strategy);
     const passed = aiProb > 60;
-    // [链路追踪] 节点4：AI评分过滤
-    console.debug(`[链路追踪] 策略${strategy.id} AI计算概率: ${aiProb}%, 阈值: 60%. 判断结果: ${passed ? '通过' : '未通过'}`);
+    // [CornerE2E] 节点6：AI评分过滤
+    console.debug(`[CornerE2E][节点6-AI评分] 策略${strategy.id} AI概率: ${aiProb}%, 阈值: 60%. 结果: ${passed ? '通过' : '未通过'}`);
     if (!passed) {
-      console.log(`[AI评分过滤] 策略${strategy.id} AI概率${aiProb}%未达60%阈值, matchId=${match.matchId || ''}`);
+      console.debug(`[CornerE2E][节点6-AI评分] 策略${strategy.id} AI概率${aiProb}%未达60%阈值, matchId=${match.matchId || ''}`);
       return false;
     }
-    console.log(`[AI评分通过] 策略${strategy.id} AI概率${aiProb}%超过60%阈值`);
+    console.debug(`[CornerE2E][节点6-AI评分] 策略${strategy.id} AI概率${aiProb}%超过60%阈值`);
   }
 
   // ========== 第7级：投注方向与比分条件匹配 ==========
@@ -392,7 +392,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const cornerMin = strategy.corner_min ?? strategy.minCurrentCorners ?? 0;
   const cornerMax = strategy.corner_max ?? strategy.maxCurrentCorners ?? 99;
   if (totalCorners < cornerMin || totalCorners > cornerMax) {
-    console.log(`[流水线-7级] 策略${strategy.id} 角球数过滤未通过: ${totalCorners} 不在 ${cornerMin}~${cornerMax} 范围内`);
+    console.debug(`[CornerE2E][节点7-投注方向] 策略${strategy.id} 角球数过滤未通过: ${totalCorners} 不在 ${cornerMin}~${cornerMax} 范围内`);
     return false;
   }
 
@@ -412,33 +412,33 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   // 比分条件检查
   // leadGoals >= 20 → 哨兵值，不做比分限制
   if (strategy.leadGoals >= 20) {
-    // [链路追踪] 节点7：投注方向确定
+    // [CornerE2E] 节点7：投注方向确定
     const finalDir = strategy.direction || strategy.betDirection || "Auto";
-    console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    console.debug(`[CornerE2E][节点7-投注方向] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
     return true;
   }
 
   // leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
   if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) {
     const finalDir = strategy.direction || strategy.betDirection || "Auto";
-    console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    console.debug(`[CornerE2E][节点7-投注方向] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
     return true;
   }
 
   // leadGoalsWeak > 0 → 弱队领先：至少差N球，同时受 leadGoals 上限约束
   if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) {
     const finalDir = strategy.direction || strategy.betDirection || "Auto";
-    console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    console.debug(`[CornerE2E][节点7-投注方向] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
     return true;
   }
 
   // leadGoals === 0 且 leadGoalsWeak === 0 → 平局检查：goalDiff 必须为 0
   if (strategy.leadGoals === 0 && (strategy.leadGoalsWeak || 0) === 0) {
     const isTriggered = goalDiff === 0;
-    console.log('[策略3 Debug] 当前比分:', homeScore, '-', awayScore, '触发条件: leadGoals=' + strategy.leadGoals, '是否通过:', isTriggered);
+    console.debug(`[CornerE2E][节点7-投注方向] 策略${strategy.id} 平局检查: 比分 ${homeScore}-${awayScore}, leadGoals=${strategy.leadGoals}, 通过=${isTriggered}`);
     if (isTriggered) {
       const finalDir = strategy.direction || strategy.betDirection || "Auto";
-      console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+      console.debug(`[CornerE2E][节点7-投注方向] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
       return true;
     }
   }

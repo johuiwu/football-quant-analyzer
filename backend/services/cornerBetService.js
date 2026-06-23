@@ -126,8 +126,13 @@ export async function saveCornerHistory(record) {
       "INSERT INTO corner_history (match_id, match_name, strategy_id, triggered_at, bet_status, odds, amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [record.match_id || "", record.match_name || "", record.strategy_id || "", new Date().toISOString(), record.bet_status || "pending", record.odds || 0, record.amount || 0]
     );
+    // [CornerE2E] 节点5：记录落库（触发历史）
+    console.debug(`[CornerE2E][节点5-记录落库] saveCornerHistory 成功 id=${result.lastID}, matchId=${record.match_id}, strategyId=${record.strategy_id}`);
     return { success: true, id: result.lastID };
-  } catch (err) { return { success: false, error: err.message }; }
+  } catch (err) {
+    console.error(`[CornerE2E][节点5-记录落库] saveCornerHistory 失败: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 }
 
 const TRIGGER_COOLDOWN_MINUTES = 15;
@@ -143,14 +148,19 @@ export async function saveCornerTrigger(match, strategyId, actualOdds) {
       [matchId, sid, cooldownTime]
     );
     if (recent && recent.length > 0) {
+      // [CornerE2E] 节点5：记录落库（触发记录-冷却期跳过）
+      console.debug(`[CornerE2E][节点5-记录落库] saveCornerTrigger 跳过(冷却期) matchId=${matchId}, strategyId=${sid}`);
       return { success: true, skipped: true };
     }
     const result = await run(
       "INSERT INTO corner_history (match_id, match_name, strategy_id, triggered_at, bet_status, odds, amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [matchId, match.matchName || "", sid, new Date().toISOString(), "pending", actualOdds ?? match.cornerOdds ?? 0, 0]
     );
+    // [CornerE2E] 节点5：记录落库（触发记录）
+    console.debug(`[CornerE2E][节点5-记录落库] saveCornerTrigger 成功 id=${result.lastID}, matchId=${matchId}, strategyId=${sid}, odds=${actualOdds}`);
     return { success: true, id: result.lastID };
   } catch (err) {
+    console.error(`[CornerE2E][节点5-记录落库] saveCornerTrigger 失败: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
@@ -163,6 +173,8 @@ export async function generatePendingBet(match, strategyId, actualOdds) {
       [match.matchId || "", String(strategyId)]
     );
     if (existing && existing.length > 0) {
+      // [CornerE2E] 节点5：记录落库（待投注-重复跳过）
+      console.debug(`[CornerE2E][节点5-记录落库] generatePendingBet 跳过(重复) matchId=${match.matchId}, strategyId=${strategyId}`);
       return { success: true, skipped: true, reason: "duplicate pending" };
     }
 
@@ -170,8 +182,11 @@ export async function generatePendingBet(match, strategyId, actualOdds) {
       "INSERT INTO corner_bets (match_id, match_name, strategy_id, odds, amount, status, bet_target) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
       [match.matchId || "", match.matchName || "", String(strategyId), actualOdds ?? match.cornerOdds ?? 0, betConfig.amount, match.betTarget || null]
     );
+    // [CornerE2E] 节点5：记录落库（待投注生成）
+    console.debug(`[CornerE2E][节点5-记录落库] generatePendingBet 成功 id=${result.lastID}, matchId=${match.matchId}, strategyId=${strategyId}, odds=${actualOdds}, betTarget=${match.betTarget || 'null'}`);
     return { success: true, id: result.lastID };
   } catch (err) {
+    console.error(`[CornerE2E][节点5-记录落库] generatePendingBet 失败: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
@@ -188,7 +203,7 @@ export async function generatePendingBet(match, strategyId, actualOdds) {
 export async function executeAndRecordBet(match, strategyId, betDirection, actualOdds, marketType = 'auto') {
   console.log("[角球投注] 二次确认关闭，进入自动执行流程...");
 
-  // [链路追踪] 节点6：投注执行（直接执行路径）
+  // [CornerE2E] 节点4：投注执行（直接执行路径）
   // 根据市场类型选取正确的盘口线
   let betLine = 0;
   const mt = (marketType || 'auto').toLowerCase();
@@ -202,7 +217,7 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
     betLine = match.cornerOU?.line || match.cornerHandicap || 0;
   }
   const betTarget = buildBetTarget(betDirection, betLine);
-  console.debug(`[链路追踪] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${actualOdds}, 策略: ${strategyId}`);
+  console.debug(`[CornerE2E][节点4-投注执行] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${actualOdds}, 策略: ${strategyId}`);
 
   const matchId = match.matchId || "";
   const matchName = match.matchName || "";
