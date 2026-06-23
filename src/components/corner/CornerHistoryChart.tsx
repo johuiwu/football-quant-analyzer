@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { BarChart3, TrendingUp, RefreshCw } from "lucide-react";
 import { useCornerStore } from "../../store/cornerStore";
+import { useTeamTranslation } from "../../hooks/useTeamTranslation";
 
 interface HistoryRow {
   id: number;
@@ -49,6 +50,11 @@ function formatTime(timeStr: string | null | undefined, showSeconds = true): str
   } catch {
     return timeStr.slice(0, 19);
   }
+}
+
+function TranslatedTeamName({ name }: { name: string }) {
+  const { translated } = useTeamTranslation(name);
+  return <>{translated}</>;
 }
 
 export default function CornerHistoryChart() {
@@ -252,7 +258,7 @@ export default function CornerHistoryChart() {
           {filteredData.map((row, i) => (
             <div key={row.id || i} className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
               <div className="col-span-1 text-slate-500">{i + 1}</div>
-              <div className="col-span-4 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
+              <div className="col-span-4 text-slate-200 truncate">{row.match_name ? <TranslatedTeamName name={row.match_name} /> : (row.match_id || "—")}</div>
               <div className="col-span-2 text-center text-emerald-400 font-mono">
                 {row.strategy_id || "—"}{row.count > 1 ? ` (×${row.count})` : ""}
               </div>
@@ -336,7 +342,7 @@ export default function CornerHistoryChart() {
           const showError = (row.status === 'failed' || row.status === 'insufficient') && row.error_reason;
           return (
             <div key={row.id} className="grid grid-cols-16 gap-2 px-4 py-2 text-[11px] border-b border-slate-800/30 hover:bg-slate-800/10">
-              <div className="col-span-3 text-slate-200 truncate">{row.match_name || row.match_id || "—"}</div>
+              <div className="col-span-3 text-slate-200 truncate">{row.match_name ? <TranslatedTeamName name={row.match_name} /> : (row.match_id || "—")}</div>
               <div className="col-span-1 text-center text-emerald-400 font-mono">{row.strategy_id}</div>
               <div className="col-span-1 text-center text-amber-400 font-mono">{(row.odds ?? 0).toFixed(2)}</div>
               <div className="col-span-1 text-center text-slate-300 font-mono">¥{row.amount || 0}</div>
