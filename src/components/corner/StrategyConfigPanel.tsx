@@ -406,7 +406,7 @@ export default function StrategyConfigPanel() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <span className="text-[9px] text-slate-600 font-sans">下限</span>
-                            <input type="number" className={numInputClass} min={-3} max={5} step={0.25}
+                            <input type="number" className={numInputClass} min={-5} max={20} step={0.25}
                               disabled={isLineDisabled}
                               value={isLineDisabled ? '' : s.line_min}
                               onChange={(e) => handleChange(s.id, "line_min", Number(e.target.value))} />
@@ -414,7 +414,7 @@ export default function StrategyConfigPanel() {
                           </div>
                           <div>
                             <span className="text-[9px] text-slate-600 font-sans">上限</span>
-                            <input type="number" className={numInputClass} min={-3} max={5} step={0.25}
+                            <input type="number" className={numInputClass} min={-5} max={20} step={0.25}
                               disabled={isLineDisabled}
                               value={isLineDisabled ? '' : s.line_max}
                               onChange={(e) => handleChange(s.id, "line_max", Number(e.target.value))} />
