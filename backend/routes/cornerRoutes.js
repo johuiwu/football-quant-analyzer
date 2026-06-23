@@ -90,7 +90,12 @@ router.get("/corner/strategies/check", async (req, res) => {
 router.get("/corner/settings", async (req, res) => {
   try {
     const { getCornerSettings } = await import("../services/cornerService.js");
-    res.json({ success: true, data: getCornerSettings() });
+    const settings = getCornerSettings();
+    // 出参映射：策略列表同时返回新旧字段
+    if (settings.strategies) {
+      settings.strategies = settings.strategies.map(mapStrategyFieldsBackward);
+    }
+    res.json({ success: true, data: settings });
   } catch (err) {
     console.error("[cornerRoutes] GET /corner/settings error:", err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -132,12 +137,97 @@ router.put("/corner/settings", async (req, res) => {
 router.get("/corner/strategies/default", async (req, res) => {
   try {
     const { DEFAULT_STRATEGIES } = await import("../services/cornerService.js");
-    res.json({ success: true, data: DEFAULT_STRATEGIES });
+    // 出参映射：同时返回新旧字段，确保旧版前端兼容
+    const mappedStrategies = DEFAULT_STRATEGIES.map(mapStrategyFieldsBackward);
+    res.json({ success: true, data: mappedStrategies });
   } catch (err) {
     console.error("[cornerRoutes] /corner/strategies/default error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// ======================== 策略字段映射适配器（过渡期兼容） ========================
+
+/**
+ * 旧字段 → 新字段映射表
+ * 入参映射：将前端发送的旧字段自动转换为新字段
+ */
+const STRATEGY_FIELD_MAP = {
+  playTimeStart: 'minute_min',
+  playTimeEnd: 'minute_max',
+  cornerHandicapLower: 'line_min',
+  cornerHandicapUpper: 'line_max',
+  targetOdds: 'odds_min',
+  maxOdds: 'odds_max',
+  minCurrentCorners: 'corner_min',
+  maxCurrentCorners: 'corner_max',
+  betDirection: 'direction',
+};
+
+/**
+ * 新字段 → 旧字段反向映射表
+ * 出参映射：返回时同时包含旧字段，确保旧版前端兼容
+ */
+const STRATEGY_FIELD_MAP_REVERSE = {};
+for (const [oldKey, newKey] of Object.entries(STRATEGY_FIELD_MAP)) {
+  STRATEGY_FIELD_MAP_REVERSE[newKey] = oldKey;
+}
+
+/**
+ * 入参映射：将策略对象中的旧字段转换为新字段
+ * @param {Object} strategy - 原始策略对象
+ * @returns {Object} 映射后的策略对象（仅包含新字段）
+ */
+function mapStrategyFieldsForward(strategy) {
+  const mapped = { ...strategy };
+  let hasOldFields = false;
+
+  for (const [oldKey, newKey] of Object.entries(STRATEGY_FIELD_MAP)) {
+    if (mapped[oldKey] !== undefined) {
+      hasOldFields = true;
+      // direction 字段特殊处理：旧值小写 → 新值首字母大写
+      if (oldKey === 'betDirection' && typeof mapped[oldKey] === 'string') {
+        const val = mapped[oldKey];
+        mapped[newKey] = val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+      } else {
+        mapped[newKey] = mapped[oldKey];
+      }
+      delete mapped[oldKey];
+    }
+  }
+
+  // 确保新字段有默认值
+  if (mapped.market_type === undefined) mapped.market_type = 'auto';
+  if (mapped.aiFilterEnabled === undefined) mapped.aiFilterEnabled = false;
+
+  if (hasOldFields) {
+    console.warn('[策略迁移] 检测到旧字段请求，已自动适配为新字段格式');
+  }
+
+  return mapped;
+}
+
+/**
+ * 出参映射：为策略对象添加旧字段副本，确保旧版前端兼容
+ * @param {Object} strategy - 新字段策略对象
+ * @returns {Object} 同时包含新旧字段的策略对象
+ */
+function mapStrategyFieldsBackward(strategy) {
+  const result = { ...strategy };
+
+  for (const [newKey, oldKey] of Object.entries(STRATEGY_FIELD_MAP_REVERSE)) {
+    if (strategy[newKey] !== undefined && strategy[oldKey] === undefined) {
+      // direction 字段反向映射：首字母大写 → 全小写
+      if (newKey === 'direction' && typeof strategy[newKey] === 'string') {
+        result[oldKey] = strategy[newKey].toLowerCase();
+      } else {
+        result[oldKey] = strategy[newKey];
+      }
+    }
+  }
+
+  return result;
+}
 
 // ======================== PUT /api/corner/strategies ========================
 router.put("/corner/strategies", async (req, res) => {
@@ -147,39 +237,60 @@ router.put("/corner/strategies", async (req, res) => {
       return res.status(400).json({ success: false, error: "请提供有效的策略列表" });
     }
 
-    // 参数验证
-    const VALID_BET_DIRECTIONS = ["auto", "over", "under", "home", "away"];
+    // 入参映射：旧字段 → 新字段
+    const mappedStrategies = strategies.map(mapStrategyFieldsForward);
+
+    // 参数验证（兼容新旧字段名）
+    const VALID_DIRECTIONS = ["Auto", "Over", "Under", "Home", "Away"];
+    const VALID_DIRECTIONS_OLD = ["auto", "over", "under", "home", "away"];
+    const VALID_MARKET_TYPES = ["over_under", "handicap", "next_corner", "auto"];
     const VALID_LEAD_SIDES = ["any", "strong", "weak"];
     const errors = [];
 
-    for (const s of strategies) {
+    for (const s of mappedStrategies) {
       if (typeof s.id !== 'number' || s.id < 1 || s.id > 10) {
         errors.push(`策略id必须为1-10的数字`);
       }
-      if (s.playTimeStart !== undefined && (s.playTimeStart < 0 || s.playTimeStart > 120)) {
-        errors.push(`策略${s.id}: playTimeStart需在0-120之间`);
+      // 时间窗口验证（兼容新旧字段）
+      const minuteMin = s.minute_min ?? s.playTimeStart;
+      const minuteMax = s.minute_max ?? s.playTimeEnd;
+      if (minuteMin !== undefined && (minuteMin < 0 || minuteMin > 120)) {
+        errors.push(`策略${s.id}: minute_min需在0-120之间`);
       }
-      if (s.playTimeEnd !== undefined && (s.playTimeEnd < 0 || s.playTimeEnd > 120)) {
-        errors.push(`策略${s.id}: playTimeEnd需在0-120之间`);
+      if (minuteMax !== undefined && (minuteMax < 0 || minuteMax > 120)) {
+        errors.push(`策略${s.id}: minute_max需在0-120之间`);
       }
-      if (s.playTimeStart !== undefined && s.playTimeEnd !== undefined && s.playTimeStart >= s.playTimeEnd) {
-        errors.push(`策略${s.id}: playTimeStart必须小于playTimeEnd`);
+      if (minuteMin !== undefined && minuteMax !== undefined && minuteMin >= minuteMax) {
+        errors.push(`策略${s.id}: minute_min必须小于minute_max`);
       }
-      if (s.cornerHandicapLower !== undefined && s.cornerHandicapUpper !== undefined && s.cornerHandicapLower > s.cornerHandicapUpper) {
-        errors.push(`策略${s.id}: cornerHandicapLower不能大于cornerHandicapUpper`);
+      // 盘口区间验证
+      const lineMin = s.line_min ?? s.cornerHandicapLower;
+      const lineMax = s.line_max ?? s.cornerHandicapUpper;
+      if (lineMin !== undefined && lineMax !== undefined && lineMin > lineMax) {
+        errors.push(`策略${s.id}: line_min不能大于line_max`);
       }
-      if (s.targetOdds !== undefined && (s.targetOdds < 0 || s.targetOdds > 3)) {
-        errors.push(`策略${s.id}: targetOdds需在0-3之间`);
+      // 赔率验证
+      const oddsMin = s.odds_min ?? s.targetOdds;
+      const oddsMax = s.odds_max ?? s.maxOdds;
+      if (oddsMin !== undefined && (oddsMin < 0 || oddsMin > 3)) {
+        errors.push(`策略${s.id}: odds_min需在0-3之间`);
       }
-      if (s.maxOdds !== undefined && (s.maxOdds < 0 || s.maxOdds > 3)) {
-        errors.push(`策略${s.id}: maxOdds需在0-3之间`);
+      if (oddsMax !== undefined && (oddsMax < 0 || oddsMax > 3)) {
+        errors.push(`策略${s.id}: odds_max需在0-3之间`);
       }
-      if (s.targetOdds !== undefined && s.maxOdds !== undefined && s.targetOdds > s.maxOdds) {
-        errors.push(`策略${s.id}: targetOdds不能大于maxOdds`);
+      if (oddsMin !== undefined && oddsMax !== undefined && oddsMin > oddsMax) {
+        errors.push(`策略${s.id}: odds_min不能大于odds_max`);
       }
-      if (s.betDirection && !VALID_BET_DIRECTIONS.includes(s.betDirection)) {
-        errors.push(`策略${s.id}: betDirection必须为${VALID_BET_DIRECTIONS.join('/')}`);
+      // 投注方向验证（兼容新旧格式）
+      const dir = s.direction || s.betDirection;
+      if (dir && !VALID_DIRECTIONS.includes(dir) && !VALID_DIRECTIONS_OLD.includes(dir)) {
+        errors.push(`策略${s.id}: direction必须为${VALID_DIRECTIONS.join('/')}`);
       }
+      // 市场类型验证
+      if (s.market_type && !VALID_MARKET_TYPES.includes(s.market_type)) {
+        errors.push(`策略${s.id}: market_type必须为${VALID_MARKET_TYPES.join('/')}`);
+      }
+      // 领先方身份验证
       if (s.leadSide && !VALID_LEAD_SIDES.includes(s.leadSide)) {
         errors.push(`策略${s.id}: leadSide必须为${VALID_LEAD_SIDES.join('/')}`);
       }
@@ -189,14 +300,17 @@ router.put("/corner/strategies", async (req, res) => {
       if (s.leadGoalsWeak !== undefined && (s.leadGoalsWeak < 0 || s.leadGoalsWeak > 5)) {
         errors.push(`策略${s.id}: leadGoalsWeak需在0-5之间`);
       }
-      if (s.minCurrentCorners !== undefined && (s.minCurrentCorners < 0 || s.minCurrentCorners > 30)) {
-        errors.push(`策略${s.id}: minCurrentCorners需在0-30之间`);
+      // 角球数范围验证
+      const cornerMin = s.corner_min ?? s.minCurrentCorners;
+      const cornerMax = s.corner_max ?? s.maxCurrentCorners;
+      if (cornerMin !== undefined && (cornerMin < 0 || cornerMin > 30)) {
+        errors.push(`策略${s.id}: corner_min需在0-30之间`);
       }
-      if (s.maxCurrentCorners !== undefined && (s.maxCurrentCorners < 0 || s.maxCurrentCorners > 30)) {
-        errors.push(`策略${s.id}: maxCurrentCorners需在0-30之间`);
+      if (cornerMax !== undefined && (cornerMax < 0 || cornerMax > 30)) {
+        errors.push(`策略${s.id}: corner_max需在0-30之间`);
       }
-      if (s.minCurrentCorners !== undefined && s.maxCurrentCorners !== undefined && s.minCurrentCorners > s.maxCurrentCorners) {
-        errors.push(`策略${s.id}: minCurrentCorners不能大于maxCurrentCorners`);
+      if (cornerMin !== undefined && cornerMax !== undefined && cornerMin > cornerMax) {
+        errors.push(`策略${s.id}: corner_min不能大于corner_max`);
       }
     }
 
@@ -204,9 +318,9 @@ router.put("/corner/strategies", async (req, res) => {
       return res.status(400).json({ success: false, error: "参数验证失败", details: errors });
     }
 
-    setCornerStrategies(strategies);
-    console.log("[cornerRoutes] 策略已同步，数量:", strategies.length);
-    res.json({ success: true, count: strategies.length });
+    setCornerStrategies(mappedStrategies);
+    console.log("[cornerRoutes] 策略已同步，数量:", mappedStrategies.length);
+    res.json({ success: true, count: mappedStrategies.length });
   } catch (err) {
     console.error("[cornerRoutes] PUT /corner/strategies error:", err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -394,7 +508,9 @@ router.post("/corner/backtest", async (req, res) => {
     if (!strategies || !Array.isArray(strategies) || strategies.length === 0) {
       return res.status(400).json({ success: false, error: "请提供策略列表" });
     }
-    const result = await runBacktest(strategies);
+    // 入参映射：旧字段 → 新字段
+    const mappedStrategies = strategies.map(mapStrategyFieldsForward);
+    const result = await runBacktest(mappedStrategies);
     res.json(result);
   } catch (err) {
     console.error("[cornerRoutes] /corner/backtest error:", err.message);

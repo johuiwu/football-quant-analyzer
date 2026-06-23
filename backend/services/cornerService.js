@@ -62,13 +62,13 @@ const pollingAnalytics = {
 
 // ======================== 策略配置 ========================
 export const DEFAULT_STRATEGIES = [
-  { id: 1, enabled: false, name: "策略一 · 走地角球(35'-55')", playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -1.25, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 3, maxCurrentCorners: 7, leadSide: "any" },
-  { id: 2, enabled: false, name: "策略二 · 领先比分(50'-77')", playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.30, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong" },
-  { id: 3, enabled: false, name: "策略三 · 比分平局(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.6, maxOdds: 0.90, betDirection: "under", minCurrentCorners: 3, maxCurrentCorners: 9, leadSide: "any" },
-  { id: 4, enabled: false, name: "策略四 · 领先追角(60'-99')", playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.30, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong" },
-  { id: 5, enabled: false, name: "策略五 · 尾声角球(70'-99')", playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, betDirection: "over", minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any" },
-  { id: 6, enabled: false, name: "策略六 · 逆风角球(55'-75')", playTimeStart: 55, playTimeEnd: 75, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.9, maxOdds: 1.30, betDirection: "over", minCurrentCorners: 2, maxCurrentCorners: 8, leadSide: "any" },
-  { id: 7, enabled: false, name: "策略七 · 均值回归(60'-80')", playTimeStart: 60, playTimeEnd: 80, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.9, maxOdds: 1.30, betDirection: "over", minCurrentCorners: 3, maxCurrentCorners: 5, leadSide: "any" },
+  { id: 1, enabled: false, name: "策略一 · 走地角球(35'-55')", market_type: "over_under", minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.25, line_max: 2.5, odds_min: 0.8, odds_max: 1.10, direction: "Over", corner_min: 3, corner_max: 7, leadSide: "any", aiFilterEnabled: false },
+  { id: 2, enabled: false, name: "策略二 · 领先比分(50'-77')", market_type: "over_under", minute_min: 50, minute_max: 77, leadGoals: 3, leadGoalsWeak: 1, line_min: -0.75, line_max: 2.5, odds_min: 0.8, odds_max: 1.30, direction: "Over", corner_min: 0, corner_max: 99, leadSide: "strong", aiFilterEnabled: false },
+  { id: 3, enabled: false, name: "策略三 · 比分平局(70'-99')", market_type: "over_under", minute_min: 70, minute_max: 99, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 2.0, odds_min: 0.6, odds_max: 0.90, direction: "Under", corner_min: 3, corner_max: 9, leadSide: "any", aiFilterEnabled: false },
+  { id: 4, enabled: false, name: "策略四 · 领先追角(60'-99')", market_type: "over_under", minute_min: 60, minute_max: 99, leadGoals: 2, leadGoalsWeak: 1, line_min: 0, line_max: 2.5, odds_min: 0.8, odds_max: 1.30, direction: "Over", corner_min: 0, corner_max: 99, leadSide: "strong", aiFilterEnabled: false },
+  { id: 5, enabled: false, name: "策略五 · 尾声角球(70'-99')", market_type: "over_under", minute_min: 70, minute_max: 99, leadGoals: 1, leadGoalsWeak: 1, line_min: 0, line_max: 2.5, odds_min: 0.8, odds_max: 1.10, direction: "Over", corner_min: 0, corner_max: 99, leadSide: "any", aiFilterEnabled: false },
+  { id: 6, enabled: false, name: "策略六 · 逆风角球(55'-75')", market_type: "auto", minute_min: 55, minute_max: 75, leadGoals: 1, leadGoalsWeak: 1, line_min: -0.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.30, direction: "Over", corner_min: 2, corner_max: 8, leadSide: "any", aiFilterEnabled: false },
+  { id: 7, enabled: false, name: "策略七 · 均值回归(60'-80')", market_type: "auto", minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: -0.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.30, direction: "Over", corner_min: 3, corner_max: 5, leadSide: "any", aiFilterEnabled: false },
 ];
 
 let activeStrategies = DEFAULT_STRATEGIES;
@@ -221,10 +221,6 @@ async function evaluateAndSaveTriggers(matches, hasChanges, changes) {
  */
 async function processAutoBetsForMatches(matches) {
   const betConfig = getBetConfig();
-
-  // ★ 自动投注开关前置检查：未启用则直接返回，避免无意义的数据库写入
-  if (!betConfig.autoBetEnabled) return;
-
   // ★ 去重锁：过滤掉正在处理中的比赛
   const matchesToProcess = matches.filter(m => !processingMatchIds.has(m.matchId));
   if (matchesToProcess.length === 0) return;
@@ -235,6 +231,8 @@ async function processAutoBetsForMatches(matches) {
   }
 
   try {
+  // ★ 不再提前 return：即使 isRealMode=false 或 autoBetEnabled=false，
+  // 也要进入投注函数生成 skipped 记录，让用户在投注记录中看到策略触发了但未执行
   for (const match of matchesToProcess) {
     // ★ 空数组时跳过所有比赛（无追踪比赛 = 不投注）
     if (betConfig.trackedMatchIds.length === 0) {
