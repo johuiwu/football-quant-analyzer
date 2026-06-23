@@ -385,9 +385,15 @@ const MatchCard = React.memo(function MatchCard({
   const ai = findTeamInfo(row.awayTeam);
 
   const handicaps = row.handicaps || [];
+  // 调试：打印 handicaps 中所有 marketGroup 和 category
+  if (handicaps.length > 0) {
+    const groups = new Set(handicaps.map((h: HandicapEntry) => `${h.marketGroup || 'undefined'}:${h.category}`));
+    const mg = Array.from(groups).join(', ');
+    console.debug(`[LiveMonitor] ${row.homeTeam} vs ${row.awayTeam}: ${handicaps.length}条盘口 [${mg}]`);
+  }
   const cornerMarkets = handicaps.filter((h: HandicapEntry) => h.marketGroup === "corner");
   const regularMarkets = handicaps.filter((h: HandicapEntry) =>
-    h.marketGroup !== "corner" && (h.category === "O/U" || h.category === "HDP" || h.category === "1X2")
+    (h.marketGroup !== "corner" || !h.marketGroup) && (h.category === "O/U" || h.category === "HDP" || h.category === "1X2")
   );
   const colData = mapHandicapsToColumns(cornerMarkets);
 

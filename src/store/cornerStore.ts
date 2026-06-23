@@ -640,33 +640,36 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
           existingKeys.add(teamKey.toLowerCase());
           existingIds.add(String(m.matchId || ""));
 
-          // ★ 多策略匹配 mainMarkets：matchId → teamKey → teamKey.toLowerCase → 模糊匹配
-          let mm = (mainMarkets as any)[String(m.matchId || "")]
-            || (mainMarkets as any)[teamKey]
-            || (mainMarkets as any)[teamKey.toLowerCase()];
+          // ★ 多策略匹配 mainMarkets：区分角球数据（cornerOU/cornerHDP）和常规盘口数据（hdp/ou）
+          // 角球盘口条目 key=matchId, 常规盘口条目 key=gid 或 teamKey，两者可能不同
+          const isRegularMarket = (obj: any) => obj && ((Array.isArray(obj.hdp) && obj.hdp.length > 0) || (Array.isArray(obj.ou) && obj.ou.length > 0));
+          const isCornerMarket = (obj: any) => obj && (obj.cornerOU || obj.cornerHDP || obj.nextCorner);
 
-          // fallback: 遍历 mainMarkets key 做大小写不敏感匹配
-          if (!mm) {
-            const lKey = teamKey.toLowerCase();
-            for (const [mk, mv] of Object.entries(mainMarkets as any)) {
-              if (mk.toLowerCase() === lKey) { mm = mv; break; }
-            }
-          }
-
-          // fallback: 用队名包含关系匹配（处理翻译/缩写差异）
+          // 先找常规盘口数据（hdp/ou 数组格式）
+          let mm = null;
+          // 1) 按 matchId 查常规盘口
+          const byId = (mainMarkets as any)[String(m.matchId || "")];
+          if (isRegularMarket(byId)) mm = byId;
+          // 2) 按 teamKey 查常规盘口
+          if (!mm) { const byTk = (mainMarkets as any)[teamKey]; if (isRegularMarket(byTk)) mm = byTk; }
+          // 3) 按 teamKey.toLowerCase() 查
+          if (!mm) { const byTkl = (mainMarkets as any)[teamKey.toLowerCase()]; if (isRegularMarket(byTkl)) mm = byTkl; }
+          // 4) 遍历查找（大小写不敏感 + 包含匹配）
           if (!mm && m.homeTeam && m.awayTeam) {
             const hLower = m.homeTeam.toLowerCase();
             const aLower = m.awayTeam.toLowerCase();
             for (const [mk, mv] of Object.entries(mainMarkets as any)) {
-              const sepIdx = mk.indexOf("|");
-              if (sepIdx < 1) continue;
-              const mkHome = mk.substring(0, sepIdx).toLowerCase();
-              const mkAway = mk.substring(sepIdx + 1).toLowerCase();
-              // 双向包含：任一方队名包含对方 或 被对方包含
-              if ((hLower.includes(mkHome) || mkHome.includes(hLower)) &&
-                  (aLower.includes(mkAway) || mkAway.includes(aLower))) {
-                mm = mv;
-                break;
+              if (isRegularMarket(mv)) {
+                const sepIdx = mk.indexOf("|");
+                if (sepIdx >= 1) {
+                  const mkHome = mk.substring(0, sepIdx).toLowerCase();
+                  const mkAway = mk.substring(sepIdx + 1).toLowerCase();
+                  if ((hLower.includes(mkHome) || mkHome.includes(hLower)) &&
+                      (aLower.includes(mkAway) || mkAway.includes(aLower))) {
+                    mm = mv;
+                    break;
+                  }
+                }
               }
             }
           }
