@@ -60,7 +60,7 @@ export default function CrawlerControlPanel() {
         const parsed = JSON.parse(saved);
         return {
           username: parsed.username || storeAccount.username || storeSettings.hgUsername || "",
-          password: storeAccount.password || storeSettings.hgPassword || "",
+          password: parsed.password || storeAccount.password || storeSettings.hgPassword || "",
         };
       } catch { /* ignore */ }
     }
@@ -289,7 +289,7 @@ export default function CrawlerControlPanel() {
         setStatus(prev => ({ ...prev, isLoggedIn: true }));
         setLoginStatus(true, credentials.username);
         if (rememberMe) {
-          localStorage.setItem("hg_credentials", JSON.stringify({ username: credentials.username }));
+          localStorage.setItem("hg_credentials", JSON.stringify({ username: credentials.username, password: credentials.password }));
         } else {
           localStorage.removeItem("hg_credentials");
         }
