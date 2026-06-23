@@ -1,21 +1,8 @@
-version: 2.8.7
+version: 2.8.8
 files:
-  # 主源: kkgithub.com 国内镜像 (5~10MB/s)
-  - url: https://kkgithub.com/johuiwu/football-quant-analyzer/releases/download/v2.8.7/football-quant-analyzer-setup-2.8.7.exe
-    sha512: +YAJarZqykijPDhNrXBbRYmyqeOGR64JSRla7NCeR8JvoWecU/6u1NVPNpG/AGJin/sCrzOApjZnt+A17NmrkQ==
-    size: 130301482
-  # 备选: GitHub 原始链接 (走拦截器代理加速)
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.7/football-quant-analyzer-setup-2.8.7.exe
-    sha512: +YAJarZqykijPDhNrXBbRYmyqeOGR64JSRla7NCeR8JvoWecU/6u1NVPNpG/AGJin/sCrzOApjZnt+A17NmrkQ==
-    size: 130301482
-  # blockmap: kkgithub.com 镜像 (134KB，秒下)
-  - url: https://kkgithub.com/johuiwu/football-quant-analyzer/releases/download/v2.8.7/football-quant-analyzer-setup-2.8.7.exe.blockmap
-    sha512: YY5G3nTK0IQ15qRy0rtV5MfWnPQCVomstHyt338u1iUPEy7DAOxN+P69S4Vlyq51JGx8JC94oA5MQUdg6nSCpg==
-    size: 137227
-  # blockmap 备选: GitHub
-  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.7/football-quant-analyzer-setup-2.8.7.exe.blockmap
-    sha512: YY5G3nTK0IQ15qRy0rtV5MfWnPQCVomstHyt338u1iUPEy7DAOxN+P69S4Vlyq51JGx8JC94oA5MQUdg6nSCpg==
-    size: 137227
-path: football-quant-analyzer-setup-2.8.7.exe
-sha512: +YAJarZqykijPDhNrXBbRYmyqeOGR64JSRla7NCeR8JvoWecU/6u1NVPNpG/AGJin/sCrzOApjZnt+A17NmrkQ==
-releaseDate: '2026-06-23T09:00:00.000Z'
+  - url: https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.8/football-quant-analyzer-setup-2.8.8.exe
+    sha512: lVBHMpvvPiTPhegDi+Brdg3tgNIqeLJBTzj8YwgTKJF/VzlTzqYOzvi34KbRJ8s4XAy4klu3UYru2kYxtBVApQ==
+    size: 130302278
+path: football-quant-analyzer-setup-2.8.8.exe
+sha512: lVBHMpvvPiTPhegDi+Brdg3tgNIqeLJBTzj8YwgTKJF/VzlTzqYOzvi34KbRJ8s4XAy4klu3UYru2kYxtBVApQ==
+releaseDate: '2026-06-23T17:49:56.740Z'
