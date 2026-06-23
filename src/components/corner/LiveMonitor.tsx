@@ -169,86 +169,121 @@ const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handi
   );
 });
 
-// ==================== 常规盘口卡片（动态渲染） ====================
+// ==================== 常规盘口表格（聚合多条盘口线） ====================
 
 const REGULAR_BORDER = "border-emerald-600/40 bg-emerald-900/10";
 const REGULAR_HEADER = "bg-emerald-700/30 text-emerald-300";
 
-const RegularMarketCard = React.memo(function RegularMarketCard({ h }: { h: HandicapEntry }) {
-  const locked = (h as any)?.locked === true;
-  const odds = h.odds || {};
-  const line = h.line;
-  const cat = h.category;
+/** 将同类别盘口聚合为横向表格 */
+const RegularMarketTable = React.memo(function RegularMarketTable({
+  title,
+  items,
+  type,
+}: {
+  title: string;
+  items: HandicapEntry[];
+  type: "HDP" | "O/U";
+}) {
+  if (items.length === 0) return null;
 
-  const textCls = locked ? "text-slate-600" : "";
-  const oddsCls = locked ? "text-slate-600" : "text-red-400";
-  const lineCls = locked ? "text-slate-600" : "text-slate-400";
-
-  // 1X2 三列布局
-  if (cat === "1X2") {
-    return (
-      <div className={`rounded-lg border ${REGULAR_BORDER} overflow-hidden`}>
-        <div className={`px-2 py-1 text-center text-[10px] font-medium ${REGULAR_HEADER}`}>{h.categoryLabel || "独赢"}</div>
-        <div className="grid grid-cols-3 divide-x divide-slate-700/40">
-          <div className="px-1.5 py-1.5 text-center">
-            <div className={`text-[10px] ${lineCls}`}>主</div>
-            <div className={`text-[11px] font-semibold ${oddsCls}`}>{fmt(odds.home)}</div>
-          </div>
-          <div className="px-1.5 py-1.5 text-center">
-            <div className={`text-[10px] ${lineCls}`}>平</div>
-            <div className={`text-[11px] font-semibold ${oddsCls}`}>{fmt(odds.draw)}</div>
-          </div>
-          <div className="px-1.5 py-1.5 text-center">
-            <div className={`text-[10px] ${lineCls}`}>客</div>
-            <div className={`text-[11px] font-semibold ${oddsCls}`}>{fmt(odds.away)}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // O/U 或 HDP 两列布局
-  let topLabel: string;
-  let topValue: string;
-  let bottomLabel: string;
-  let bottomValue: string;
-
-  if (cat === "O/U") {
-    topLabel = `大 ${fmtLine(line)}`;
-    topValue = fmt(odds.over);
-    bottomLabel = `小 ${fmtLine(line)}`;
-    bottomValue = fmt(odds.under);
-  } else if (cat === "HDP") {
-    topLabel = `主 ${fmtLine(line)}`;
-    topValue = fmt(odds.home);
-    bottomLabel = `客 ${fmtLine(line)}`;
-    bottomValue = fmt(odds.away);
-  } else {
-    topLabel = h.categoryLabel || cat;
-    topValue = "—";
-    bottomLabel = "—";
-    bottomValue = "—";
-  }
+  const isOU = type === "O/U";
 
   return (
     <div className={`rounded-lg border ${REGULAR_BORDER} overflow-hidden`}>
-      <div className={`px-2 py-1 text-center text-[10px] font-medium ${REGULAR_HEADER}`}>{h.categoryLabel || cat}</div>
-      <div className="grid grid-cols-2 divide-x divide-slate-700/40">
-        <div className="px-2 py-1.5 text-center">
-          <div className={`text-[10px] ${lineCls}`}>{topLabel}</div>
-          <div className={`text-[12px] font-semibold ${oddsCls} flex items-center justify-center gap-0.5`}>
-            {topValue}
-            {locked && <Lock className="w-2.5 h-2.5 text-slate-600" />}
-          </div>
-        </div>
-        <div className="px-2 py-1.5 text-center">
-          <div className={`text-[10px] ${lineCls}`}>{bottomLabel}</div>
-          <div className={`text-[12px] font-semibold ${oddsCls} flex items-center justify-center gap-0.5`}>
-            {bottomValue}
-            {locked && <Lock className="w-2.5 h-2.5 text-slate-600" />}
-          </div>
-        </div>
-      </div>
+      <div className={`px-2 py-1 text-[10px] font-medium ${REGULAR_HEADER}`}>{title}</div>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-t border-emerald-700/30">
+            <th className="px-1.5 py-0.5 text-[9px] text-slate-500 font-normal w-6 text-center">
+              {isOU ? "盘口" : "盘口"}
+            </th>
+            {items.map((h, i) => (
+              <th key={i} className="px-1.5 py-0.5 text-[10px] text-emerald-300/80 font-semibold text-center">
+                {fmtLine(h.line)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">
+              {isOU ? "大" : "主"}
+            </td>
+            {items.map((h, i) => {
+              const locked = (h as any)?.locked === true;
+              const val = isOU ? h.odds?.over : h.odds?.home;
+              return (
+                <td key={i} className={`px-1.5 py-0.5 text-center font-semibold ${locked ? "text-slate-600" : "text-red-400"}`}>
+                  {fmt(val)}
+                </td>
+              );
+            })}
+          </tr>
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">
+              {isOU ? "小" : "客"}
+            </td>
+            {items.map((h, i) => {
+              const locked = (h as any)?.locked === true;
+              const val = isOU ? h.odds?.under : h.odds?.away;
+              return (
+                <td key={i} className={`px-1.5 py-0.5 text-center font-semibold ${locked ? "text-slate-600" : "text-red-400"}`}>
+                  {fmt(val)}
+                </td>
+              );
+            })}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+/** 1X2 独赢表格 */
+const Regular1X2Table = React.memo(function Regular1X2Table({
+  title,
+  items,
+}: {
+  title: string;
+  items: HandicapEntry[];
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className={`rounded-lg border ${REGULAR_BORDER} overflow-hidden`}>
+      <div className={`px-2 py-1 text-[10px] font-medium ${REGULAR_HEADER}`}>{title}</div>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-t border-emerald-700/30">
+            <th className="px-1.5 py-0.5 text-[9px] text-slate-500 font-normal w-6 text-center">—</th>
+            {items.map((h, i) => (
+              <th key={i} className="px-1.5 py-0.5 text-[10px] text-emerald-300/80 font-semibold text-center">
+                {h.categoryLabel || "独赢"}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">主</td>
+            {items.map((h, i) => (
+              <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-red-400">{fmt(h.odds?.home)}</td>
+            ))}
+          </tr>
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">平</td>
+            {items.map((h, i) => (
+              <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-red-400">{fmt(h.odds?.draw)}</td>
+            ))}
+          </tr>
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1.5 py-0.5 text-[9px] text-slate-500 text-center">客</td>
+            {items.map((h, i) => (
+              <td key={i} className="px-1.5 py-0.5 text-center font-semibold text-red-400">{fmt(h.odds?.away)}</td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 });
@@ -305,8 +340,14 @@ const MatchCard = React.memo(function MatchCard({
     h.marketGroup !== "corner" && (h.category === "O/U" || h.category === "HDP" || h.category === "1X2")
   );
   const colData = mapHandicapsToColumns(cornerMarkets);
-  const regularFull = regularMarkets.filter((h: HandicapEntry) => h.period === "full");
-  const regularHalf = regularMarkets.filter((h: HandicapEntry) => h.period === "half");
+
+  // 按类别+周期归类常规盘口
+  const hdpFull = regularMarkets.filter((h: HandicapEntry) => h.category === "HDP" && h.period === "full");
+  const hdpHalf = regularMarkets.filter((h: HandicapEntry) => h.category === "HDP" && h.period === "half");
+  const ouFull = regularMarkets.filter((h: HandicapEntry) => h.category === "O/U" && h.period === "full");
+  const ouHalf = regularMarkets.filter((h: HandicapEntry) => h.category === "O/U" && h.period === "half");
+  const x2Full = regularMarkets.filter((h: HandicapEntry) => h.category === "1X2" && h.period === "full");
+  const x2Half = regularMarkets.filter((h: HandicapEntry) => h.category === "1X2" && h.period === "half");
   const hasRegularMarkets = regularMarkets.length > 0;
 
   const cardBorder = isHighlighted
@@ -400,27 +441,27 @@ const MatchCard = React.memo(function MatchCard({
         ))}
       </div>
 
-      {/* 常规盘口分组（让球/大小球/独赢） */}
+      {/* 常规盘口分组（让球/大小球） */}
       {hasRegularMarkets && (
-        <div className="mt-2 space-y-1.5">
-          {regularFull.length > 0 && (
-            <div>
-              <div className="text-[10px] text-emerald-400/80 font-medium mb-1">常规盘口 (全场)</div>
-              <div className="grid grid-cols-4 gap-2">
-                {regularFull.map((h: HandicapEntry, idx: number) => (
-                  <RegularMarketCard key={`${h.category}-${h.marketGroup}-${idx}`} h={h} />
-                ))}
-              </div>
+        <div className="mt-2">
+          <div className="text-[10px] text-emerald-400/80 font-medium mb-1">常规盘口</div>
+          <div className="flex gap-2">
+            {/* 左栏：让球 */}
+            <div className="flex-1 space-y-1.5">
+              <RegularMarketTable title="让球 (全场)" items={hdpFull} type="HDP" />
+              <RegularMarketTable title="让球 (半场)" items={hdpHalf} type="HDP" />
             </div>
-          )}
-          {regularHalf.length > 0 && (
-            <div>
-              <div className="text-[10px] text-emerald-400/80 font-medium mb-1">常规盘口 (半场)</div>
-              <div className="grid grid-cols-4 gap-2">
-                {regularHalf.map((h: HandicapEntry, idx: number) => (
-                  <RegularMarketCard key={`${h.category}-${h.marketGroup}-${idx}`} h={h} />
-                ))}
-              </div>
+            {/* 右栏：大小球 */}
+            <div className="flex-1 space-y-1.5">
+              <RegularMarketTable title="大小球 (全场)" items={ouFull} type="O/U" />
+              <RegularMarketTable title="大小球 (半场)" items={ouHalf} type="O/U" />
+            </div>
+          </div>
+          {/* 1X2 独赢（如有） */}
+          {(x2Full.length > 0 || x2Half.length > 0) && (
+            <div className="mt-1.5 space-y-1.5">
+              <Regular1X2Table title="独赢 (全场)" items={x2Full} />
+              <Regular1X2Table title="独赢 (半场)" items={x2Half} />
             </div>
           )}
         </div>
