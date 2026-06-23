@@ -344,6 +344,8 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
       }
     }
     if (!linePassed) return false;
+    // [链路追踪] 节点4：盘口区间过滤通过
+    console.log(`[链路追踪] 策略${strategy.id} 盘口区间过滤通过: ${effectiveLine}(${marketType}) 在 ${lineMin}~${lineMax} 范围内`);
   } else {
     console.log(`[流水线-4级] 策略${strategy.id} next_corner类型，跳过盘口区间过滤`);
   }
@@ -366,6 +368,8 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     console.log(`[流水线-5级] 策略${strategy.id} 赔率上限未通过: ${odds} > ${oddsMax}`);
     return false;
   }
+  // [链路追踪] 节点5：赔率过滤通过
+  console.log(`[链路追踪] 策略${strategy.id} 赔率过滤通过: ${odds} 在 ${oddsMin}~${oddsMax} 范围内`);
 
   // ========== 第6级：AI评分过滤（可选） ==========
   const aiFilterEnabled = strategy.aiFilterEnabled ?? false;
@@ -407,19 +411,36 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
 
   // 比分条件检查
   // leadGoals >= 20 → 哨兵值，不做比分限制
-  if (strategy.leadGoals >= 20) return true;
+  if (strategy.leadGoals >= 20) {
+    // [链路追踪] 节点7：投注方向确定
+    const finalDir = strategy.direction || strategy.betDirection || "Auto";
+    console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    return true;
+  }
 
   // leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
-  if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) return true;
+  if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) {
+    const finalDir = strategy.direction || strategy.betDirection || "Auto";
+    console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    return true;
+  }
 
   // leadGoalsWeak > 0 → 弱队领先：至少差N球，同时受 leadGoals 上限约束
-  if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) return true;
+  if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) {
+    const finalDir = strategy.direction || strategy.betDirection || "Auto";
+    console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    return true;
+  }
 
   // leadGoals === 0 且 leadGoalsWeak === 0 → 平局检查：goalDiff 必须为 0
   if (strategy.leadGoals === 0 && (strategy.leadGoalsWeak || 0) === 0) {
     const isTriggered = goalDiff === 0;
     console.log('[策略3 Debug] 当前比分:', homeScore, '-', awayScore, '触发条件: leadGoals=' + strategy.leadGoals, '是否通过:', isTriggered);
-    if (isTriggered) return true;
+    if (isTriggered) {
+      const finalDir = strategy.direction || strategy.betDirection || "Auto";
+      console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+      return true;
+    }
   }
 
   return false;
