@@ -273,24 +273,26 @@ export default function StrategyConfigPanel() {
                 {/* 折叠态摘要 */}
                 {!isExpanded && (
                   <div className="px-3 pb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 font-sans">
-                    <span>⏱ {s.minute_min}'–{s.minute_max}'</span>
-                    <span>📊 {s.line_min}~{s.line_max}</span>
-                    <span>🎯 ≥{s.odds_min.toFixed(2)}</span>
-                    {(s.corner_min > 0 || s.corner_max < 99) && (
-                      <span>⚽ {s.corner_min}~{s.corner_max}角</span>
+                    <span>⏱ {s.minute_min ?? s.playTimeStart}'–{s.minute_max ?? s.playTimeEnd}'</span>
+                    <span>📊 {s.line_min ?? s.cornerHandicapLower}~{s.line_max ?? s.cornerHandicapUpper}</span>
+                    <span>🎯 ≥{(s.odds_min ?? s.targetOdds ?? 0).toFixed(2)}</span>
+                    {((s.corner_min ?? s.minCurrentCorners) > 0 || (s.corner_max ?? s.maxCurrentCorners) < 99) && (
+                      <span>⚽ {s.corner_min ?? s.minCurrentCorners}~{s.corner_max ?? s.maxCurrentCorners}角</span>
                     )}
                     {s.leadSide !== "any" && (
                       <span>🏷 {s.leadSide === "strong" ? "强队领先" : "弱队领先"}</span>
                     )}
-                    {s.odds_max < 1.10 && (
-                      <span>📉 ≤{s.odds_max.toFixed(2)}</span>
+                    {(s.odds_max ?? s.maxOdds ?? 1.10) < 1.10 && (
+                      <span>📉 ≤{(s.odds_max ?? s.maxOdds ?? 1.10).toFixed(2)}</span>
                     )}
-                    {s.market_type !== "auto" && (
-                      <span>📋 {s.market_type === "over_under" ? "大小球" : s.market_type === "handicap" ? "让球" : s.market_type === "next_corner" ? "下个角球" : s.market_type}</span>
+                    {(s.market_type ?? "auto") !== "auto" && (
+                      <span>📋 {(s.market_type ?? "auto") === "over_under" ? "大小球" : (s.market_type ?? "auto") === "handicap" ? "让球" : (s.market_type ?? "auto") === "next_corner" ? "下个角球" : s.market_type}</span>
                     )}
                     {(() => {
-                      const overlapping = strategies.filter(o => o.enabled && o.id !== s.id && o.minute_min <= s.minute_max && o.minute_max >= s.minute_min);
-                      const halfTimeIssue = s.minute_min <= 45 && s.minute_max >= 46;
+                      const sMin = s.minute_min ?? s.playTimeStart ?? 0;
+                      const sMax = s.minute_max ?? s.playTimeEnd ?? 99;
+                      const overlapping = strategies.filter(o => o.enabled && o.id !== s.id && (o.minute_min ?? o.playTimeStart ?? 0) <= sMax && (o.minute_max ?? o.playTimeEnd ?? 99) >= sMin);
+                      const halfTimeIssue = sMin <= 45 && sMax >= 46;
                       return (
                         <>
                           {overlapping.length > 0 && (
