@@ -16,6 +16,25 @@ import {
   buildBetTarget
 } from "./cornerBetService.js";
 
+/**
+ * 根据市场类型从比赛数据中提取正确的盘口线值
+ * @param {Object} match - 比赛对象
+ * @param {string} marketType - 市场类型 (over_under/handicap/next_corner/1x2/auto)
+ * @returns {number} 归一化后的盘口线值
+ */
+function resolveBetLine(match, marketType) {
+  const mt = (marketType || 'auto').toLowerCase();
+  if (mt === 'over_under') {
+    return normalizeHandicap(match.cornerOU?.line || match.cornerHandicap || 0);
+  } else if (mt === 'handicap') {
+    return normalizeHandicap(match.cornerHDP?.line || match.cornerHandicap || 0);
+  } else if (mt === 'next_corner' || mt === '1x2') {
+    return 0;
+  }
+  // auto: 优先 cornerOU.line，fallback 到 cornerHandicap
+  return normalizeHandicap(match.cornerOU?.line || match.cornerHandicap || 0);
+}
+
 
 // ======================== 数据源配置 ========================
 const USE_REAL_DATA = process.env.USE_REAL_DATA !== "false";
@@ -271,11 +290,12 @@ async function processAutoBetsForMatches(matches) {
             console.warn(`[cornerService] 策略${sid}触发但赔率为0，跳过投注, matchId=${match.matchId}`);
             continue;
           }
-          match.betTarget = buildBetTarget(betDir, normalizeHandicap(match.cornerHandicap || 0));
+          const marketType = strategy?.market_type || 'auto';
+          match.betTarget = buildBetTarget(betDir, resolveBetLine(match, marketType));
           const genResult = await generatePendingBet(match, sid, actualOdds);
           if (genResult.success && !genResult.skipped) {
             // [链路追踪] 节点5：投注队列生成（二次确认开启路径）
-            console.log(`[链路追踪] 策略${sid} 触发成功！生成投注方向: ${betDir}, 市场类型: ${strategy?.market_type || 'auto'}, 盘口周期: ${strategy?.period || 'full'}, 赔率: ${actualOdds}`);
+            console.debug(`[链路追踪] 策略${sid} 触发成功！生成投注方向: ${betDir}, 市场类型: ${strategy?.market_type || 'auto'}, 盘口周期: ${strategy?.period || 'full'}, 赔率: ${actualOdds}`);
             betQueue.push({
               betId: genResult.id,
               historyId: null,
@@ -284,7 +304,7 @@ async function processAutoBetsForMatches(matches) {
               strategyId: sid,
               odds: actualOdds,
               amount: betConfig.amount,
-              handicap: normalizeHandicap(match.cornerHandicap || 0),
+              handicap: resolveBetLine(match, strategy?.market_type || 'auto'),
               betDirection: betDir
             });
           }
@@ -298,8 +318,8 @@ async function processAutoBetsForMatches(matches) {
           }
           // [链路追踪] 节点5：投注队列生成（二次确认关闭路径）
           const betDir = strategy?.direction || strategy?.betDirection || "Auto";
-          console.log(`[链路追踪] 策略${sid} 触发成功！生成投注方向: ${betDir}, 市场类型: ${strategy?.market_type || 'auto'}, 盘口周期: ${strategy?.period || 'full'}, 赔率: ${actualOdds}`);
-          await executeAndRecordBet(match, sid, strategy?.direction || strategy?.betDirection || "Auto", actualOdds);
+          console.debug(`[链路追踪] 策略${sid} 触发成功！生成投注方向: ${betDir}, 市场类型: ${strategy?.market_type || 'auto'}, 盘口周期: ${strategy?.period || 'full'}, 赔率: ${actualOdds}`);
+          await executeAndRecordBet(match, sid, strategy?.direction || strategy?.betDirection || "Auto", actualOdds, strategy?.market_type || 'auto');
         }
       } catch (e) {
         console.error("[cornerService] 投注处理失败:", e.message);
@@ -440,11 +460,11 @@ async function pollOnce() {
 
   console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMarkets).length);
   // [链路追踪] 节点1：数据解析
-  console.log(`[链路追踪] 轮询获取到 ${matches.length} 场比赛`);
+  console.debug(`[链路追踪] 轮询获取到 ${matches.length} 场比赛`);
   if (matches.length > 0) {
     const s = matches[0];
     const hcpList = (s.handicaps || []).map(h => `${h.category} ${h.handicap ?? h.line ?? ''}`).join(', ');
-    console.log(`[链路追踪] 第一场比赛样例: ${s.homeTeam || '?'} vs ${s.awayTeam || '?'}, 当前角球: ${s.homeCorners ?? '?'}-${s.awayCorners ?? '?'}, 当前盘口: [${hcpList || '无'}]`);
+    console.debug(`[链路追踪] 第一场比赛样例: ${s.homeTeam || '?'} vs ${s.awayTeam || '?'}, 当前角球: ${s.homeCorners ?? '?'}-${s.awayCorners ?? '?'}, 当前盘口: [${hcpList || '无'}]`);
   }
   if (matches.length > 0 && !pollingFirstDone) {
     pollingFirstDone = true;

@@ -185,12 +185,24 @@ export async function generatePendingBet(match, strategyId, actualOdds) {
  * @param {string} strategyId - 策略ID
  * @param {string} betDirection - 投注方向 (over/under/next/auto)
  */
-export async function executeAndRecordBet(match, strategyId, betDirection, actualOdds) {
+export async function executeAndRecordBet(match, strategyId, betDirection, actualOdds, marketType = 'auto') {
   console.log("[角球投注] 二次确认关闭，进入自动执行流程...");
 
   // [链路追踪] 节点6：投注执行（直接执行路径）
-  const betTarget = buildBetTarget(betDirection, match.cornerHandicap || 0);
-  console.log(`[链路追踪] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${actualOdds}, 策略: ${strategyId}`);
+  // 根据市场类型选取正确的盘口线
+  let betLine = 0;
+  const mt = (marketType || 'auto').toLowerCase();
+  if (mt === 'over_under') {
+    betLine = match.cornerOU?.line || match.cornerHandicap || 0;
+  } else if (mt === 'handicap') {
+    betLine = match.cornerHDP?.line || match.cornerHandicap || 0;
+  } else if (mt === 'next_corner' || mt === '1x2') {
+    betLine = 0;
+  } else {
+    betLine = match.cornerOU?.line || match.cornerHandicap || 0;
+  }
+  const betTarget = buildBetTarget(betDirection, betLine);
+  console.debug(`[链路追踪] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${actualOdds}, 策略: ${strategyId}`);
 
   const matchId = match.matchId || "";
   const matchName = match.matchName || "";
@@ -202,7 +214,7 @@ export async function executeAndRecordBet(match, strategyId, betDirection, actua
     matchId,
     odds: actualOdds ?? match.cornerOdds ?? 0,
     amount: betConfig.amount,
-    handicap: match.cornerHandicap || 0,
+    handicap: betLine,
     strategyId: sid,
     betDirection: betDirection || "auto",
     cornerOU: match.cornerOU || null
@@ -387,7 +399,13 @@ export async function processBetQueue() {
 
     console.log("[cornerBetService] 执行投注: bet#" + task.betId + " " + task.matchName);
 
-    const betTarget = buildBetTarget(task.betDirection || "auto", task.handicap || 0);
+    // over/under 方向优先从 cornerOU.line 取大小球盘口线
+    let taskLine = task.handicap || 0;
+    const dir = (task.betDirection || 'auto').toLowerCase();
+    if (dir === 'over' || dir === 'under') {
+      taskLine = task.cornerOU?.line || task.handicap || 0;
+    }
+    const betTarget = buildBetTarget(task.betDirection || "auto", taskLine);
     console.log(`[下注诊断] 策略${task.strategyId}触发, 赔率: ${task.odds}, 盘口: ${betTarget}`);
 
     if (!task.odds || task.odds <= 0) {
