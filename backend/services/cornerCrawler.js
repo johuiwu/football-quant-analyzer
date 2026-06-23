@@ -3060,8 +3060,16 @@ async function fetchCornerDataViaAPI(page) {
           ouHalf: ouHalfItems
         };
         // ★ 同时使用 homeTeam|awayTeam 和 gid 作为 key，方便前端匹配
-        mainMarkets[key] = marketData;
-        if (gid) mainMarkets[gid] = marketData;
+        // 合并而非覆盖：如果 key 已存在（角球数据），追加常规盘口字段
+        const mergeTo = (k) => {
+          if (mainMarkets[k]) {
+            Object.assign(mainMarkets[k], marketData);
+          } else {
+            mainMarkets[k] = { ...marketData };
+          }
+        };
+        mergeTo(key);
+        if (gid) mergeTo(gid);
       }
     }
     console.log("[cornerCrawler] mainMarkets: " + Object.keys(mainMarkets).length + " 场有盘口数据");
@@ -3503,6 +3511,7 @@ async function _processHttpResults(rcnResult, rnouResult, uid, ver, cookieStr) {
     }
   }
   // ★ 让球/大小盘口（从 rrnou 数据构建，按 matchId 和 homeTeam|awayTeam 双索引）
+  // 注意：gid 可能与角球数据的 matchId 相同，需要合并而非覆盖
   for (const g of rnouGames) {
     const ht = g.TEAM_H || g.team_h || "";
     const at = g.TEAM_C || g.team_c || "";
@@ -3543,8 +3552,16 @@ async function _processHttpResults(rcnResult, rnouResult, uid, ver, cookieStr) {
 
     if (hdpItems.length > 0 || ouItems.length > 0 || hdpHalfItems.length > 0 || ouHalfItems.length > 0) {
       const marketData = { hdp: hdpItems, ou: ouItems, hdpHalf: hdpHalfItems, ouHalf: ouHalfItems };
-      mainMarkets[teamKey] = marketData;
-      if (gid) mainMarkets[gid] = marketData;
+      // ★ 合并到 mainMarkets：如果 key 已存在（角球数据），追加常规盘口字段而非覆盖
+      const mergeTo = (key) => {
+        if (mainMarkets[key]) {
+          Object.assign(mainMarkets[key], marketData);
+        } else {
+          mainMarkets[key] = { ...marketData };
+        }
+      };
+      mergeTo(teamKey);
+      if (gid) mergeTo(gid);
     }
   }
 
