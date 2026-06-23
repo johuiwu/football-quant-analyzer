@@ -4,12 +4,14 @@
 // 统一后端策略评估逻辑，供 cornerService.js 和 cornerStrategyEngine.js 共用
 // 前端 cornerStore.ts 独立实现以支持实时响应，但逻辑须与此模块保持一致
 
+import { normalizeHandicap } from './crawlerShared.js';
+
 const evaluationCache = new Map();
 const EVALUATION_CACHE_MAX = 500;
 const EVALUATION_CACHE_TTL = 60000; // 60秒缓存过期
 
 function cacheKey(match, strategies) {
-  const strategyIds = strategies.map(s => s.id + ":" + (s.enabled ? "1" : "0")).sort().join(",");
+  const strategyIds = strategies.map(s => s.id + ":" + (s.enabled ? "1" : "0") + ":" + (s.market_type || "auto")).sort().join(",");
   const fingerprint = JSON.stringify({
     id: match.matchId,
     m: match.elapsedMinutes ?? 0,
@@ -25,16 +27,78 @@ function cacheKey(match, strategies) {
   return fingerprint;
 }
 
+// ======================== 市场类型过滤 ========================
+
+/**
+ * 按市场类型过滤盘口列表
+ * @param {Array} handicaps - 比赛的盘口列表（HandicapEntry[]）
+ * @param {string} marketType - 市场类型：over_under | handicap | next_corner | auto
+ * @returns {Array} 过滤后的盘口列表
+ */
+export function filterMarketsByType(handicaps, marketType) {
+  if (!handicaps || !Array.isArray(handicaps)) return [];
+  if (marketType === 'auto' || !marketType) return handicaps;
+
+  const categoryMap = {
+    'over_under': ['O/U'],
+    'handicap': ['HDP'],
+    'next_corner': ['NEXT'],
+  };
+
+  const allowedCategories = categoryMap[marketType] || [];
+  if (allowedCategories.length === 0) return handicaps;
+
+  return handicaps.filter(h => allowedCategories.includes(h.category));
+}
+
+// ======================== AI 评分过滤器 ========================
+
+/**
+ * 简化版 AI 概率计算：基于泊松分布估算大小球概率
+ * @param {Object} match - 比赛数据
+ * @param {Object} strategy - 策略配置
+ * @returns {number} 0-100 的概率百分比
+ */
+export function quickAIProbability(match, strategy) {
+  const homeCorners = match.homeCorners ?? 0;
+  const awayCorners = match.awayCorners ?? 0;
+  const totalCorners = homeCorners + awayCorners;
+  const currentMinute = match.elapsedMinutes ?? match.currentMinute ?? match.elapsed_minutes ?? 0;
+  const remainingMinutes = Math.max(0, 90 - currentMinute);
+
+  // 平均每分钟0.15角球的简化假设
+  const expectedRemaining = remainingMinutes * 0.15;
+  const expectedTotal = totalCorners + expectedRemaining;
+
+  // 获取归一化后的盘口线
+  const rawHandicap = match.handicap ?? match.cornerHandicap ?? 0;
+  const line = normalizeHandicap(rawHandicap);
+
+  // 简化概率计算：基于预期总角球与盘口线的对比
+  let overProb;
+  if (expectedTotal > line) {
+    overProb = Math.min(0.95, 0.55 + (expectedTotal - line) * 0.1);
+  } else {
+    overProb = Math.max(0.05, 0.45 - (line - expectedTotal) * 0.1);
+  }
+
+  return Math.round(overProb * 100);
+}
+
+// ======================== 方向感知赔率解析 ========================
+
 /**
  * 方向感知赔率解析：根据策略投注方向返回实际盘口赔率
- * over → cornerOU.overOdds, under → cornerOU.underOdds, auto/home/away → cornerOdds
+ * Over → cornerOU.overOdds, Under → cornerOU.underOdds, Auto/Home/Away → cornerOdds
  * @param {Object} match - 比赛数据
- * @param {Object} strategy - 策略配置（需含 betDirection）
+ * @param {Object} strategy - 策略配置（需含 direction）
  * @returns {number} 实际赔率值，无效时返回 0
  */
 export function resolveStrategyOdds(match, strategy) {
   const cornerOU = match.cornerOU;
-  const betDir = strategy?.betDirection || "auto";
+  // 兼容新字段 direction（首字母大写）和旧字段 betDirection（小写）
+  const rawDir = strategy?.direction || strategy?.betDirection || "Auto";
+  const betDir = rawDir.toLowerCase();
 
   if (cornerOU) {
     if (betDir === "over" && cornerOU.overOdds > 0) return cornerOU.overOdds;
@@ -53,35 +117,40 @@ export function resolveStrategyOdds(match, strategy) {
   return match.cornerOdds ?? match.odds ?? 0;
 }
 
+// ======================== 7级流水线策略评估 ========================
+
 /**
- * 评估单场比赛是否触发指定策略
- * @param {Object} match - 比赛数据 { elapsedMinutes, handicap, odds, homeScore, awayScore }
- * @param {Object} strategy - 策略配置 { enabled, playTimeStart, playTimeEnd, cornerHandicapLower, cornerHandicapUpper, targetOdds, leadGoals, leadGoalsWeak }
+ * 评估单场比赛是否触发指定策略（7级流水线架构）
+ *
+ * 流水线顺序：
+ * 1. 时间过滤（minute_min/max）
+ * 2. 盘口类型过滤（market_type）
+ * 3. 盘口归一化（normalizeHandicap）
+ * 4. 盘口区间过滤（line_min/max，next_corner 类型跳过）
+ * 5. 赔率过滤（odds_min/max）
+ * 6. AI评分过滤（aiFilterEnabled，可选）
+ * 7. 投注方向与比分条件匹配（direction, leadGoals, leadSide）
+ *
+ * @param {Object} match - 比赛数据
+ * @param {Object} strategy - 策略配置（新字段：minute_min/max, line_min/max, odds_min/max, corner_min/max, direction, market_type, aiFilterEnabled）
+ * @param {Object} globalSettings - 全局设置
  * @returns {boolean} 是否触发
  */
 export function evaluateSingleStrategy(match, strategy, globalSettings) {
   if (!strategy.enabled) return false;
 
   const currentMinute = match.elapsedMinutes ?? match.currentMinute ?? match.elapsed_minutes ?? 0;
-  const handicap = match.handicap ?? match.cornerHandicap ?? 0;
+  const rawHandicap = match.handicap ?? match.cornerHandicap ?? 0;
   const homeScore = match.homeScore ?? 0;
   const awayScore = match.awayScore ?? 0;
   const goalDiff = Math.abs(homeScore - awayScore);
   const homeCorners = match.homeCorners ?? 0;
   const awayCorners = match.awayCorners ?? 0;
 
-  // 策略触发校验日志：明确区分比分和角球数
+  // 策略触发校验日志
   console.log(`[策略触发校验] 策略${strategy.id}: 比分: ${homeScore}-${awayScore}, 角球: ${homeCorners}-${awayCorners}, 实际领先球数: ${goalDiff}`);
 
-  // 方向感知赔率选择：使用 resolveStrategyOdds 统一解析
-  const odds = resolveStrategyOdds(match, strategy);
-
-  // 赔率安全校验：赔率为0且策略要求赔率>0时，阻止触发
-  if (odds <= 0 && (strategy.targetOdds || 0) > 0) {
-    console.error(`[赔率缺失] 策略${strategy.id}无法获取当前投注方向(${strategy.betDirection || 'auto'})的有效赔率, matchId=${match.matchId || ''}`);
-    return false;
-  }
-
+  // ========== 第1级：时间过滤 ==========
   // 比赛时间合理性校验
   const HALF_TIME_START = 45;
   const HALF_TIME_END = 46;
@@ -89,45 +158,108 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   if (currentMinute > MATCH_MAX_MINUTES) return false;
   if (currentMinute >= HALF_TIME_START && currentMinute <= HALF_TIME_END) return false;
 
-  // 时间窗口检查
-  if (currentMinute < strategy.playTimeStart || currentMinute > strategy.playTimeEnd) return false;
-  // 盘口范围检查
-  // 盘口范围检查（方向感知：betDirection=auto 时使用绝对值比较，否则使用原始值）
-  if (strategy.betDirection === "auto" || strategy.betDirection == null) {
-    const absHcp = Math.abs(handicap);
-    if (absHcp < strategy.cornerHandicapLower || absHcp > strategy.cornerHandicapUpper) return false;
-  } else {
-    if (handicap < strategy.cornerHandicapLower || handicap > strategy.cornerHandicapUpper) return false;
+  // 时间窗口检查（兼容新旧字段名）
+  const minuteMin = strategy.minute_min ?? strategy.playTimeStart ?? 0;
+  const minuteMax = strategy.minute_max ?? strategy.playTimeEnd ?? 99;
+  if (currentMinute < minuteMin || currentMinute > minuteMax) {
+    console.log(`[流水线-1级] 策略${strategy.id} 时间过滤未通过: ${currentMinute}' 不在 ${minuteMin}'-${minuteMax}' 范围内`);
+    return false;
   }
-  // 赔率条件检查
-  if (odds < strategy.targetOdds) return false;
-  // 赔率上限检查
-  const maxOdds = strategy.maxOdds ?? 1.10;
-  if (odds > maxOdds) return false;
+
+  // ========== 第2级：盘口类型过滤 ==========
+  const marketType = strategy.market_type || 'auto';
+  const matchHandicaps = match.handicaps || [];
+  const filteredMarkets = filterMarketsByType(matchHandicaps, marketType);
+
+  // 如果策略指定了特定市场类型但该类型盘口不存在，则不触发
+  if (marketType !== 'auto' && filteredMarkets.length === 0 && matchHandicaps.length > 0) {
+    console.log(`[流水线-2级] 策略${strategy.id} 盘口类型过滤未通过: market_type=${marketType}, 无匹配盘口`);
+    return false;
+  }
+
+  // ========== 第3级：盘口归一化 ==========
+  const handicap = normalizeHandicap(rawHandicap);
+
+  // ========== 第4级：盘口区间过滤（next_corner 类型跳过） ==========
+  const lineMin = strategy.line_min ?? strategy.cornerHandicapLower ?? -3;
+  const lineMax = strategy.line_max ?? strategy.cornerHandicapUpper ?? 5;
+
+  if (marketType !== 'next_corner') {
+    // 方向感知：direction=Auto 时使用绝对值比较，否则使用原始值
+    const rawDir = strategy.direction || strategy.betDirection || "Auto";
+    const dirLower = rawDir.toLowerCase();
+    if (dirLower === "auto" || dirLower == null) {
+      const absHcp = Math.abs(handicap);
+      if (absHcp < lineMin || absHcp > lineMax) {
+        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: |${handicap}| 不在 ${lineMin}~${lineMax} 范围内`);
+        return false;
+      }
+    } else {
+      if (handicap < lineMin || handicap > lineMax) {
+        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: ${handicap} 不在 ${lineMin}~${lineMax} 范围内`);
+        return false;
+      }
+    }
+  } else {
+    console.log(`[流水线-4级] 策略${strategy.id} next_corner类型，跳过盘口区间过滤`);
+  }
+
+  // ========== 第5级：赔率过滤 ==========
+  const odds = resolveStrategyOdds(match, strategy);
+  const oddsMin = strategy.odds_min ?? strategy.targetOdds ?? 0;
+  const oddsMax = strategy.odds_max ?? strategy.maxOdds ?? 1.10;
+
+  // 赔率安全校验：赔率为0且策略要求赔率>0时，阻止触发
+  if (odds <= 0 && oddsMin > 0) {
+    console.error(`[流水线-5级] 策略${strategy.id} 赔率缺失: direction=${strategy.direction || 'Auto'}, matchId=${match.matchId || ''}`);
+    return false;
+  }
+  if (odds < oddsMin) {
+    console.log(`[流水线-5级] 策略${strategy.id} 赔率下限未通过: ${odds} < ${oddsMin}`);
+    return false;
+  }
+  if (odds > oddsMax) {
+    console.log(`[流水线-5级] 策略${strategy.id} 赔率上限未通过: ${odds} > ${oddsMax}`);
+    return false;
+  }
+
+  // ========== 第6级：AI评分过滤（可选） ==========
+  const aiFilterEnabled = strategy.aiFilterEnabled ?? false;
+  if (aiFilterEnabled) {
+    const aiProb = quickAIProbability(match, strategy);
+    if (aiProb <= 60) {
+      console.log(`[AI评分过滤] 策略${strategy.id} AI概率${aiProb}%未达60%阈值, matchId=${match.matchId || ''}`);
+      return false;
+    }
+    console.log(`[AI评分通过] 策略${strategy.id} AI概率${aiProb}%超过60%阈值`);
+  }
+
+  // ========== 第7级：投注方向与比分条件匹配 ==========
 
   // 角球数绝对值范围检查
   const totalCorners = homeCorners + awayCorners;
-  const minCorners = strategy.minCurrentCorners ?? 0;
-  const maxCorners = strategy.maxCurrentCorners ?? 99;
-  if (totalCorners < minCorners || totalCorners > maxCorners) return false;
+  const cornerMin = strategy.corner_min ?? strategy.minCurrentCorners ?? 0;
+  const cornerMax = strategy.corner_max ?? strategy.maxCurrentCorners ?? 99;
+  if (totalCorners < cornerMin || totalCorners > cornerMax) {
+    console.log(`[流水线-7级] 策略${strategy.id} 角球数过滤未通过: ${totalCorners} 不在 ${cornerMin}~${cornerMax} 范围内`);
+    return false;
+  }
 
   // 领先方身份判断（leadSide 字段）- 需结合 strongHandicapThreshold
   if (strategy.leadSide && strategy.leadSide !== "any" && goalDiff > 0) {
     const threshold = globalSettings?.strongHandicapThreshold ?? 1;
     const isStrongWeakMatchup = Math.abs(handicap) >= threshold;
     if (isStrongWeakMatchup) {
-      // 盘口足够深，可以区分强弱队
       const homeLeading = homeScore > awayScore;
       const homeIsStrong = handicap >= 0;
       const strongTeamLeading = (homeIsStrong && homeLeading) || (!homeIsStrong && !homeLeading);
       if (strategy.leadSide === "strong" && !strongTeamLeading) return false;
       if (strategy.leadSide === "weak" && strongTeamLeading) return false;
     }
-    // 盘口太浅（< threshold），无法区分强弱队，leadSide 条件不生效，视为 "any"
   }
 
   // 比分条件检查
-  // leadGoals >= 20 → 哨兵值，不做比分限制（如策略一 leadGoals=99）
+  // leadGoals >= 20 → 哨兵值，不做比分限制
   if (strategy.leadGoals >= 20) return true;
 
   // leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
@@ -155,8 +287,9 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
 export function evaluateStrategies(match, strategies, globalSettings) {
   if (!match || !strategies || !Array.isArray(strategies)) return [];
 
-  // 全局盘口兜底检查
-  const handicap = match.handicap ?? match.cornerHandicap ?? 0;
+  // 全局盘口兜底检查（归一化后比较）
+  const rawHandicap = match.handicap ?? match.cornerHandicap ?? 0;
+  const handicap = normalizeHandicap(rawHandicap);
   if (globalSettings) {
     if (handicap < (globalSettings.handicapLowerLimit ?? -1.25)) return [];
     if (handicap > (globalSettings.handicapUpperLimit ?? 3.5)) return [];
@@ -175,15 +308,14 @@ export function evaluateStrategies(match, strategies, globalSettings) {
     .filter(s => evaluateSingleStrategy(match, s, globalSettings))
     .map(s => s.id);
 
-  // 策略间方向冲突互斥：如果同一场比赛触发了多个策略且 betDirection 存在 over/under 冲突，只保留 id 最小的策略
+  // 策略间方向冲突互斥：如果同一场比赛触发了多个策略且 direction 存在 Over/Under 冲突，只保留 id 最小的策略
   if (result.length > 1) {
     const triggeredStrategies = strategies.filter(s => result.includes(s.id));
-    const hasOver = triggeredStrategies.some(s => s.betDirection === "over");
-    const hasUnder = triggeredStrategies.some(s => s.betDirection === "under");
+    const hasOver = triggeredStrategies.some(s => (s.direction || s.betDirection || '').toLowerCase() === "over");
+    const hasUnder = triggeredStrategies.some(s => (s.direction || s.betDirection || '').toLowerCase() === "under");
     if (hasOver && hasUnder) {
-      // 方向冲突：只保留 id 最小的策略（优先级最高）
       const minId = Math.min(...result);
-      console.log(`[策略互斥] 比赛${match.matchId || ''}触发策略${result.join(',')}存在over/under冲突，保留策略${minId}`);
+      console.log(`[策略互斥] 比赛${match.matchId || ''}触发策略${result.join(',')}存在Over/Under冲突，保留策略${minId}`);
       const filteredResult = [minId];
       evaluationCache.set(key, { value: filteredResult, timestamp: Date.now() });
       return filteredResult;
