@@ -254,12 +254,9 @@ async function processAutoBetsForMatches(matches) {
   // ★ 不再提前 return：即使 isRealMode=false 或 autoBetEnabled=false，
   // 也要进入投注函数生成 skipped 记录，让用户在投注记录中看到策略触发了但未执行
   for (const match of matchesToProcess) {
-    // ★ 空数组时跳过所有比赛（无追踪比赛 = 不投注）
-    if (betConfig.trackedMatchIds.length === 0) {
-      console.log("[cornerService] 无追踪比赛，跳过投注: matchId=" + match.matchId);
-      continue;
-    }
-    if (!betConfig.trackedMatchIds.includes(match.matchId)) {
+    // ★ 空数组时允许所有比赛（空白名单 = 不限制），非空时才做白名单过滤
+    // 符合 spec fix-tracked-matchids-empty-blocks-autobet 要求
+    if (betConfig.trackedMatchIds.length > 0 && !betConfig.trackedMatchIds.includes(match.matchId)) {
       console.log("[cornerService] 比赛不在追踪白名单中: matchId=" + match.matchId);
       continue;
     }
