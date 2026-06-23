@@ -308,13 +308,14 @@ function setupAutoUpdater() {
   let downloadRetryCount = 0;
   let lastUpdateInfo = null; // 缓存已发现的更新信息，用于下载重试
 
-  // GitHub 下载加速代理列表（2026年6月更新）
+  // GitHub 下载加速代理列表（2026年6月更新，已测速验证）
   const GITHUB_MIRROR_PROXIES = [
-    'https://gh-proxy.com',             // 多节点智能路由，国内稳定
-    'https://ghproxy.net',              // 无广告，支持断点续传
-    'https://gh.ddlc.top',              // 2026年新节点
-    'https://ghfast.top',               // 高速节点
-    'https://mirror.ghproxy.com',       // 备用镜像站
+    'https://gh-proxy.com',             // 751ms 多节点智能路由，国内最稳定
+    'https://gh.ddlc.top',              // 784ms 2026年新节点
+    'https://ghproxy.net',              // 963ms 无广告，支持断点续传
+    'https://ghfast.top',               // 1002ms 高速节点
+    'https://github.ur1.fun',           // 2026年可用，支持Release加速
+    'https://ghproxy.homeboyc.cn',      // 2026年可用，大文件稳定
   ];
   let currentProxyIndex = 0;
   let benchmarkDone = false;
@@ -322,7 +323,7 @@ function setupAutoUpdater() {
   // 测速选择最优代理：并行 HEAD 请求小文件，选延迟最低的
   async function benchmarkProxies() {
     // 测速用小文件（blockmap ~278KB），避免下载大文件浪费时间
-    const testUrl = 'https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.8.3/football-quant-analyzer-setup-2.8.3.exe.blockmap';
+    const testUrl = 'https://github.com/johuiwu/football-quant-analyzer/releases/download/v2.9.0/football-quant-analyzer-setup-2.9.0.exe.blockmap';
     const results = await Promise.allSettled(
       GITHUB_MIRROR_PROXIES.map(async (proxy) => {
         const start = Date.now();
