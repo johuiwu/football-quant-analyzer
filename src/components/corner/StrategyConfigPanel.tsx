@@ -473,7 +473,7 @@ export default function StrategyConfigPanel() {
                       </div>
 
                       <div className="mt-3">
-                        <label className={labelClass}>当前角球数范围 <span className="text-[9px] text-slate-600 ml-1">0/99表示不限制</span></label>
+                        <label className={labelClass}>当前角球数范围 <span className="text-[9px] text-slate-600 ml-1">0/20表示不限制</span></label>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <span className="text-[9px] text-slate-600 font-sans">最小角球数</span>
