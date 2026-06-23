@@ -11,20 +11,20 @@ const errorClass = "text-[9px] text-rose-400 mt-0.5 block font-sans";
 
 // 默认值映射（用于显示"默认: X"提示）—— 使用新字段名
 const DEFAULT_VALUES: Record<string, Record<string, number | string>> = {
-  "1": { minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.2, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
-  "2": { minute_min: 50, minute_max: 77, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", aiFilterEnabled: false },
-  "3": { minute_min: 70, minute_max: 90, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.85, odds_max: 1.15, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", aiFilterEnabled: false },
-  "4": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
-  "5": { minute_min: 75, minute_max: 90, leadGoals: 99, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.8, odds_max: 1.0, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", aiFilterEnabled: false },
-  "6": { minute_min: 55, minute_max: 70, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", aiFilterEnabled: false },
-  "7": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 10.5, odds_min: 0.9, odds_max: 1.2, corner_min: 3, corner_max: 5, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "1": { minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.2, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
+  "2": { minute_min: 50, minute_max: 77, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", period: "full", aiFilterEnabled: false },
+  "3": { minute_min: 70, minute_max: 90, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.85, odds_max: 1.15, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", period: "full", aiFilterEnabled: false },
+  "4": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
+  "5": { minute_min: 75, minute_max: 90, leadGoals: 99, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.8, odds_max: 1.0, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", period: "full", aiFilterEnabled: false },
+  "6": { minute_min: 55, minute_max: 70, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", period: "full", aiFilterEnabled: false },
+  "7": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 10.5, odds_min: 0.9, odds_max: 1.2, corner_min: 3, corner_max: 5, leadSide: "any", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
 };
 
 function formatDefault(key: string, val: number | string): string {
   if (typeof val === "number") {
     return Number.isInteger(val) ? String(val) : val.toFixed(2);
   }
-  const labels: Record<string, string> = { any: "任意", strong: "强队", weak: "弱队", Over: "大", Under: "小", Home: "主队", Away: "客队", Auto: "自动", over_under: "大小球", handicap: "让球", next_corner: "下一个角球", auto: "自动" };
+  const labels: Record<string, string> = { any: "任意", strong: "强队", weak: "弱队", Over: "大", Under: "小", Home: "主队", Away: "客队", Auto: "自动", over_under: "大小球", handicap: "让球", next_corner: "下一个角球", "1x2": "独赢", auto: "自动", full: "全场", half: "半场" };
   return labels[val] || val;
 }
 
@@ -383,8 +383,23 @@ export default function StrategyConfigPanel() {
                         <option value="over_under">大小球 (over_under)</option>
                         <option value="handicap">让球 (handicap)</option>
                         <option value="next_corner">下一个角球 (next_corner)</option>
+                        <option value="1x2">独赢 (1x2)</option>
                       </select>
                       <span className={hintClass}>默认: {formatDefault("market_type", defaults.market_type || "auto")}</span>
+
+                      <div className="mt-3">
+                        <label className={labelClass}>盘口周期 <span className="text-[9px] text-slate-600 ml-1">全场/半场过滤</span></label>
+                        <select
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 font-sans focus:outline-none focus:border-emerald-500/50 transition-colors"
+                          value={s.period || "full"}
+                          onChange={(e) => handleChange(s.id, "period", e.target.value as any)}
+                        >
+                          <option value="full">全场 (full)</option>
+                          <option value="half">半场 (half)</option>
+                          <option value="any">不限制 (any)</option>
+                        </select>
+                        <span className={hintClass}>默认: {formatDefault("period", defaults.period || "full")}</span>
+                      </div>
 
                       <div className="mt-3">
                         <label className={labelClass}>角球盘口区间 <span className="text-[9px] text-slate-600 ml-1">归一化后的盘口范围</span></label>

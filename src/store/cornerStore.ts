@@ -8,8 +8,10 @@ export interface CornerStrategy {
   id: number;
   name: string;
   enabled: boolean;
-  /** 市场类型：大小球/让球/下一个角球/自动 */
-  market_type: "over_under" | "handicap" | "next_corner" | "auto";
+  /** 市场类型：大小球/让球/下一个角球/独赢/自动 */
+  market_type: "over_under" | "handicap" | "next_corner" | "1x2" | "auto";
+  /** 盘口周期：全场/半场/不限制 */
+  period: "full" | "half" | "any";
   /** 时间窗口起始（分钟） */
   minute_min: number;
   /** 时间窗口结束（分钟） */
@@ -42,8 +44,9 @@ export interface CornerStrategy {
 export interface HandicapEntry {
   order: number;
   category: "O/U" | "HDP" | "1X2" | "O/E" | "NEXT" | "CS";
-  categoryLabel: string;
+  /** 盘口周期：全场/半场 */
   period: "full" | "half";
+  categoryLabel: string;
   line?: number | string;
   odds?: {
     home?: number;
@@ -182,6 +185,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略一 · 走地角球(35'-55')",
     enabled: false,
     market_type: "over_under",
+    period: "full",
     minute_min: 35,
     minute_max: 55,
     leadGoals: 99,
@@ -201,6 +205,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略二 · 领先让球(50'-77')",
     enabled: false,
     market_type: "handicap",
+    period: "full",
     minute_min: 50,
     minute_max: 77,
     leadGoals: 99,
@@ -220,6 +225,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略三 · 平局追角(70'-90')",
     enabled: false,
     market_type: "next_corner",
+    period: "full",
     minute_min: 70,
     minute_max: 90,
     leadGoals: 0,
@@ -239,6 +245,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略四 · 领先大角(60'-80')",
     enabled: false,
     market_type: "over_under",
+    period: "full",
     minute_min: 60,
     minute_max: 80,
     leadGoals: 99,
@@ -258,6 +265,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略五 · 尾声保底(75'-90')",
     enabled: false,
     market_type: "next_corner",
+    period: "full",
     minute_min: 75,
     minute_max: 90,
     leadGoals: 99,
@@ -277,6 +285,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略六 · 逆风让球(55'-70')",
     enabled: false,
     market_type: "handicap",
+    period: "full",
     minute_min: 55,
     minute_max: 70,
     leadGoals: 99,
@@ -296,6 +305,7 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     name: "策略七 · 均值回归(60'-80')",
     enabled: false,
     market_type: "over_under",
+    period: "full",
     minute_min: 60,
     minute_max: 80,
     leadGoals: 99,

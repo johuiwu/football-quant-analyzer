@@ -243,7 +243,7 @@ router.put("/corner/strategies", async (req, res) => {
     // 参数验证（兼容新旧字段名）
     const VALID_DIRECTIONS = ["Auto", "Over", "Under", "Home", "Away"];
     const VALID_DIRECTIONS_OLD = ["auto", "over", "under", "home", "away"];
-    const VALID_MARKET_TYPES = ["over_under", "handicap", "next_corner", "auto"];
+    const VALID_MARKET_TYPES = ["over_under", "handicap", "next_corner", "1x2", "auto"];
     const VALID_LEAD_SIDES = ["any", "strong", "weak"];
     const errors = [];
 

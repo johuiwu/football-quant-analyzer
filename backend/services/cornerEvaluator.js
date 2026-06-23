@@ -30,12 +30,13 @@ function cacheKey(match, strategies) {
 // ======================== 市场类型过滤 ========================
 
 /**
- * 按市场类型过滤盘口列表
+ * 按市场类型和盘口周期过滤盘口列表
  * @param {Array} handicaps - 比赛的盘口列表（HandicapEntry[]）
- * @param {string} marketType - 市场类型：over_under | handicap | next_corner | auto
+ * @param {string} marketType - 市场类型：over_under | handicap | next_corner | 1x2 | auto
+ * @param {string} period - 盘口周期：full | half | any（默认 full）
  * @returns {Array} 过滤后的盘口列表
  */
-export function filterMarketsByType(handicaps, marketType) {
+export function filterMarketsByType(handicaps, marketType, period) {
   if (!handicaps || !Array.isArray(handicaps)) return [];
   if (marketType === 'auto' || !marketType) return handicaps;
 
@@ -43,12 +44,21 @@ export function filterMarketsByType(handicaps, marketType) {
     'over_under': ['O/U'],
     'handicap': ['HDP'],
     'next_corner': ['NEXT'],
+    '1x2': ['1X2'],
   };
 
   const allowedCategories = categoryMap[marketType] || [];
   if (allowedCategories.length === 0) return handicaps;
 
-  return handicaps.filter(h => allowedCategories.includes(h.category));
+  let result = handicaps.filter(h => allowedCategories.includes(h.category));
+
+  // 盘口周期过滤：period='full' 时过滤掉 period='half' 的盘口
+  const effectivePeriod = period || 'full';
+  if (effectivePeriod !== 'any') {
+    result = result.filter(h => (h.period || 'full') === effectivePeriod);
+  }
+
+  return result;
 }
 
 // ======================== AI 评分过滤器 ========================
@@ -67,8 +77,20 @@ export function quickAIProbability(match, strategy) {
   const totalCorners = homeCorners + awayCorners;
   const remainingMinutes = Math.max(0, 90 - currentMinute);
 
-  // 平均每分钟0.15角球的简化假设
-  const expectedRemaining = remainingMinutes * 0.15;
+  // 电竞赛事检测：关键词匹配比赛名称或联赛名称
+  const matchName = (match.matchName || match.match_name || '').toLowerCase();
+  const leagueName = (match.leagueName || match.league_name || '').toLowerCase();
+  const combinedName = matchName + ' ' + leagueName;
+  const esportsKeywords = ['efootball', 'esports', '电竞', 'fifa', 'efootball'];
+  const isEsports = esportsKeywords.some(kw => combinedName.includes(kw));
+
+  // 电竞赛事角球频率极低，降权处理
+  const cornerRate = isEsports ? 0.04 : 0.15;
+  if (isEsports) {
+    console.log(`[AI降权] 检测到电竞赛事(${matchName || leagueName})，角球频率预期降为0.04/分钟`);
+  }
+
+  const expectedRemaining = remainingMinutes * cornerRate;
   const expectedTotal = totalCorners + expectedRemaining;
 
   // 获取归一化后的盘口线（使用解构出来的 handicap，fallback 到 cornerHandicap）
@@ -108,8 +130,9 @@ export function resolveStrategyOdds(match, strategy) {
     const homeOdds = nextCorner?.homeOdds ?? nextCorner?.overOdds ?? 0;
     const awayOdds = nextCorner?.awayOdds ?? nextCorner?.underOdds ?? 0;
 
-    if (betDir === "home" && homeOdds > 0) return homeOdds;
-    if (betDir === "away" && awayOdds > 0) return awayOdds;
+    // 固定方向零赔率保护：指定方向但赔率为0时，不 fallback，直接返回 0
+    if (betDir === "home") return homeOdds > 0 ? homeOdds : 0;
+    if (betDir === "away") return awayOdds > 0 ? awayOdds : 0;
 
     // Auto 方向：next_corner 自动选边逻辑
     if (betDir === "auto") {
@@ -117,15 +140,12 @@ export function resolveStrategyOdds(match, strategy) {
       const awayCorners = match.awayCorners ?? 0;
 
       if (homeCorners < awayCorners) {
-        // 主队角球落后，正在压上进攻，自动投注主队
         console.log(`[NextCorner Auto] 主队角球落后(${homeCorners}<${awayCorners})，自动投注主队(Home), matchId=${match.matchId || ''}`);
         return homeOdds || awayOdds;
       } else if (awayCorners < homeCorners) {
-        // 客队角球落后，自动投注客队
         console.log(`[NextCorner Auto] 客队角球落后(${awayCorners}<${homeCorners})，自动投注客队(Away), matchId=${match.matchId || ''}`);
         return awayOdds || homeOdds;
       } else {
-        // 角球数相等，选择赔率更低的那方（市场更看好）
         const chosenSide = (homeOdds > 0 && awayOdds > 0 && awayOdds < homeOdds) ? 'Away' : 'Home';
         const chosenOdds = chosenSide === 'Away' ? awayOdds : homeOdds;
         console.log(`[NextCorner Auto] 角球数相等(${homeCorners}=${awayCorners})，选择赔率更低的${chosenSide}方(odds=${chosenOdds}), matchId=${match.matchId || ''}`);
@@ -134,6 +154,32 @@ export function resolveStrategyOdds(match, strategy) {
     }
 
     // fallback
+    return (homeOdds || awayOdds || match.cornerOdds) ?? 0;
+  }
+
+  // ========== 1x2 独赢市场类型专用逻辑 ==========
+  if (marketType === '1x2') {
+    const corner1X2 = match.corner1X2 || match.cornerOU;
+    const homeOdds = corner1X2?.homeOdds ?? 0;
+    const drawOdds = corner1X2?.drawOdds ?? 0;
+    const awayOdds = corner1X2?.awayOdds ?? 0;
+
+    if (betDir === "home") return homeOdds > 0 ? homeOdds : 0;
+    if (betDir === "away") return awayOdds > 0 ? awayOdds : 0;
+
+    // Auto 方向：1x2 选择赔率最低的那方（市场最看好）
+    if (betDir === "auto") {
+      const validOdds = [];
+      if (homeOdds > 0) validOdds.push({ side: 'Home', odds: homeOdds });
+      if (drawOdds > 0) validOdds.push({ side: 'Draw', odds: drawOdds });
+      if (awayOdds > 0) validOdds.push({ side: 'Away', odds: awayOdds });
+      if (validOdds.length === 0) return 0;
+      validOdds.sort((a, b) => a.odds - b.odds);
+      const chosen = validOdds[0];
+      console.log(`[1X2 Auto] 独赢自动选赔率最低方: ${chosen.side}(odds=${chosen.odds}), matchId=${match.matchId || ''}`);
+      return chosen.odds;
+    }
+
     return (homeOdds || awayOdds || match.cornerOdds) ?? 0;
   }
 
@@ -224,10 +270,11 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     return false;
   }
 
-  // ========== 第2级：盘口类型过滤 ==========
+  // ========== 第2级：盘口类型过滤 + 盘口周期过滤 ==========
   const marketType = strategy.market_type || 'auto';
+  const strategyPeriod = strategy.period || 'full';
   const matchHandicaps = match.handicaps || [];
-  const filteredMarkets = filterMarketsByType(matchHandicaps, marketType);
+  const filteredMarkets = filterMarketsByType(matchHandicaps, marketType, strategyPeriod);
 
   // 如果策略指定了特定市场类型但该类型盘口不存在，则不触发
   if (marketType !== 'auto' && filteredMarkets.length === 0 && matchHandicaps.length > 0) {
@@ -267,9 +314,9 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const oddsMin = strategy.odds_min ?? strategy.targetOdds ?? 0;
   const oddsMax = strategy.odds_max ?? strategy.maxOdds ?? 1.10;
 
-  // 赔率安全校验：赔率为0且策略要求赔率>0时，阻止触发
-  if (odds <= 0 && oddsMin > 0) {
-    console.error(`[流水线-5级] 策略${strategy.id} 赔率缺失: direction=${strategy.direction || 'Auto'}, matchId=${match.matchId || ''}`);
+  // 零赔率保护：解析赔率 <= 0 时阻止触发
+  if (odds <= 0) {
+    console.warn(`[赔率保护] 策略${strategy.id} 解析赔率为${odds}，阻止触发, matchId=${match.matchId || ''}`);
     return false;
   }
   if (odds < oddsMin) {

@@ -76,19 +76,20 @@ describe('filterMarketsByType - 市场类型过滤', () => {
     { category: 'O/U', handicap: 9.5, overOdds: 0.85, underOdds: 1.05 },
     { category: 'HDP', handicap: -0.5, homeOdds: 0.90, awayOdds: 1.00 },
     { category: 'NEXT', overOdds: 1.20, underOdds: 0.70 },
-    { category: 'O/U', handicap: 8.5, overOdds: 0.75, underOdds: 1.15 },
-    { category: 'HDP', handicap: 0.25, homeOdds: 0.95, awayOdds: 0.95 },
+    { category: 'O/U', handicap: 8.5, overOdds: 0.75, underOdds: 1.15, period: 'half' },
+    { category: 'HDP', handicap: 0.25, homeOdds: 0.95, awayOdds: 0.95, period: 'half' },
+    { category: '1X2', homeOdds: 1.50, drawOdds: 2.80, awayOdds: 1.20 },
   ];
 
-  it('over_under 应只保留 O/U 盘口', () => {
+  it('over_under 应只保留 O/U 盘口（默认 period=full 过滤掉 half）', () => {
     const result = filterMarketsByType(mockHandicaps, 'over_under');
-    expect(result.length).toBe(2);
+    expect(result.length).toBe(1);
     expect(result.every(h => h.category === 'O/U')).toBe(true);
   });
 
-  it('handicap 应只保留 HDP 盘口', () => {
+  it('handicap 应只保留 HDP 盘口（默认 period=full 过滤掉 half）', () => {
     const result = filterMarketsByType(mockHandicaps, 'handicap');
-    expect(result.length).toBe(2);
+    expect(result.length).toBe(1);
     expect(result.every(h => h.category === 'HDP')).toBe(true);
   });
 
@@ -98,9 +99,42 @@ describe('filterMarketsByType - 市场类型过滤', () => {
     expect(result[0].category).toBe('NEXT');
   });
 
+  it('1x2 应只保留 1X2 盘口', () => {
+    const result = filterMarketsByType(mockHandicaps, '1x2');
+    expect(result.length).toBe(1);
+    expect(result[0].category).toBe('1X2');
+  });
+
   it('auto 应保留全部盘口', () => {
     const result = filterMarketsByType(mockHandicaps, 'auto');
-    expect(result.length).toBe(5);
+    expect(result.length).toBe(6);
+  });
+
+  it('period=full 应过滤掉 half 盘口', () => {
+    const result = filterMarketsByType(mockHandicaps, 'over_under', 'full');
+    expect(result.length).toBe(1);
+    expect(result[0].handicap).toBe(9.5);
+  });
+
+  it('period=half 应只保留 half 盘口', () => {
+    const result = filterMarketsByType(mockHandicaps, 'over_under', 'half');
+    expect(result.length).toBe(1);
+    expect(result[0].handicap).toBe(8.5);
+  });
+
+  it('period=any 应保留全部盘口（含 half）', () => {
+    const result = filterMarketsByType(mockHandicaps, 'over_under', 'any');
+    expect(result.length).toBe(2);
+  });
+
+  it('盘口无 period 字段时默认视为 full', () => {
+    const noPeriodHandicaps = [
+      { category: 'O/U', handicap: 9.5, overOdds: 0.85 },
+      { category: 'O/U', handicap: 5.5, overOdds: 0.75, period: 'half' },
+    ];
+    const result = filterMarketsByType(noPeriodHandicaps, 'over_under', 'full');
+    expect(result.length).toBe(1);
+    expect(result[0].handicap).toBe(9.5);
   });
 
   it('空数组应返回空数组', () => {
@@ -115,7 +149,7 @@ describe('filterMarketsByType - 市场类型过滤', () => {
 
   it('未指定 market_type 应保留全部', () => {
     const result = filterMarketsByType(mockHandicaps, undefined);
-    expect(result.length).toBe(5);
+    expect(result.length).toBe(6);
   });
 });
 
@@ -172,6 +206,21 @@ describe('quickAIProbability - AI评分概率计算', () => {
     const prob = quickAIProbability(match, {});
     expect(prob).toBeGreaterThanOrEqual(0);
     expect(prob).toBeLessThanOrEqual(100);
+  });
+
+  it('电竞赛事应显著降低概率', () => {
+    const normalMatch = {
+      homeCorners: 2, awayCorners: 1, elapsedMinutes: 60, handicap: 5.5,
+      matchName: 'Team A vs Team B',
+    };
+    const esportsMatch = {
+      homeCorners: 2, awayCorners: 1, elapsedMinutes: 60, handicap: 5.5,
+      matchName: 'eFootball Pro League',
+    };
+    const normalProb = quickAIProbability(normalMatch, {});
+    const esportsProb = quickAIProbability(esportsMatch, {});
+    // 电竞赛事概率应显著低于常规赛事
+    expect(esportsProb).toBeLessThan(normalProb);
   });
 });
 
@@ -417,6 +466,48 @@ describe('resolveStrategyOdds - 方向感知赔率解析', () => {
 
     it('handicap + Auto 应优先返回 homeOdds', () => {
       expect(resolveStrategyOdds(hdpMatch, { direction: 'Auto', market_type: 'handicap' })).toBe(0.95);
+    });
+  });
+
+  // ========== 1x2 独赢市场类型测试 ==========
+  describe('1x2 独赢市场类型', () => {
+    const match1x2 = {
+      ...match,
+      corner1X2: { homeOdds: 1.50, drawOdds: 2.80, awayOdds: 1.20 },
+    };
+
+    it('1x2 + direction=Home 应返回 homeOdds', () => {
+      expect(resolveStrategyOdds(match1x2, { direction: 'Home', market_type: '1x2' })).toBe(1.50);
+    });
+
+    it('1x2 + direction=Away 应返回 awayOdds', () => {
+      expect(resolveStrategyOdds(match1x2, { direction: 'Away', market_type: '1x2' })).toBe(1.20);
+    });
+
+    it('1x2 + Auto 应返回赔率最低方', () => {
+      // awayOdds=1.20 最低
+      expect(resolveStrategyOdds(match1x2, { direction: 'Auto', market_type: '1x2' })).toBe(1.20);
+    });
+  });
+
+  // ========== 零赔率保护测试 ==========
+  describe('零赔率保护', () => {
+    it('next_corner + Home + homeOdds=0 应返回 0', () => {
+      const m = { nextCorner: { homeOdds: 0, awayOdds: 0.80 }, homeCorners: 3, awayCorners: 5 };
+      const result = resolveStrategyOdds(m, { direction: 'Home', market_type: 'next_corner' });
+      expect(result).toBe(0);
+    });
+
+    it('next_corner + Away + awayOdds=0 应返回 0', () => {
+      const m = { nextCorner: { homeOdds: 0.90, awayOdds: 0 }, homeCorners: 3, awayCorners: 5 };
+      const result = resolveStrategyOdds(m, { direction: 'Away', market_type: 'next_corner' });
+      expect(result).toBe(0);
+    });
+
+    it('1x2 + Home + homeOdds=0 应返回 0', () => {
+      const m = { corner1X2: { homeOdds: 0, drawOdds: 2.80, awayOdds: 1.20 } };
+      const result = resolveStrategyOdds(m, { direction: 'Home', market_type: '1x2' });
+      expect(result).toBe(0);
     });
   });
 });
