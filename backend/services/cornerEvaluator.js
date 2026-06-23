@@ -297,6 +297,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   }
   // 检查 filteredMarkets 中的 line 值是否被归一化
   for (const fm of filteredMarkets) {
+    if (fm.line == null) continue; // NEXT 类型盘口无 line 字段，跳过
     const rawLine = fm.line;
     const normalizedLine = normalizeHandicap(rawLine);
     if (String(rawLine) !== String(normalizedLine)) {
@@ -330,7 +331,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     const rawDir = strategy.direction || strategy.betDirection || "Auto";
     const dirLower = rawDir.toLowerCase();
     let linePassed = false;
-    if (dirLower === "auto" || dirLower == null) {
+    if (dirLower === "auto") {
       const absLine = Math.abs(effectiveLine);
       linePassed = absLine >= lineMin && absLine <= lineMax;
       if (!linePassed) {
