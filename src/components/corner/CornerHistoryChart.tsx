@@ -257,7 +257,7 @@ export default function CornerHistoryChart() {
                 {row.strategy_id || "—"}{row.count > 1 ? ` (×${row.count})` : ""}
               </div>
               <div className="col-span-2 text-center text-amber-400 font-mono">{(row.odds ?? 0).toFixed(2)}</div>
-              <div className="col-span-3 text-right text-slate-500 text-[10px]">{row.created_at?.slice(0, 19) || "—"}</div>
+              <div className="col-span-3 text-right text-slate-500 text-[10px]">{formatTime(row.created_at)}</div>
             </div>
           ))}
         </div>
@@ -352,8 +352,8 @@ export default function CornerHistoryChart() {
                 )}
               </div>
               <div className="col-span-1 text-center text-slate-500 font-mono">{row.retry_count || 0}</div>
-              <div className="col-span-2 text-center text-slate-500 text-[10px]">{row.executed_at?.slice(0, 19) || "—"}</div>
-              <div className="col-span-1 text-right text-slate-500 text-[10px]">{row.created_at?.slice(0, 16) || "—"}</div>
+              <div className="col-span-2 text-center text-slate-500 text-[10px]">{formatTime(row.executed_at)}</div>
+              <div className="col-span-1 text-right text-slate-500 text-[10px]">{formatTime(row.created_at, false)}</div>
               <div className="col-span-2 text-center">
                 {canRetry && (
                   <button
