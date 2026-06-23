@@ -279,7 +279,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   // [链路追踪] 节点2：盘口类型过滤
   if (filteredMarkets.length > 0) {
     const filteredTypes = filteredMarkets.map(m => `${m.category}${m.period && m.period !== 'full' ? '(' + m.period + ')' : ''}`).join(', ');
-    console.log(`[链路追踪] 策略${strategy.id} 市场类型=${marketType}, period=${strategyPeriod}, 保留盘口: [${filteredTypes}]`);
+    console.debug(`[链路追踪] 策略${strategy.id} 市场类型=${marketType}, period=${strategyPeriod}, 保留盘口: [${filteredTypes}]`);
   }
 
   // 如果策略指定了特定市场类型但该类型盘口不存在，则不触发
@@ -293,7 +293,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
 
   // [链路追踪] 节点3：盘口归一化
   if (String(rawHandicap) !== String(handicap)) {
-    console.log(`[链路追踪] 归一化转换: 原始盘口 "${rawHandicap}" -> 转换值 "${handicap}"`);
+    console.debug(`[链路追踪] 归一化转换: 原始盘口 "${rawHandicap}" -> 转换值 "${handicap}"`);
   }
   // 检查 filteredMarkets 中的 line 值是否被归一化
   for (const fm of filteredMarkets) {
@@ -301,7 +301,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     const rawLine = fm.line;
     const normalizedLine = normalizeHandicap(rawLine);
     if (String(rawLine) !== String(normalizedLine)) {
-      console.log(`[链路追踪] 归一化转换: 盘口line "${rawLine}"(${fm.category}) -> 转换值 "${normalizedLine}"`);
+      console.debug(`[链路追踪] 归一化转换: 盘口line "${rawLine}"(${fm.category}) -> 转换值 "${normalizedLine}"`);
     }
   }
 
@@ -345,7 +345,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     }
     if (!linePassed) return false;
     // [链路追踪] 节点4：盘口区间过滤通过
-    console.log(`[链路追踪] 策略${strategy.id} 盘口区间过滤通过: ${effectiveLine}(${marketType}) 在 ${lineMin}~${lineMax} 范围内`);
+    console.debug(`[链路追踪] 策略${strategy.id} 盘口区间过滤通过: ${effectiveLine}(${marketType}) 在 ${lineMin}~${lineMax} 范围内`);
   } else {
     console.log(`[流水线-4级] 策略${strategy.id} next_corner类型，跳过盘口区间过滤`);
   }
@@ -369,7 +369,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     return false;
   }
   // [链路追踪] 节点5：赔率过滤通过
-  console.log(`[链路追踪] 策略${strategy.id} 赔率过滤通过: ${odds} 在 ${oddsMin}~${oddsMax} 范围内`);
+  console.debug(`[链路追踪] 策略${strategy.id} 赔率过滤通过: ${odds} 在 ${oddsMin}~${oddsMax} 范围内`);
 
   // ========== 第6级：AI评分过滤（可选） ==========
   const aiFilterEnabled = strategy.aiFilterEnabled ?? false;
@@ -377,7 +377,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     const aiProb = quickAIProbability(match, strategy);
     const passed = aiProb > 60;
     // [链路追踪] 节点4：AI评分过滤
-    console.log(`[链路追踪] 策略${strategy.id} AI计算概率: ${aiProb}%, 阈值: 60%. 判断结果: ${passed ? '通过' : '未通过'}`);
+    console.debug(`[链路追踪] 策略${strategy.id} AI计算概率: ${aiProb}%, 阈值: 60%. 判断结果: ${passed ? '通过' : '未通过'}`);
     if (!passed) {
       console.log(`[AI评分过滤] 策略${strategy.id} AI概率${aiProb}%未达60%阈值, matchId=${match.matchId || ''}`);
       return false;
@@ -414,21 +414,21 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   if (strategy.leadGoals >= 20) {
     // [链路追踪] 节点7：投注方向确定
     const finalDir = strategy.direction || strategy.betDirection || "Auto";
-    console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
     return true;
   }
 
   // leadGoals > 0 且 leadGoalsWeak === 0 → 上限：球差不超过阈值
   if (strategy.leadGoals > 0 && (strategy.leadGoalsWeak || 0) === 0 && goalDiff <= strategy.leadGoals) {
     const finalDir = strategy.direction || strategy.betDirection || "Auto";
-    console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
     return true;
   }
 
   // leadGoalsWeak > 0 → 弱队领先：至少差N球，同时受 leadGoals 上限约束
   if ((strategy.leadGoalsWeak || 0) > 0 && goalDiff >= (strategy.leadGoalsWeak || 0) && goalDiff <= strategy.leadGoals) {
     const finalDir = strategy.direction || strategy.betDirection || "Auto";
-    console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+    console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
     return true;
   }
 
@@ -438,7 +438,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
     console.log('[策略3 Debug] 当前比分:', homeScore, '-', awayScore, '触发条件: leadGoals=' + strategy.leadGoals, '是否通过:', isTriggered);
     if (isTriggered) {
       const finalDir = strategy.direction || strategy.betDirection || "Auto";
-      console.log(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
+      console.debug(`[链路追踪] 策略${strategy.id} 全部7级流水线通过！投注方向: ${finalDir}, 市场类型: ${marketType}, 赔率: ${odds}`);
       return true;
     }
   }
