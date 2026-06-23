@@ -12,11 +12,11 @@ const errorClass = "text-[9px] text-rose-400 mt-0.5 block font-sans";
 // 默认值映射（用于显示"默认: X"提示）—— 使用新字段名
 const DEFAULT_VALUES: Record<string, Record<string, number | string>> = {
   "1": { minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.2, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
-  "2": { minute_min: 50, minute_max: 77, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", period: "full", aiFilterEnabled: false },
-  "3": { minute_min: 70, minute_max: 90, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.85, odds_max: 1.15, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", period: "full", aiFilterEnabled: false },
-  "4": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
-  "5": { minute_min: 75, minute_max: 90, leadGoals: 99, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.8, odds_max: 1.0, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", period: "full", aiFilterEnabled: false },
-  "6": { minute_min: 55, minute_max: 70, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", period: "full", aiFilterEnabled: false },
+  "2": { minute_min: 50, minute_max: 77, leadGoals: 3, leadGoalsWeak: 1, line_min: -1.5, line_max: 1.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "strong", direction: "Auto", market_type: "handicap", period: "full", aiFilterEnabled: false },
+  "3": { minute_min: 70, minute_max: 90, leadGoals: 0, leadGoalsWeak: 0, line_min: 7.5, line_max: 10.5, odds_min: 0.6, odds_max: 0.9, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Under", market_type: "over_under", period: "full", aiFilterEnabled: false },
+  "4": { minute_min: 60, minute_max: 80, leadGoals: 2, leadGoalsWeak: 1, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "strong", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
+  "5": { minute_min: 75, minute_max: 99, leadGoals: 99, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.8, odds_max: 1.0, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", period: "full", aiFilterEnabled: false },
+  "6": { minute_min: 55, minute_max: 70, leadGoals: 1, leadGoalsWeak: 1, line_min: -1.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "weak", direction: "Auto", market_type: "handicap", period: "full", aiFilterEnabled: false },
   "7": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 10.5, odds_min: 0.9, odds_max: 1.2, corner_min: 3, corner_max: 5, leadSide: "any", direction: "Over", market_type: "over_under", period: "full", aiFilterEnabled: false },
 };
 
@@ -30,11 +30,34 @@ function formatDefault(key: string, val: number | string): string {
 
 function validateStrategy(s: CornerStrategy): string[] {
   const errors: string[] = [];
-  if (s.minute_min >= s.minute_max) errors.push("开始时间须小于结束时间");
-  if (s.line_min > s.line_max) errors.push("盘口下限不能大于上限");
-  if (s.odds_min > s.odds_max) errors.push("最低赔率不能大于最高赔率");
-  if (s.corner_min > s.corner_max) errors.push("角球数下限不能大于上限");
-  if (s.leadGoalsWeak > 0 && s.leadGoals < s.leadGoalsWeak) errors.push("弱队领先不能大于领先球数上限");
+  // NaN 防御 + 范围校验
+  if (!Number.isFinite(s.minute_min) || !Number.isFinite(s.minute_max)) {
+    errors.push("时间值无效");
+  } else {
+    if (s.minute_min >= s.minute_max) errors.push("开始时间须小于结束时间");
+    if (s.minute_min < 0 || s.minute_max > 120) errors.push("时间范围须在0-120分钟内");
+  }
+  if (!Number.isFinite(s.line_min) || !Number.isFinite(s.line_max)) {
+    errors.push("盘口值无效");
+  } else if (s.line_min > s.line_max) {
+    errors.push("盘口下限不能大于上限");
+  }
+  if (!Number.isFinite(s.odds_min) || !Number.isFinite(s.odds_max)) {
+    errors.push("赔率值无效");
+  } else {
+    if (s.odds_min > s.odds_max) errors.push("最低赔率不能大于最高赔率");
+    if (s.odds_min < 0.5 || s.odds_max > 2.0) errors.push("赔率范围须在0.5-2.0内");
+  }
+  if (!Number.isFinite(s.corner_min) || !Number.isFinite(s.corner_max)) {
+    errors.push("角球数值无效");
+  } else {
+    if (s.corner_min > s.corner_max) errors.push("角球数下限不能大于上限");
+    if (s.corner_min < 0 || s.corner_max > 30) errors.push("角球数范围须在0-30内");
+  }
+  // leadGoals 哨兵值(>=90)时不参与 leadGoalsWeak 比较
+  if (s.leadGoals < 90 && s.leadGoalsWeak > 0 && s.leadGoals < s.leadGoalsWeak) {
+    errors.push("弱队领先不能大于领先球数上限");
+  }
   return errors;
 }
 
@@ -58,20 +81,35 @@ export default function StrategyConfigPanel() {
   };
 
   const handleResetDefaults = async () => {
+    if (!window.confirm("确定要加载默认策略吗？当前所有策略配置将被覆盖。")) return;
     try {
       const res = await fetch("/api/corner/strategies/default");
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setStrategies(data.data);
+      } else {
+        alert("加载默认策略失败：" + (data.message || "未知错误"));
       }
     } catch (err) {
       console.error("加载默认策略失败:", err);
+      alert("加载默认策略失败，请检查网络连接");
     }
   };
   const handleToggle = (id: number, enabled: boolean) => updateStrategy(id, { enabled });
-  const handleChange = (id: number, field: keyof CornerStrategy, value: number | string) => updateStrategy(id, { [field]: value } as any);
+  const handleChange = (id: number, field: keyof CornerStrategy, value: number | string | boolean) => {
+    // NaN 防御：数值类型非有限值不写入 store
+    if (typeof value === "number" && !Number.isFinite(value)) return;
+    updateStrategy(id, { [field]: value } as any);
+  };
 
   const runBacktest = async () => {
+    // 前置校验：有校验错误时阻止回测
+    const enabledStrategies = strategies.filter(s => s.enabled);
+    const hasErrors = enabledStrategies.some(s => validateStrategy(s).length > 0);
+    if (hasErrors) {
+      alert("请先修复策略配置错误后再运行回测");
+      return;
+    }
     setBacktesting(true);
     setBacktestResults({});
     setIsSimulated(false);
@@ -80,16 +118,19 @@ export default function StrategyConfigPanel() {
       const res = await fetch("/api/corner/backtest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strategies }),
+        body: JSON.stringify({ strategies: enabledStrategies }),
       });
       const data = await res.json();
       if (data.success && data.stats) {
         setBacktestResults(data.stats);
-        setIsSimulated(data.simulated !== false);
+        setIsSimulated(data.simulated === true);
         setSimulatedWarning(data.warning || "");
+      } else {
+        alert("回测失败：" + (data.message || "未知错误"));
       }
     } catch (err) {
       console.error("回测失败:", err);
+      alert("回测请求失败，请检查网络连接");
     } finally {
       setBacktesting(false);
     }
@@ -119,14 +160,21 @@ export default function StrategyConfigPanel() {
     for (let i = 0; i < enabled.length; i++) {
       for (let j = i + 1; j < enabled.length; j++) {
         const a = enabled[i], b = enabled[j];
+        // 不同 market_type 不算冲突（不同市场不会同时触发同一投注）
+        if (a.market_type !== b.market_type) continue;
+        // 不同 period 不算冲突
+        if (a.period !== b.period) continue;
+        // leadSide 互斥不算冲突
+        if ((a.leadSide === "strong" && b.leadSide === "weak") ||
+            (a.leadSide === "weak" && b.leadSide === "strong")) continue;
         // 时间窗口重叠
         if (a.minute_min <= b.minute_max && b.minute_min <= a.minute_max) {
           // 方向冲突
           if ((a.direction === "Over" && b.direction === "Under") ||
               (a.direction === "Under" && b.direction === "Over")) {
-            // 比分条件重叠检查：leadGoals>=20 为哨兵值（不限比分），否则检查范围是否有交集
-            const aMin = a.leadGoalsWeak ?? 0, aMax = a.leadGoals >= 20 ? Infinity : a.leadGoals;
-            const bMin = b.leadGoalsWeak ?? 0, bMax = b.leadGoals >= 20 ? Infinity : b.leadGoals;
+            // 比分条件重叠检查：leadGoals>=90 为哨兵值（不限比分），否则检查范围是否有交集
+            const aMin = a.leadGoalsWeak ?? 0, aMax = a.leadGoals >= 90 ? Infinity : a.leadGoals;
+            const bMin = b.leadGoalsWeak ?? 0, bMax = b.leadGoals >= 90 ? Infinity : b.leadGoals;
             const scoreOverlap = aMin <= bMax && bMin <= aMax;
             if (!scoreOverlap) continue;
             // 盘口范围重叠检查
@@ -337,11 +385,11 @@ export default function StrategyConfigPanel() {
                       {s.minute_min >= s.minute_max && <span className={errorClass}>开始时间须小于结束时间</span>}
 
                       <div className="mt-3">
-                        <label className={labelClass}>领先球数条件 <span className="text-[9px] text-slate-600 ml-1">≥20表示不限制比分</span></label>
+                        <label className={labelClass}>领先球数条件 <span className="text-[9px] text-slate-600 ml-1">≥90表示不限制比分</span></label>
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <span className="text-[9px] text-slate-600 font-sans">领先球数上限</span>
-                            <input type="number" className={numInputClass} min={0} max={20} step={1}
+                            <input type="number" className={numInputClass} min={0} max={99} step={1}
                               value={s.leadGoals} onChange={(e) => handleChange(s.id, "leadGoals", Number(e.target.value))} />
                             <span className={hintClass}>默认: {defaults.leadGoals}</span>
                           </div>
