@@ -476,7 +476,7 @@ export default function StrategyConfigPanel() {
                           className="rounded border-slate-700 bg-slate-900/80 text-emerald-500 focus:ring-emerald-500/50" />
                         <span className="text-xs text-slate-300 font-sans">启用AI评分过滤</span>
                       </label>
-                      <span className={hintClass}>启用后，AI计算概率须>60%才允许策略触发</span>
+                      <span className={hintClass}>启用后，AI计算概率须{'>'}60%才允许策略触发</span>
                     </div>
 
                     {/* 验证错误汇总 */}
