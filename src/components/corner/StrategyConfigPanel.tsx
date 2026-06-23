@@ -11,13 +11,13 @@ const errorClass = "text-[9px] text-rose-400 mt-0.5 block font-sans";
 
 // 默认值映射（用于显示"默认: X"提示）—— 使用新字段名
 const DEFAULT_VALUES: Record<string, Record<string, number | string>> = {
-  "1": { minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.25, line_max: 2.5, odds_min: 0.8, odds_max: 1.10, corner_min: 3, corner_max: 7, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
-  "2": { minute_min: 50, minute_max: 77, leadGoals: 3, leadGoalsWeak: 1, line_min: -0.75, line_max: 2.5, odds_min: 0.8, odds_max: 1.30, corner_min: 0, corner_max: 99, leadSide: "strong", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
-  "3": { minute_min: 70, minute_max: 99, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 2.0, odds_min: 0.6, odds_max: 0.90, corner_min: 3, corner_max: 9, leadSide: "any", direction: "Under", market_type: "over_under", aiFilterEnabled: false },
-  "4": { minute_min: 60, minute_max: 99, leadGoals: 2, leadGoalsWeak: 1, line_min: 0, line_max: 2.5, odds_min: 0.8, odds_max: 1.30, corner_min: 0, corner_max: 99, leadSide: "strong", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
-  "5": { minute_min: 70, minute_max: 99, leadGoals: 1, leadGoalsWeak: 1, line_min: 0, line_max: 2.5, odds_min: 0.8, odds_max: 1.10, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
-  "6": { minute_min: 55, minute_max: 75, leadGoals: 1, leadGoalsWeak: 1, line_min: -0.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.30, corner_min: 2, corner_max: 8, leadSide: "any", direction: "Over", market_type: "auto", aiFilterEnabled: false },
-  "7": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: -0.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.30, corner_min: 3, corner_max: 5, leadSide: "any", direction: "Over", market_type: "auto", aiFilterEnabled: false },
+  "1": { minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.2, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "2": { minute_min: 50, minute_max: 77, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", aiFilterEnabled: false },
+  "3": { minute_min: 70, minute_max: 90, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.85, odds_max: 1.15, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", aiFilterEnabled: false },
+  "4": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 11.5, odds_min: 0.8, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "5": { minute_min: 75, minute_max: 90, leadGoals: 99, leadGoalsWeak: 0, line_min: 0, line_max: 0, odds_min: 0.8, odds_max: 1.0, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "next_corner", aiFilterEnabled: false },
+  "6": { minute_min: 55, minute_max: 70, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.3, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Auto", market_type: "handicap", aiFilterEnabled: false },
+  "7": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: 7.5, line_max: 10.5, odds_min: 0.9, odds_max: 1.2, corner_min: 3, corner_max: 5, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
 };
 
 function formatDefault(key: string, val: number | string): string {
