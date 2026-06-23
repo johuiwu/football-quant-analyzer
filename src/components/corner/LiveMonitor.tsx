@@ -169,12 +169,12 @@ const OddsGroupCard = React.memo(function OddsGroupCard({ groupKey, label, handi
   );
 });
 
-// ==================== 常规盘口表格（紧凑型：全场+半场同行展示） ====================
+// ==================== 常规盘口表格（按源网站风格：盘口线横排，主/客或大/小竖排） ====================
 
 const REGULAR_BORDER = "border-emerald-600/40 bg-emerald-900/10";
 const REGULAR_HEADER = "bg-emerald-700/30 text-emerald-300";
 
-/** 紧凑型表格：让球或大小球，全场和半场数据并列在同一表格中 */
+/** 紧凑型表格：让球或大小球，盘口线横排在顶部，赔率竖排在下方 */
 const RegularMarketTable = React.memo(function RegularMarketTable({
   title,
   fullItems,
@@ -189,68 +189,100 @@ const RegularMarketTable = React.memo(function RegularMarketTable({
   if (fullItems.length === 0 && halfItems.length === 0) return null;
 
   const isOU = type === "O/U";
-  const sideLabels: [string, string] = isOU ? ["大", "小"] : ["主", "客"];
+  // 合并盘口线去重：先全场，后半场
+  const seen = new Set<string>();
+  const allLines: string[] = [];
+  for (const h of fullItems) {
+    const key = String(h.line);
+    if (!seen.has(key)) { seen.add(key); allLines.push(key); }
+  }
+  for (const h of halfItems) {
+    const key = String(h.line);
+    if (!seen.has(key)) { seen.add(key); allLines.push(key); }
+  }
 
-  // 取全场的 key（盘口线），半场的 key 跟随
-  const fullKeys = fullItems.map((h) => String(h.line));
-  const halfKeys = halfItems.map((h) => String(h.line));
-
-  // 构建渲染：每个单元显示 "盘口线" + "赔率"
-  const renderCell = (h: HandicapEntry | undefined) => {
-    const locked = (h as any)?.locked === true;
-    if (!h) {
-      return (
-        <td className="px-2 py-1 text-center text-slate-600 text-[11px]">—</td>
-      );
-    }
-    return (
-      <td className="px-2 py-1 text-center">
-        <div className="text-[10px] text-slate-500">{fmtLine(h.line)}</div>
-        <div className={`text-[12px] font-semibold ${locked ? "text-slate-600" : "text-red-400"}`}>
-          {fmt(isOU ? h.odds?.over : h.odds?.home)}
-        </div>
-      </td>
-    );
-  };
-
-  const renderRow = (side: "top" | "bottom") => {
-    const getVal = (h: HandicapEntry | undefined) => {
-      if (!h) return undefined;
-      if (isOU) return side === "top" ? h.odds?.over : h.odds?.under;
-      return side === "top" ? h.odds?.home : h.odds?.away;
-    };
-    const fullItem = side === "top" ? fullItems[0] : fullItems[1];
-    const halfItem = side === "top" ? halfItems[0] : halfItems[1];
-    return (
-      <tr className="border-t border-emerald-700/20">
-        <td className="px-2 py-1 text-[10px] text-slate-500 text-center font-medium">{sideLabels[side === "top" ? 0 : 1]}</td>
-        <td className="px-2 py-1 text-center">
-          <div className="text-[10px] text-emerald-400/60">全</div>
-          {side === "top" ? renderCell(fullItem) : renderCell(fullItem)}
-        </td>
-        <td className="px-2 py-1 text-center">
-          <div className="text-[10px] text-emerald-400/60">半</div>
-          {side === "top" ? renderCell(halfItem) : renderCell(halfItem)}
-        </td>
-      </tr>
-    );
+  // 根据盘口线查找到对应赔率
+  const findItem = (items: HandicapEntry[], line: string, side: "top" | "bottom") => {
+    const item = items.find((h) => String(h.line) === line);
+    if (!item) return undefined;
+    if (isOU) return side === "top" ? item.odds?.over : item.odds?.under;
+    return side === "top" ? item.odds?.home : item.odds?.away;
   };
 
   return (
     <div className={`rounded-lg border ${REGULAR_BORDER} overflow-hidden`}>
       <div className={`px-2 py-1 text-[10px] font-medium ${REGULAR_HEADER} text-center`}>{title}</div>
-      <table className="w-full text-[11px]">
-        <tbody>
-          {/* 让球/大小球 标识行 */}
+      <table className="w-full text-[11px] table-fixed">
+        <thead>
+          {/* 盘口线横排表头（全场+半场分组） */}
           <tr>
-            <td className="px-2 py-0.5 text-[9px] text-slate-500 text-center w-6">—</td>
-            <td className="px-2 py-0.5 text-center text-[9px] text-emerald-400/70">全场</td>
-            <td className="px-2 py-0.5 text-center text-[9px] text-emerald-400/70">半场</td>
+            <th className="px-1 py-1 text-[9px] text-slate-500 font-normal w-12 text-center">—</th>
+            {fullItems.length > 0 && (
+              <th colSpan={fullItems.length} className="px-1 py-0.5 text-[9px] text-emerald-400/70 font-normal border-l border-emerald-700/20 text-center">全场</th>
+            )}
+            {halfItems.length > 0 && (
+              <th colSpan={halfItems.length} className="px-1 py-0.5 text-[9px] text-emerald-400/70 font-normal border-l border-emerald-700/20 text-center">半场</th>
+            )}
           </tr>
-          {/* 第一行（让球主/大球） */}
-          {renderRow("top")}
-          {/* 第二行（让球客/小球） */}
-          {renderRow("bottom")}
+          <tr className="border-t border-emerald-700/30">
+            <th className="px-1 py-0.5 text-[9px] text-slate-500 font-normal w-12 text-center">{isOU ? "大小" : "让球"}</th>
+            {fullItems.map((h, i) => (
+              <th key={`f-${i}`} className="px-1 py-0.5 text-[10px] text-emerald-300/80 font-semibold text-center border-l border-emerald-700/20">
+                {fmtLine(h.line)}
+              </th>
+            ))}
+            {halfItems.map((h, i) => (
+              <th key={`h-${i}`} className="px-1 py-0.5 text-[10px] text-emerald-300/80 font-semibold text-center border-l border-emerald-700/20">
+                {fmtLine(h.line)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {/* 第一行：主 / 大 */}
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1 py-0.5 text-[10px] text-slate-400 text-center font-medium">{isOU ? "大" : "主"}</td>
+            {fullItems.map((h, i) => {
+              const locked = (h as any)?.locked === true;
+              const val = isOU ? h.odds?.over : h.odds?.home;
+              return (
+                <td key={`f-top-${i}`} className="px-1 py-0.5 text-center font-semibold border-l border-emerald-700/20">
+                  <div className={`text-[12px] ${locked ? "text-slate-600" : "text-red-400"}`}>{fmt(val)}</div>
+                </td>
+              );
+            })}
+            {halfItems.map((h, i) => {
+              const locked = (h as any)?.locked === true;
+              const val = isOU ? h.odds?.over : h.odds?.home;
+              return (
+                <td key={`h-top-${i}`} className="px-1 py-0.5 text-center font-semibold border-l border-emerald-700/20">
+                  <div className={`text-[12px] ${locked ? "text-slate-600" : "text-red-400"}`}>{fmt(val)}</div>
+                </td>
+              );
+            })}
+          </tr>
+          {/* 第二行：客 / 小 */}
+          <tr className="border-t border-emerald-700/20">
+            <td className="px-1 py-0.5 text-[10px] text-slate-400 text-center font-medium">{isOU ? "小" : "客"}</td>
+            {fullItems.map((h, i) => {
+              const locked = (h as any)?.locked === true;
+              const val = isOU ? h.odds?.under : h.odds?.away;
+              return (
+                <td key={`f-bot-${i}`} className="px-1 py-0.5 text-center font-semibold border-l border-emerald-700/20">
+                  <div className={`text-[12px] ${locked ? "text-slate-600" : "text-red-400"}`}>{fmt(val)}</div>
+                </td>
+              );
+            })}
+            {halfItems.map((h, i) => {
+              const locked = (h as any)?.locked === true;
+              const val = isOU ? h.odds?.under : h.odds?.away;
+              return (
+                <td key={`h-bot-${i}`} className="px-1 py-0.5 text-center font-semibold border-l border-emerald-700/20">
+                  <div className={`text-[12px] ${locked ? "text-slate-600" : "text-red-400"}`}>{fmt(val)}</div>
+                </td>
+              );
+            })}
+          </tr>
         </tbody>
       </table>
     </div>
