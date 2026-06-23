@@ -1,5 +1,6 @@
 import { crawlCornerMatches, getPollingStatus as getCrawlerStatus } from "./cornerCrawler.js";
 import { evaluateStrategies as evaluateCornerStrategies, resolveStrategyOdds } from "./cornerEvaluator.js";
+import { normalizeHandicap } from "./crawlerShared.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
 import { run, query } from "../dbService.js";
 import { subscribeMatches, unsubscribeAll } from "./GismoSubscriber.js";
@@ -264,13 +265,13 @@ async function processAutoBetsForMatches(matches) {
             continue;
           }
           const strategy = activeStrategies.find(s => s.id === sid);
-          const betDir = strategy?.betDirection || "auto";
+          const betDir = strategy?.direction || strategy?.betDirection || "Auto";
           const actualOdds = resolveStrategyOdds(match, strategy || {});
           if (actualOdds <= 0) {
             console.warn(`[cornerService] 策略${sid}触发但赔率为0，跳过投注, matchId=${match.matchId}`);
             continue;
           }
-          match.betTarget = buildBetTarget(betDir, match.cornerHandicap || 0);
+          match.betTarget = buildBetTarget(betDir, normalizeHandicap(match.cornerHandicap || 0));
           const genResult = await generatePendingBet(match, sid, actualOdds);
           if (genResult.success && !genResult.skipped) {
             betQueue.push({
@@ -281,7 +282,7 @@ async function processAutoBetsForMatches(matches) {
               strategyId: sid,
               odds: actualOdds,
               amount: betConfig.amount,
-              handicap: match.cornerHandicap || 0,
+              handicap: normalizeHandicap(match.cornerHandicap || 0),
               betDirection: betDir
             });
           }
@@ -293,7 +294,7 @@ async function processAutoBetsForMatches(matches) {
             console.warn(`[cornerService] 策略${sid}触发但赔率为0，跳过直接执行投注, matchId=${match.matchId}`);
             continue;
           }
-          await executeAndRecordBet(match, sid, strategy?.betDirection || "auto", actualOdds);
+          await executeAndRecordBet(match, sid, strategy?.direction || strategy?.betDirection || "Auto", actualOdds);
         }
       } catch (e) {
         console.error("[cornerService] 投注处理失败:", e.message);
@@ -398,8 +399,8 @@ async function pollOnce() {
                 console.warn('[cornerService] gismo 角球变化时盘口刷新失败:', fetchErr.message);
               }
 
-              // 策略评估（盘口刷新后）
-              const triggeredIds = evaluateCornerStrategies(match, activeStrategies);
+              // 策略评估（盘口刷新后，传递全局设置）
+              const triggeredIds = evaluateCornerStrategies(match, activeStrategies, activeCornerSettings);
               if (triggeredIds.length > 0) {
                 match.triggeredStrategies = triggeredIds;
                 console.log(`[cornerService] gismo 角球变化触发策略评估: matchId=${match.matchId}, 触发策略=[${triggeredIds.join(',')}]`);
@@ -654,7 +655,8 @@ function mapMatchToCornerFormat(match) {
     totalCorners: match.totalCorners ?? 0,
     homeCorners: match.homeCorners ?? 0,
     awayCorners: match.awayCorners ?? 0,
-    cornerHandicap: match.cornerHandicap != null ? safeFloat(match.cornerHandicap) : 0,
+    cornerHandicap: match.cornerHandicap != null ? normalizeHandicap(safeFloat(match.cornerHandicap)) : 0,
+    handicap: match.handicap != null ? normalizeHandicap(safeFloat(match.handicap)) : (match.cornerHandicap != null ? normalizeHandicap(safeFloat(match.cornerHandicap)) : 0),
     cornerOdds: match.cornerOdds != null ? safeFloat(match.cornerOdds) : 0,
     cornerOU: match.cornerOU || null,
     nextCorner: match.nextCorner || null,

@@ -27,6 +27,7 @@ function randomMatchName() {
 /**
  * 生成一场模拟比赛数据
  * 返回随机比赛时间、角球盘口和赔率
+ * 包含 market_type 对应的 handicaps 数组，确保回测引擎能匹配真实的盘口过滤流程
  */
 function generateSimulatedMatch() {
   const { home, away, name, matchId } = randomMatchName();
@@ -39,14 +40,42 @@ function generateSimulatedMatch() {
   const odds = parseFloat(oddsRaw);
   // 模拟比分差
   const goalDiff = Math.floor(Math.random() * 5) - 2;
-  return { matchId, matchName: name, homeTeam: home, awayTeam: away, elapsedMinutes, cornerHandicap: handicap, cornerOdds: odds, homeScore: Math.max(0, 1 + goalDiff), awayScore: Math.max(0, 1) };
+  // 模拟角球数
+  const homeCorners = Math.floor(Math.random() * 6);
+  const awayCorners = Math.floor(Math.random() * 6);
+
+  // 生成 handicaps 数组（覆盖 O/U、HDP、NEXT 三种市场类型）
+  const handicaps = [
+    { category: 'O/U', handicap: Math.abs(handicap), overOdds: odds, underOdds: Math.max(0.5, 2.0 - odds) },
+    { category: 'HDP', handicap: handicap, homeOdds: odds, awayOdds: Math.max(0.5, 2.0 - odds) },
+    { category: 'NEXT', overOdds: odds, underOdds: Math.max(0.5, 2.0 - odds) },
+  ];
+
+  return {
+    matchId,
+    matchName: name,
+    homeTeam: home,
+    awayTeam: away,
+    elapsedMinutes,
+    cornerHandicap: handicap,
+    handicap: handicap,
+    cornerOdds: odds,
+    homeScore: Math.max(0, 1 + goalDiff),
+    awayScore: Math.max(0, 1),
+    homeCorners,
+    awayCorners,
+    totalCorners: homeCorners + awayCorners,
+    handicaps,
+    cornerOU: { overOdds: odds, underOdds: Math.max(0.5, 2.0 - odds), handicap: Math.abs(handicap) },
+  };
 }
 
 /**
  * 评估单场比赛是否触发指定策略（委托给共享模块 cornerEvaluator.js）
+ * 传递 globalSettings 以支持7级流水线中的全局盘口兜底检查
  */
-function doesStrategyTrigger(match, strategy) {
-  return evaluateSingleStrategy(match, strategy);
+function doesStrategyTrigger(match, strategy, globalSettings) {
+  return evaluateSingleStrategy(match, strategy, globalSettings);
 }
 
 /**
@@ -142,6 +171,9 @@ export async function runBacktest(strategies) {
   const MATCH_COUNT = 80;
   console.log(`[cornerStrategyEngine] 真实记录不足，生成 ${MATCH_COUNT} 场模拟比赛...`);
 
+  // 回测使用默认全局设置
+  const backtestSettings = { strongHandicapThreshold: 1, handicapUpperLimit: 3.5, handicapLowerLimit: -1.25 };
+
   const simulatedMatches = [];
   for (let i = 0; i < MATCH_COUNT; i++) {
     simulatedMatches.push(generateSimulatedMatch());
@@ -155,11 +187,15 @@ export async function runBacktest(strategies) {
     let totalProfit = 0;
 
     for (const match of simulatedMatches) {
-      if (doesStrategyTrigger(match, strategy)) {
+      if (doesStrategyTrigger(match, strategy, backtestSettings)) {
         const { result, profitLoss } = simulateBetResult(match.cornerOdds);
         if (result === 'win') wins++;
         else losses++;
         totalProfit += profitLoss;
+
+        // direction 统一使用首字母大写格式
+        const direction = strategy.direction || strategy.betDirection || 'Auto';
+        const dirLabel = { Over: '大', Under: '小', Home: '主队', Away: '客队', Auto: '自动' }[direction] || direction;
 
         await saveSimulationRecord({
           strategy_id: sid,
@@ -168,7 +204,7 @@ export async function runBacktest(strategies) {
           elapsed_minutes: match.elapsedMinutes,
           trigger_odds: match.cornerOdds,
           trigger_handicap: match.cornerHandicap,
-          bet_direction: match.cornerHandicap > 0 ? '强队' : '对面',
+          bet_direction: dirLabel,
           result,
           profit_loss: profitLoss
         });
