@@ -294,20 +294,20 @@ router.put("/corner/strategies", async (req, res) => {
       if (s.leadSide && !VALID_LEAD_SIDES.includes(s.leadSide)) {
         errors.push(`策略${s.id}: leadSide必须为${VALID_LEAD_SIDES.join('/')}`);
       }
-      if (s.leadGoals !== undefined && (s.leadGoals < 0 || s.leadGoals > 20)) {
-        errors.push(`策略${s.id}: leadGoals需在0-20之间`);
+      if (s.leadGoals !== undefined && s.leadGoals !== 99 && (s.leadGoals < 0 || s.leadGoals > 20)) {
+        errors.push(`策略${s.id}: leadGoals需在0-20之间(99=不限制)`);
       }
-      if (s.leadGoalsWeak !== undefined && (s.leadGoalsWeak < 0 || s.leadGoalsWeak > 5)) {
-        errors.push(`策略${s.id}: leadGoalsWeak需在0-5之间`);
+      if (s.leadGoalsWeak !== undefined && s.leadGoalsWeak !== 99 && (s.leadGoalsWeak < 0 || s.leadGoalsWeak > 5)) {
+        errors.push(`策略${s.id}: leadGoalsWeak需在0-5之间(99=不限制)`);
       }
-      // 角球数范围验证
+      // 角球数范围验证（99=不限制）
       const cornerMin = s.corner_min ?? s.minCurrentCorners;
       const cornerMax = s.corner_max ?? s.maxCurrentCorners;
-      if (cornerMin !== undefined && (cornerMin < 0 || cornerMin > 30)) {
-        errors.push(`策略${s.id}: corner_min需在0-30之间`);
+      if (cornerMin !== undefined && cornerMin !== 99 && (cornerMin < 0 || cornerMin > 30)) {
+        errors.push(`策略${s.id}: corner_min需在0-30之间(99=不限制)`);
       }
-      if (cornerMax !== undefined && (cornerMax < 0 || cornerMax > 30)) {
-        errors.push(`策略${s.id}: corner_max需在0-30之间`);
+      if (cornerMax !== undefined && cornerMax !== 99 && (cornerMax < 0 || cornerMax > 30)) {
+        errors.push(`策略${s.id}: corner_max需在0-30之间(99=不限制)`);
       }
       if (cornerMin !== undefined && cornerMax !== undefined && cornerMin > cornerMax) {
         errors.push(`策略${s.id}: corner_min不能大于corner_max`);
