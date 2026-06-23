@@ -3504,10 +3504,25 @@ async function _processHttpResults(rcnResult, rnouResult, uid, ver, cookieStr) {
   }
 
   const mainMarkets = {};
-  // ★ 角球盘口（按 matchId 索引）
+  // ★ 角球盘口（按 matchId 和 teamKey 双索引，确保常规盘口通过 teamKey 合并时能找到角球数据）
+  // 关键：matchId 和 teamKey 必须指向同一个对象，这样后续 Object.assign 合并常规盘口时两边都能看到
   for (const m of cornerMatches) {
     if (m.cornerOU || m.cornerHDP) {
-      mainMarkets[m.matchId] = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf, corner1X2: m.corner1X2, corner1X2Half: m.corner1X2Half, cornerOEHalf: m.cornerOEHalf };
+      const cornerData = { cornerOU: m.cornerOU, cornerHDP: m.cornerHDP, nextCorner: m.nextCorner, cornerOE: m.cornerOE, cornerOUHalf: m.cornerOUHalf, cornerHDPHalf: m.cornerHDPHalf, corner1X2: m.corner1X2, corner1X2Half: m.corner1X2Half, cornerOEHalf: m.cornerOEHalf };
+      const entry = { ...cornerData };
+      mainMarkets[m.matchId] = entry;
+      // ★ 同时以 teamKey 指向同一对象，使常规盘口合并时 matchId 也能获得数据
+      const teamKey = (m.homeTeam || "") + "|" + (m.awayTeam || "");
+      if (teamKey !== "|" && teamKey !== String(m.matchId)) {
+        if (mainMarkets[teamKey]) {
+          // teamKey 已存在（可能来自之前的常规盘口），将角球数据合并进去
+          Object.assign(mainMarkets[teamKey], cornerData);
+          // 让 matchId 也指向这个已合并的对象
+          mainMarkets[m.matchId] = mainMarkets[teamKey];
+        } else {
+          mainMarkets[teamKey] = entry;
+        }
+      }
     }
   }
   // ★ 让球/大小盘口（从 rrnou 数据构建，按 matchId 和 homeTeam|awayTeam 双索引）
