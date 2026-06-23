@@ -9,31 +9,31 @@ const hintClass = "text-[9px] text-slate-600 italic mt-0.5 block font-sans";
 const sectionTitleClass = "text-xs font-semibold text-slate-300 mb-2 pb-1 border-b border-slate-800/60 font-sans";
 const errorClass = "text-[9px] text-rose-400 mt-0.5 block font-sans";
 
-// 默认值映射（用于显示"默认: X"提示）
+// 默认值映射（用于显示"默认: X"提示）—— 使用新字段名
 const DEFAULT_VALUES: Record<string, Record<string, number | string>> = {
-  "1": { playTimeStart: 35, playTimeEnd: 55, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -1.25, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 3, maxCurrentCorners: 7, leadSide: "any", betDirection: "over" },
-  "2": { playTimeStart: 50, playTimeEnd: 77, leadGoals: 3, leadGoalsWeak: 1, cornerHandicapLower: -0.75, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.30, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong", betDirection: "over" },
-  "3": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 0, leadGoalsWeak: 0, cornerHandicapLower: 0, cornerHandicapUpper: 2.0, targetOdds: 0.6, maxOdds: 0.90, minCurrentCorners: 3, maxCurrentCorners: 9, leadSide: "any", betDirection: "under" },
-  "4": { playTimeStart: 60, playTimeEnd: 99, leadGoals: 2, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.30, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "strong", betDirection: "over" },
-  "5": { playTimeStart: 70, playTimeEnd: 99, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: 0, cornerHandicapUpper: 2.5, targetOdds: 0.8, maxOdds: 1.10, minCurrentCorners: 0, maxCurrentCorners: 99, leadSide: "any", betDirection: "over" },
-  "6": { playTimeStart: 55, playTimeEnd: 75, leadGoals: 1, leadGoalsWeak: 1, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.9, maxOdds: 1.30, minCurrentCorners: 2, maxCurrentCorners: 8, leadSide: "any", betDirection: "over" },
-  "7": { playTimeStart: 60, playTimeEnd: 80, leadGoals: 99, leadGoalsWeak: 0, cornerHandicapLower: -0.5, cornerHandicapUpper: 1.5, targetOdds: 0.9, maxOdds: 1.30, minCurrentCorners: 3, maxCurrentCorners: 5, leadSide: "any", betDirection: "over" },
+  "1": { minute_min: 35, minute_max: 55, leadGoals: 99, leadGoalsWeak: 0, line_min: -1.25, line_max: 2.5, odds_min: 0.8, odds_max: 1.10, corner_min: 3, corner_max: 7, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "2": { minute_min: 50, minute_max: 77, leadGoals: 3, leadGoalsWeak: 1, line_min: -0.75, line_max: 2.5, odds_min: 0.8, odds_max: 1.30, corner_min: 0, corner_max: 99, leadSide: "strong", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "3": { minute_min: 70, minute_max: 99, leadGoals: 0, leadGoalsWeak: 0, line_min: 0, line_max: 2.0, odds_min: 0.6, odds_max: 0.90, corner_min: 3, corner_max: 9, leadSide: "any", direction: "Under", market_type: "over_under", aiFilterEnabled: false },
+  "4": { minute_min: 60, minute_max: 99, leadGoals: 2, leadGoalsWeak: 1, line_min: 0, line_max: 2.5, odds_min: 0.8, odds_max: 1.30, corner_min: 0, corner_max: 99, leadSide: "strong", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "5": { minute_min: 70, minute_max: 99, leadGoals: 1, leadGoalsWeak: 1, line_min: 0, line_max: 2.5, odds_min: 0.8, odds_max: 1.10, corner_min: 0, corner_max: 99, leadSide: "any", direction: "Over", market_type: "over_under", aiFilterEnabled: false },
+  "6": { minute_min: 55, minute_max: 75, leadGoals: 1, leadGoalsWeak: 1, line_min: -0.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.30, corner_min: 2, corner_max: 8, leadSide: "any", direction: "Over", market_type: "auto", aiFilterEnabled: false },
+  "7": { minute_min: 60, minute_max: 80, leadGoals: 99, leadGoalsWeak: 0, line_min: -0.5, line_max: 1.5, odds_min: 0.9, odds_max: 1.30, corner_min: 3, corner_max: 5, leadSide: "any", direction: "Over", market_type: "auto", aiFilterEnabled: false },
 };
 
 function formatDefault(key: string, val: number | string): string {
   if (typeof val === "number") {
     return Number.isInteger(val) ? String(val) : val.toFixed(2);
   }
-  const labels: Record<string, string> = { any: "任意", strong: "强队", weak: "弱队", over: "大", under: "小", home: "主队", away: "客队", auto: "自动" };
+  const labels: Record<string, string> = { any: "任意", strong: "强队", weak: "弱队", Over: "大", Under: "小", Home: "主队", Away: "客队", Auto: "自动", over_under: "大小球", handicap: "让球", next_corner: "下一个角球", auto: "自动" };
   return labels[val] || val;
 }
 
 function validateStrategy(s: CornerStrategy): string[] {
   const errors: string[] = [];
-  if (s.playTimeStart >= s.playTimeEnd) errors.push("开始时间须小于结束时间");
-  if (s.cornerHandicapLower > s.cornerHandicapUpper) errors.push("盘口下限不能大于上限");
-  if (s.targetOdds > (s.maxOdds ?? 1.10)) errors.push("最低赔率不能大于最高赔率");
-  if (s.minCurrentCorners > s.maxCurrentCorners) errors.push("角球数下限不能大于上限");
+  if (s.minute_min >= s.minute_max) errors.push("开始时间须小于结束时间");
+  if (s.line_min > s.line_max) errors.push("盘口下限不能大于上限");
+  if (s.odds_min > s.odds_max) errors.push("最低赔率不能大于最高赔率");
+  if (s.corner_min > s.corner_max) errors.push("角球数下限不能大于上限");
   if (s.leadGoalsWeak > 0 && s.leadGoals < s.leadGoalsWeak) errors.push("弱队领先不能大于领先球数上限");
   return errors;
 }
@@ -120,19 +120,19 @@ export default function StrategyConfigPanel() {
       for (let j = i + 1; j < enabled.length; j++) {
         const a = enabled[i], b = enabled[j];
         // 时间窗口重叠
-        if (a.playTimeStart <= b.playTimeEnd && b.playTimeStart <= a.playTimeEnd) {
+        if (a.minute_min <= b.minute_max && b.minute_min <= a.minute_max) {
           // 方向冲突
-          if ((a.betDirection === "over" && b.betDirection === "under") ||
-              (a.betDirection === "under" && b.betDirection === "over")) {
+          if ((a.direction === "Over" && b.direction === "Under") ||
+              (a.direction === "Under" && b.direction === "Over")) {
             // 比分条件重叠检查：leadGoals>=20 为哨兵值（不限比分），否则检查范围是否有交集
             const aMin = a.leadGoalsWeak ?? 0, aMax = a.leadGoals >= 20 ? Infinity : a.leadGoals;
             const bMin = b.leadGoalsWeak ?? 0, bMax = b.leadGoals >= 20 ? Infinity : b.leadGoals;
             const scoreOverlap = aMin <= bMax && bMin <= aMax;
-            if (!scoreOverlap) continue; // 比分条件互斥，不可能同时触发
+            if (!scoreOverlap) continue;
             // 盘口范围重叠检查
-            const hcpOverlap = a.cornerHandicapLower <= b.cornerHandicapUpper && b.cornerHandicapLower <= a.cornerHandicapUpper;
-            if (!hcpOverlap) continue; // 盘口范围互斥，不可能同时触发
-            conflicts.push(`策略${a.id}与策略${b.id}: over/under方向冲突`);
+            const hcpOverlap = a.line_min <= b.line_max && b.line_min <= a.line_max;
+            if (!hcpOverlap) continue;
+            conflicts.push(`策略${a.id}与策略${b.id}: Over/Under方向冲突`);
           }
         }
       }
@@ -200,6 +200,7 @@ export default function StrategyConfigPanel() {
             const stats: BacktestStats | undefined = backtestResults[s.id];
             const defaults = DEFAULT_VALUES[String(s.id)] || {};
             const validationErrors = validateStrategy(s);
+            const isLineDisabled = s.market_type === "next_corner";
 
             return (
               <div
@@ -272,21 +273,24 @@ export default function StrategyConfigPanel() {
                 {/* 折叠态摘要 */}
                 {!isExpanded && (
                   <div className="px-3 pb-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 font-sans">
-                    <span>⏱ {s.playTimeStart}'–{s.playTimeEnd}'</span>
-                    <span>📊 {s.cornerHandicapLower}~{s.cornerHandicapUpper}</span>
-                    <span>🎯 ≥{s.targetOdds.toFixed(2)}</span>
-                    {(s.minCurrentCorners > 0 || s.maxCurrentCorners < 99) && (
-                      <span>⚽ {s.minCurrentCorners}~{s.maxCurrentCorners}角</span>
+                    <span>⏱ {s.minute_min}'–{s.minute_max}'</span>
+                    <span>📊 {s.line_min}~{s.line_max}</span>
+                    <span>🎯 ≥{s.odds_min.toFixed(2)}</span>
+                    {(s.corner_min > 0 || s.corner_max < 99) && (
+                      <span>⚽ {s.corner_min}~{s.corner_max}角</span>
                     )}
                     {s.leadSide !== "any" && (
                       <span>🏷 {s.leadSide === "strong" ? "强队领先" : "弱队领先"}</span>
                     )}
-                    {s.maxOdds < 1.10 && (
-                      <span>📉 ≤{s.maxOdds.toFixed(2)}</span>
+                    {s.odds_max < 1.10 && (
+                      <span>📉 ≤{s.odds_max.toFixed(2)}</span>
+                    )}
+                    {s.market_type !== "auto" && (
+                      <span>📋 {s.market_type === "over_under" ? "大小球" : s.market_type === "handicap" ? "让球" : s.market_type === "next_corner" ? "下个角球" : s.market_type}</span>
                     )}
                     {(() => {
-                      const overlapping = strategies.filter(o => o.enabled && o.id !== s.id && o.playTimeStart <= s.playTimeEnd && o.playTimeEnd >= s.playTimeStart);
-                      const halfTimeIssue = s.playTimeStart <= 45 && s.playTimeEnd >= 46;
+                      const overlapping = strategies.filter(o => o.enabled && o.id !== s.id && o.minute_min <= s.minute_max && o.minute_max >= s.minute_min);
+                      const halfTimeIssue = s.minute_min <= 45 && s.minute_max >= 46;
                       return (
                         <>
                           {overlapping.length > 0 && (
@@ -318,17 +322,17 @@ export default function StrategyConfigPanel() {
                         <div>
                           <span className="text-[9px] text-slate-600 font-sans">开始</span>
                           <input type="number" className={numInputClass} min={0} max={120} step={1}
-                            value={s.playTimeStart} onChange={(e) => handleChange(s.id, "playTimeStart", Number(e.target.value))} />
-                          <span className={hintClass}>默认: {defaults.playTimeStart}</span>
+                            value={s.minute_min} onChange={(e) => handleChange(s.id, "minute_min", Number(e.target.value))} />
+                          <span className={hintClass}>默认: {defaults.minute_min}</span>
                         </div>
                         <div>
                           <span className="text-[9px] text-slate-600 font-sans">结束</span>
                           <input type="number" className={numInputClass} min={0} max={120} step={1}
-                            value={s.playTimeEnd} onChange={(e) => handleChange(s.id, "playTimeEnd", Number(e.target.value))} />
-                          <span className={hintClass}>默认: {defaults.playTimeEnd}</span>
+                            value={s.minute_max} onChange={(e) => handleChange(s.id, "minute_max", Number(e.target.value))} />
+                          <span className={hintClass}>默认: {defaults.minute_max}</span>
                         </div>
                       </div>
-                      {s.playTimeStart >= s.playTimeEnd && <span className={errorClass}>开始时间须小于结束时间</span>}
+                      {s.minute_min >= s.minute_max && <span className={errorClass}>开始时间须小于结束时间</span>}
 
                       <div className="mt-3">
                         <label className={labelClass}>领先球数条件 <span className="text-[9px] text-slate-600 ml-1">≥20表示不限制比分</span></label>
@@ -367,22 +371,41 @@ export default function StrategyConfigPanel() {
                     <div>
                       <h5 className={sectionTitleClass}>📊 角球盘口条件</h5>
 
-                      <label className={labelClass}>角球盘口区间 <span className="text-[9px] text-slate-600 ml-1">角球让球盘口范围</span></label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <span className="text-[9px] text-slate-600 font-sans">下限</span>
-                          <input type="number" className={numInputClass} min={-3} max={5} step={0.25}
-                            value={s.cornerHandicapLower} onChange={(e) => handleChange(s.id, "cornerHandicapLower", Number(e.target.value))} />
-                          <span className={hintClass}>默认: {defaults.cornerHandicapLower}</span>
+                      <label className={labelClass}>市场类型 <span className="text-[9px] text-slate-600 ml-1">限定策略适用的盘口类型</span></label>
+                      <select
+                        className="w-full bg-slate-900/80 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 font-sans focus:outline-none focus:border-emerald-500/50 transition-colors"
+                        value={s.market_type || "auto"}
+                        onChange={(e) => handleChange(s.id, "market_type", e.target.value as any)}
+                      >
+                        <option value="auto">自动 (auto)</option>
+                        <option value="over_under">大小球 (over_under)</option>
+                        <option value="handicap">让球 (handicap)</option>
+                        <option value="next_corner">下一个角球 (next_corner)</option>
+                      </select>
+                      <span className={hintClass}>默认: {formatDefault("market_type", defaults.market_type || "auto")}</span>
+
+                      <div className="mt-3">
+                        <label className={labelClass}>角球盘口区间 <span className="text-[9px] text-slate-600 ml-1">归一化后的盘口范围</span></label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="text-[9px] text-slate-600 font-sans">下限</span>
+                            <input type="number" className={numInputClass} min={-3} max={5} step={0.25}
+                              disabled={isLineDisabled}
+                              value={isLineDisabled ? '' : s.line_min}
+                              onChange={(e) => handleChange(s.id, "line_min", Number(e.target.value))} />
+                            <span className={hintClass}>{isLineDisabled ? "下一个角球类型无需盘口区间" : `默认: ${defaults.line_min}`}</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-600 font-sans">上限</span>
+                            <input type="number" className={numInputClass} min={-3} max={5} step={0.25}
+                              disabled={isLineDisabled}
+                              value={isLineDisabled ? '' : s.line_max}
+                              onChange={(e) => handleChange(s.id, "line_max", Number(e.target.value))} />
+                            <span className={hintClass}>{isLineDisabled ? "下一个角球类型无需盘口区间" : `默认: ${defaults.line_max}`}</span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-[9px] text-slate-600 font-sans">上限</span>
-                          <input type="number" className={numInputClass} min={-3} max={5} step={0.25}
-                            value={s.cornerHandicapUpper} onChange={(e) => handleChange(s.id, "cornerHandicapUpper", Number(e.target.value))} />
-                          <span className={hintClass}>默认: {defaults.cornerHandicapUpper}</span>
-                        </div>
+                        {!isLineDisabled && s.line_min > s.line_max && <span className={errorClass}>盘口下限不能大于上限</span>}
                       </div>
-                      {s.cornerHandicapLower > s.cornerHandicapUpper && <span className={errorClass}>盘口下限不能大于上限</span>}
 
                       <div className="mt-3">
                         <label className={labelClass}>当前角球数范围 <span className="text-[9px] text-slate-600 ml-1">0/99表示不限制</span></label>
@@ -390,17 +413,17 @@ export default function StrategyConfigPanel() {
                           <div>
                             <span className="text-[9px] text-slate-600 font-sans">最小角球数</span>
                             <input type="number" className={numInputClass} min={0} max={30} step={1}
-                              value={s.minCurrentCorners} onChange={(e) => handleChange(s.id, "minCurrentCorners", Number(e.target.value))} />
-                            <span className={hintClass}>默认: {defaults.minCurrentCorners}</span>
+                              value={s.corner_min} onChange={(e) => handleChange(s.id, "corner_min", Number(e.target.value))} />
+                            <span className={hintClass}>默认: {defaults.corner_min}</span>
                           </div>
                           <div>
                             <span className="text-[9px] text-slate-600 font-sans">最大角球数</span>
                             <input type="number" className={numInputClass} min={0} max={30} step={1}
-                              value={s.maxCurrentCorners} onChange={(e) => handleChange(s.id, "maxCurrentCorners", Number(e.target.value))} />
-                            <span className={hintClass}>默认: {defaults.maxCurrentCorners}</span>
+                              value={s.corner_max} onChange={(e) => handleChange(s.id, "corner_max", Number(e.target.value))} />
+                            <span className={hintClass}>默认: {defaults.corner_max}</span>
                           </div>
                         </div>
-                        {s.minCurrentCorners > s.maxCurrentCorners && <span className={errorClass}>角球数下限不能大于上限</span>}
+                        {s.corner_min > s.corner_max && <span className={errorClass}>角球数下限不能大于上限</span>}
                       </div>
                     </div>
 
@@ -412,17 +435,17 @@ export default function StrategyConfigPanel() {
                         <div>
                           <label className={labelClass}>最低赔率（≥）</label>
                           <input type="number" className={numInputClass} min={0.5} max={2.0} step={0.05}
-                            value={s.targetOdds} onChange={(e) => handleChange(s.id, "targetOdds", Number(e.target.value))} />
-                          <span className={hintClass}>默认: {defaults.targetOdds}</span>
+                            value={s.odds_min} onChange={(e) => handleChange(s.id, "odds_min", Number(e.target.value))} />
+                          <span className={hintClass}>默认: {defaults.odds_min}</span>
                         </div>
                         <div>
                           <label className={labelClass}>最高赔率（≤） <span className="text-[9px] text-slate-600 ml-1">过滤异常赔率</span></label>
                           <input type="number" className={numInputClass} min={0.5} max={2.0} step={0.05}
-                            value={s.maxOdds} onChange={(e) => handleChange(s.id, "maxOdds", Number(e.target.value))} />
-                          <span className={hintClass}>默认: {defaults.maxOdds}</span>
+                            value={s.odds_max} onChange={(e) => handleChange(s.id, "odds_max", Number(e.target.value))} />
+                          <span className={hintClass}>默认: {defaults.odds_max}</span>
                         </div>
                       </div>
-                      {s.targetOdds > (s.maxOdds ?? 1.10) && <span className={errorClass}>最低赔率不能大于最高赔率</span>}
+                      {s.odds_min > s.odds_max && <span className={errorClass}>最低赔率不能大于最高赔率</span>}
                     </div>
 
                     {/* ====== 分组4：投注方向 ====== */}
@@ -431,16 +454,29 @@ export default function StrategyConfigPanel() {
                       <label className={labelClass}>选择投注方向 <span className="text-[9px] text-slate-600 ml-1">决定触发后投注大/小/主/客</span></label>
                       <select
                         className="w-full bg-slate-900/80 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200 font-sans focus:outline-none focus:border-emerald-500/50 transition-colors"
-                        value={s.betDirection || "auto"}
-                        onChange={(e) => handleChange(s.id, "betDirection", e.target.value as any)}
+                        value={s.direction || "Auto"}
+                        onChange={(e) => handleChange(s.id, "direction", e.target.value as any)}
                       >
-                        <option value="auto">自动 (Auto)</option>
-                        <option value="over">大 (Over)</option>
-                        <option value="under">小 (Under)</option>
-                        <option value="home">主队 (Home)</option>
-                        <option value="away">客队 (Away)</option>
+                        <option value="Auto">自动 (Auto)</option>
+                        <option value="Over">大 (Over)</option>
+                        <option value="Under">小 (Under)</option>
+                        <option value="Home">主队 (Home)</option>
+                        <option value="Away">客队 (Away)</option>
                       </select>
-                      <span className={hintClass}>默认: {formatDefault("betDirection", defaults.betDirection || "auto")}</span>
+                      <span className={hintClass}>默认: {formatDefault("direction", defaults.direction || "Auto")}</span>
+                    </div>
+
+                    {/* ====== 分组5：AI评分过滤 ====== */}
+                    <div>
+                      <h5 className={sectionTitleClass}>🤖 AI评分过滤</h5>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox"
+                          checked={s.aiFilterEnabled || false}
+                          onChange={(e) => handleChange(s.id, "aiFilterEnabled", e.target.checked)}
+                          className="rounded border-slate-700 bg-slate-900/80 text-emerald-500 focus:ring-emerald-500/50" />
+                        <span className="text-xs text-slate-300 font-sans">启用AI评分过滤</span>
+                      </label>
+                      <span className={hintClass}>启用后，AI计算概率须>60%才允许策略触发</span>
                     </div>
 
                     {/* 验证错误汇总 */}

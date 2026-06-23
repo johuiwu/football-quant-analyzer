@@ -201,3 +201,46 @@ export function parseAsianHandicap(line) {
   var val = parseFloat(rest);
   return (isNaN(val)) ? 0 : sign * val;
 }
+
+/**
+ * 盘口归一化函数：将亚洲盘口格式字符串转换为数值
+ * 支持标准亚洲盘口：'0/0.5' → 0.25, '0.5/1' → 0.75, '1/1.5' → 1.25
+ * 支持纯数值输入直接返回，无法识别的格式返回 0
+ * @param {string|number} lineString - 盘口值（如 '0/0.5', '0.5', -0.75）
+ * @returns {number} 归一化后的数值
+ */
+export function normalizeHandicap(lineString) {
+  if (lineString == null || lineString === '') return 0;
+  if (typeof lineString === 'number') return lineString;
+
+  const s = String(lineString).trim();
+  const sign = s.startsWith('-') ? -1 : 1;
+  const rest = s.replace(/^[+-]/, '');
+
+  // 标准亚洲盘口格式映射表（常见盘口值）
+  const asianMap = {
+    // 四分之一球
+    '0/0.5': 0.25, '0-0.5': 0.25,
+    // 三分之四球
+    '0.5/1': 0.75, '0.5-1': 0.75,
+    // 一又四分之一球
+    '1/1.5': 1.25, '1-1.5': 1.25,
+    // 一又四分之三球
+    '1.5/2': 1.75, '1.5-2': 1.75,
+    // 二又四分之一球
+    '2/2.5': 2.25, '2-2.5': 2.25,
+    // 二又四分之三球
+    '2.5/3': 2.75, '2.5-3': 2.75,
+    // 负向盘口
+    '-0/0.5': -0.25, '-0-0.5': -0.25,
+    '-0.5/1': -0.75, '-0.5-1': -0.75,
+    '-1/1.5': -1.25, '-1-1.5': -1.25,
+  };
+
+  // 查找映射表
+  if (asianMap.hasOwnProperty(rest)) return asianMap[rest];
+  if (asianMap.hasOwnProperty(s)) return asianMap[s];
+
+  // fallback: 使用现有 parseAsianHandicap 处理其他格式
+  return parseAsianHandicap(lineString);
+}

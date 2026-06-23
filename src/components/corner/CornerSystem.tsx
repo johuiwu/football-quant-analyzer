@@ -155,14 +155,14 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
         id: s.id === 'strat_1' ? 1 : s.id === 'strat_2' ? 2 : s.id === 'strat_3' ? 3 : s.id === 'strat_4' ? 4 : 5,
         enabled: s.isActive ?? false,
         name: s.name,
-        playTimeStart: plan.minMin ?? s.minMin ?? 35,
-        playTimeEnd: plan.maxMin ?? s.maxMin ?? 55,
+        minute_min: plan.minMin ?? s.minMin ?? 35,
+        minute_max: plan.maxMin ?? s.maxMin ?? 55,
         leadGoals: plan.leadGoalsOpponent ?? 99,
         leadGoalsWeak: plan.weakLeadGoalsStrong ?? (plan.noStrengthLeadGoalsOpponent ?? 0),
-        cornerHandicapLower: plan.minHandicap ?? s.handicapLine ?? 0,
-        cornerHandicapUpper: plan.maxHandicap != null ? plan.maxHandicap : ((plan.minHandicap ?? s.handicapLine ?? 0) + 3),
-        targetOdds: plan.minOdds ?? 0.8,
-        betDirection: s.betDirection ?? (s.type === 'spread' ? 'home' : 'over')
+        line_min: plan.minHandicap ?? s.handicapLine ?? 0,
+        line_max: plan.maxHandicap != null ? plan.maxHandicap : ((plan.minHandicap ?? s.handicapLine ?? 0) + 3),
+        odds_min: plan.minOdds ?? 0.8,
+        direction: s.direction ?? (s.type === 'spread' ? 'Home' : 'Over')
       };
     });
   };
@@ -414,17 +414,17 @@ export default function CornerSystem({ teams }: CornerSystemProps) {
       const storeStrategies = useCornerStore.getState().strategies;
       if (storeStrategies && storeStrategies.length > 0) {
         for (const s of storeStrategies) {
-          if (s.id === 1) setPlan1(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, leadGoalsOpponent: s.leadGoals, weakLeadGoalsStrong: s.leadGoalsWeak }));
-          if (s.id === 2) setPlan2(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, leadGoalsOpponent: s.leadGoals, weakLeadGoalsStrong: s.leadGoalsWeak }));
-          if (s.id === 3) setPlan3(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, maxDraws: s.leadGoals }));
-          if (s.id === 4) setPlan4(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, noStrengthLeadGoalsOpponent: s.leadGoals }));
-          if (s.id === 5) setPlan5(p => ({ ...p, minMin: s.playTimeStart, maxMin: s.playTimeEnd, minOdds: s.targetOdds, minHandicap: s.cornerHandicapLower, maxHandicap: s.cornerHandicapUpper, noStrengthLeadGoalsOpponent: s.leadGoals }));
+          if (s.id === 1) setPlan1(p => ({ ...p, minMin: s.minute_min, maxMin: s.minute_max, minOdds: s.odds_min, minHandicap: s.line_min, maxHandicap: s.line_max, leadGoalsOpponent: s.leadGoals, weakLeadGoalsStrong: s.leadGoalsWeak }));
+          if (s.id === 2) setPlan2(p => ({ ...p, minMin: s.minute_min, maxMin: s.minute_max, minOdds: s.odds_min, minHandicap: s.line_min, maxHandicap: s.line_max, leadGoalsOpponent: s.leadGoals, weakLeadGoalsStrong: s.leadGoalsWeak }));
+          if (s.id === 3) setPlan3(p => ({ ...p, minMin: s.minute_min, maxMin: s.minute_max, minOdds: s.odds_min, minHandicap: s.line_min, maxHandicap: s.line_max, maxDraws: s.leadGoals }));
+          if (s.id === 4) setPlan4(p => ({ ...p, minMin: s.minute_min, maxMin: s.minute_max, minOdds: s.odds_min, minHandicap: s.line_min, maxHandicap: s.line_max, noStrengthLeadGoalsOpponent: s.leadGoals }));
+          if (s.id === 5) setPlan5(p => ({ ...p, minMin: s.minute_min, maxMin: s.minute_max, minOdds: s.odds_min, minHandicap: s.line_min, maxHandicap: s.line_max, noStrengthLeadGoalsOpponent: s.leadGoals }));
         }
         // 同步 strategies state 的 isActive 和 betDirection 状态
         setStrategies(prev => prev.map(s => {
           const backendId = s.id === 'strat_1' ? 1 : s.id === 'strat_2' ? 2 : s.id === 'strat_3' ? 3 : s.id === 'strat_4' ? 4 : 5;
           const storeStrat = storeStrategies.find(ss => ss.id === backendId);
-          if (storeStrat) return { ...s, isActive: storeStrat.enabled, betDirection: storeStrat.betDirection };
+          if (storeStrat) return { ...s, isActive: storeStrat.enabled, direction: storeStrat.direction };
           return s;
         }));
         // ★ 初始化时：若 cornerStore 策略全部禁用（首次加载/后端重启），推送 CornerSystem 本地默认策略到后端

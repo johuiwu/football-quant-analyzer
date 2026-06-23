@@ -8,18 +8,34 @@ export interface CornerStrategy {
   id: number;
   name: string;
   enabled: boolean;
-  playTimeStart: number;
-  playTimeEnd: number;
+  /** 市场类型：大小球/让球/下一个角球/自动 */
+  market_type: "over_under" | "handicap" | "next_corner" | "auto";
+  /** 时间窗口起始（分钟） */
+  minute_min: number;
+  /** 时间窗口结束（分钟） */
+  minute_max: number;
+  /** 领先球数上限（≥20为哨兵值，不限制比分） */
   leadGoals: number;
+  /** 弱队领先球数下限 */
   leadGoalsWeak: number;
-  cornerHandicapLower: number;
-  cornerHandicapUpper: number;
-  targetOdds: number;
-  maxOdds: number;
-  betDirection: "over" | "under" | "home" | "away" | "auto";
-  minCurrentCorners: number;
-  maxCurrentCorners: number;
+  /** 盘口归一化后的区间下限 */
+  line_min: number;
+  /** 盘口归一化后的区间上限 */
+  line_max: number;
+  /** 赔率过滤区间下限 */
+  odds_min: number;
+  /** 赔率过滤区间上限 */
+  odds_max: number;
+  /** 当前总角球数过滤范围下限 */
+  corner_min: number;
+  /** 当前总角球数过滤范围上限 */
+  corner_max: number;
+  /** 投注方向 */
+  direction: "Over" | "Under" | "Home" | "Away" | "Auto";
+  /** 领先方身份 */
   leadSide: "any" | "strong" | "weak";
+  /** AI评分过滤器开关 */
+  aiFilterEnabled: boolean;
 }
 
 /** 盘口条目 */
@@ -165,120 +181,134 @@ const DEFAULT_STRATEGIES: CornerStrategy[] = [
     id: 1,
     name: "策略一 · 走地角球(35'-55')",
     enabled: false,
-    playTimeStart: 35,
-    playTimeEnd: 55,
-    leadGoals: 99, // >=20 sentinel: no score restriction
+    market_type: "over_under",
+    minute_min: 35,
+    minute_max: 55,
+    leadGoals: 99,
     leadGoalsWeak: 0,
-    cornerHandicapLower: -1.25,
-    cornerHandicapUpper: 2.5,
-    targetOdds: 0.8,
-    maxOdds: 1.10,
-    betDirection: "over",
-    minCurrentCorners: 3,
-    maxCurrentCorners: 7,
+    line_min: -1.25,
+    line_max: 2.5,
+    odds_min: 0.8,
+    odds_max: 1.10,
+    corner_min: 3,
+    corner_max: 7,
+    direction: "Over",
     leadSide: "any",
+    aiFilterEnabled: false,
   },
   {
     id: 2,
     name: "策略二 · 领先角球(50'-77')",
     enabled: false,
-    playTimeStart: 50,
-    playTimeEnd: 77,
+    market_type: "over_under",
+    minute_min: 50,
+    minute_max: 77,
     leadGoals: 3,
     leadGoalsWeak: 1,
-    cornerHandicapLower: -0.75,
-    cornerHandicapUpper: 2.5,
-    targetOdds: 0.8,
-    maxOdds: 1.30,
-    betDirection: "over",
-    minCurrentCorners: 0,
-    maxCurrentCorners: 99,
+    line_min: -0.75,
+    line_max: 2.5,
+    odds_min: 0.8,
+    odds_max: 1.30,
+    corner_min: 0,
+    corner_max: 99,
+    direction: "Over",
     leadSide: "strong",
+    aiFilterEnabled: false,
   },
   {
     id: 3,
     name: "策略三 · 平局角球(70'-99')",
     enabled: false,
-    playTimeStart: 70,
-    playTimeEnd: 99,
+    market_type: "over_under",
+    minute_min: 70,
+    minute_max: 99,
     leadGoals: 0,
     leadGoalsWeak: 0,
-    cornerHandicapLower: 0,
-    cornerHandicapUpper: 2.0,
-    targetOdds: 0.6,
-    maxOdds: 0.90,
-    betDirection: "under",
-    minCurrentCorners: 3,
-    maxCurrentCorners: 9,
+    line_min: 0,
+    line_max: 2.0,
+    odds_min: 0.6,
+    odds_max: 0.90,
+    corner_min: 3,
+    corner_max: 9,
+    direction: "Under",
     leadSide: "any",
+    aiFilterEnabled: false,
   },
   {
     id: 4,
     name: "策略四 · 领先追角(60'-99')",
     enabled: false,
-    playTimeStart: 60,
-    playTimeEnd: 99,
+    market_type: "over_under",
+    minute_min: 60,
+    minute_max: 99,
     leadGoals: 2,
     leadGoalsWeak: 1,
-    cornerHandicapLower: 0,
-    cornerHandicapUpper: 2.5,
-    targetOdds: 0.8,
-    maxOdds: 1.30,
-    betDirection: "over",
-    minCurrentCorners: 0,
-    maxCurrentCorners: 99,
+    line_min: 0,
+    line_max: 2.5,
+    odds_min: 0.8,
+    odds_max: 1.30,
+    corner_min: 0,
+    corner_max: 99,
+    direction: "Over",
     leadSide: "strong",
+    aiFilterEnabled: false,
   },
   {
     id: 5,
     name: "策略五 · 尾声角球(70'-99')",
     enabled: false,
-    playTimeStart: 70,
-    playTimeEnd: 99,
+    market_type: "over_under",
+    minute_min: 70,
+    minute_max: 99,
     leadGoals: 1,
     leadGoalsWeak: 1,
-    cornerHandicapLower: 0,
-    cornerHandicapUpper: 2.5,
-    targetOdds: 0.8,
-    maxOdds: 1.10,
-    betDirection: "over",
-    minCurrentCorners: 0,
-    maxCurrentCorners: 99,
+    line_min: 0,
+    line_max: 2.5,
+    odds_min: 0.8,
+    odds_max: 1.10,
+    corner_min: 0,
+    corner_max: 99,
+    direction: "Over",
     leadSide: "any",
+    aiFilterEnabled: false,
   },
   {
     id: 6,
     name: "策略六 · 逆风角球(55'-75')",
     enabled: false,
-    playTimeStart: 55,
-    playTimeEnd: 75,
+    market_type: "auto",
+    minute_min: 55,
+    minute_max: 75,
     leadGoals: 1,
     leadGoalsWeak: 1,
-    cornerHandicapLower: -0.5,
-    cornerHandicapUpper: 1.5,
-    targetOdds: 0.9,
-    maxOdds: 1.30,
-    betDirection: "over",
-    minCurrentCorners: 2,
-    maxCurrentCorners: 8,
+    line_min: -0.5,
+    line_max: 1.5,
+    odds_min: 0.9,
+    odds_max: 1.30,
+    corner_min: 2,
+    corner_max: 8,
+    direction: "Over",
     leadSide: "any",
+    aiFilterEnabled: false,
   },
   {
     id: 7,
     name: "策略七 · 均值回归(60'-80')",
     enabled: false,
-    playTimeStart: 60,
-    playTimeEnd: 80,
+    market_type: "auto",
+    minute_min: 60,
+    minute_max: 80,
     leadGoals: 99,
     leadGoalsWeak: 0,
-    cornerHandicapLower: -0.5,
-    cornerHandicapUpper: 1.5,
-    targetOdds: 0.9,
-    maxOdds: 1.30,
-    betDirection: "over",
-    minCurrentCorners: 3,
-    maxCurrentCorners: 5,
+    line_min: -0.5,
+    line_max: 1.5,
+    odds_min: 0.9,
+    odds_max: 1.30,
+    corner_min: 3,
+    corner_max: 5,
+    direction: "Over",
     leadSide: "any",
+    aiFilterEnabled: false,
   },
 ];
 
