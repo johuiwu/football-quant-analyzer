@@ -188,7 +188,10 @@ export async function generatePendingBet(match, strategyId, actualOdds) {
 export async function executeAndRecordBet(match, strategyId, betDirection, actualOdds) {
   console.log("[角球投注] 二次确认关闭，进入自动执行流程...");
 
+  // [链路追踪] 节点6：投注执行（直接执行路径）
   const betTarget = buildBetTarget(betDirection, match.cornerHandicap || 0);
+  console.log(`[链路追踪] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${actualOdds}, 策略: ${strategyId}`);
+
   const matchId = match.matchId || "";
   const matchName = match.matchName || "";
   const sid = String(strategyId);

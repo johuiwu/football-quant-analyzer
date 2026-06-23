@@ -274,6 +274,8 @@ async function processAutoBetsForMatches(matches) {
           match.betTarget = buildBetTarget(betDir, normalizeHandicap(match.cornerHandicap || 0));
           const genResult = await generatePendingBet(match, sid, actualOdds);
           if (genResult.success && !genResult.skipped) {
+            // [链路追踪] 节点5：投注队列生成（二次确认开启路径）
+            console.log(`[链路追踪] 策略${sid} 触发成功！生成投注方向: ${betDir}, 市场类型: ${strategy?.market_type || 'auto'}, 盘口周期: ${strategy?.period || 'full'}, 赔率: ${actualOdds}`);
             betQueue.push({
               betId: genResult.id,
               historyId: null,
@@ -294,6 +296,9 @@ async function processAutoBetsForMatches(matches) {
             console.warn(`[cornerService] 策略${sid}触发但赔率为0，跳过直接执行投注, matchId=${match.matchId}`);
             continue;
           }
+          // [链路追踪] 节点5：投注队列生成（二次确认关闭路径）
+          const betDir = strategy?.direction || strategy?.betDirection || "Auto";
+          console.log(`[链路追踪] 策略${sid} 触发成功！生成投注方向: ${betDir}, 市场类型: ${strategy?.market_type || 'auto'}, 盘口周期: ${strategy?.period || 'full'}, 赔率: ${actualOdds}`);
           await executeAndRecordBet(match, sid, strategy?.direction || strategy?.betDirection || "Auto", actualOdds);
         }
       } catch (e) {
@@ -434,6 +439,13 @@ async function pollOnce() {
   }
 
   console.log("[cornerService] 轮询更新: " + matches.length + " 场比赛, mainMarkets: " + Object.keys(mainMarkets).length);
+  // [链路追踪] 节点1：数据解析
+  console.log(`[链路追踪] 轮询获取到 ${matches.length} 场比赛`);
+  if (matches.length > 0) {
+    const s = matches[0];
+    const hcpList = (s.handicaps || []).map(h => `${h.category} ${h.handicap ?? h.line ?? ''}`).join(', ');
+    console.log(`[链路追踪] 第一场比赛样例: ${s.homeTeam || '?'} vs ${s.awayTeam || '?'}, 当前角球: ${s.homeCorners ?? '?'}-${s.awayCorners ?? '?'}, 当前盘口: [${hcpList || '无'}]`);
+  }
   if (matches.length > 0 && !pollingFirstDone) {
     pollingFirstDone = true;
     console.log("[cornerService] 首次爬取完成，缓存已就绪");

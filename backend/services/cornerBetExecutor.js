@@ -92,6 +92,10 @@ async function handleBetPopups(page) {
 export async function executeBet(betData) {
   const { matchName, matchId, odds, amount, strategyId, betDirection = "auto", handicap } = betData;
 
+  // [链路追踪] 节点6：投注执行
+  const betTarget = `${betDirection} ${handicap ?? ''}`.trim();
+  console.log(`[链路追踪] 投递投注请求... 目标盘口: ${betTarget}, 方向: ${betDirection}, 赔率: ${odds}, 策略: ${strategyId}`);
+
   // 1. 检查登录状态
   if (!isLoggedIn()) {
     console.error("[BetExecutor] 未登录，无法执行投注");

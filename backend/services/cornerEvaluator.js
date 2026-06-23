@@ -276,6 +276,12 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const matchHandicaps = match.handicaps || [];
   const filteredMarkets = filterMarketsByType(matchHandicaps, marketType, strategyPeriod);
 
+  // [链路追踪] 节点2：盘口类型过滤
+  if (filteredMarkets.length > 0) {
+    const filteredTypes = filteredMarkets.map(m => `${m.category}${m.period && m.period !== 'full' ? '(' + m.period + ')' : ''}`).join(', ');
+    console.log(`[链路追踪] 策略${strategy.id} 市场类型=${marketType}, period=${strategyPeriod}, 保留盘口: [${filteredTypes}]`);
+  }
+
   // 如果策略指定了特定市场类型但该类型盘口不存在，则不触发
   if (marketType !== 'auto' && filteredMarkets.length === 0 && matchHandicaps.length > 0) {
     console.log(`[流水线-2级] 策略${strategy.id} 盘口类型过滤未通过: market_type=${marketType}, 无匹配盘口`);
@@ -284,6 +290,11 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
 
   // ========== 第3级：盘口归一化 ==========
   const handicap = normalizeHandicap(rawHandicap);
+
+  // [链路追踪] 节点3：盘口归一化
+  if (String(rawHandicap) !== String(handicap)) {
+    console.log(`[链路追踪] 归一化转换: 原始盘口 "${rawHandicap}" -> 转换值 "${handicap}"`);
+  }
 
   // ========== 第4级：盘口区间过滤（next_corner 类型跳过） ==========
   const lineMin = strategy.line_min ?? strategy.cornerHandicapLower ?? -3;
@@ -332,7 +343,10 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const aiFilterEnabled = strategy.aiFilterEnabled ?? false;
   if (aiFilterEnabled) {
     const aiProb = quickAIProbability(match, strategy);
-    if (aiProb <= 60) {
+    const passed = aiProb > 60;
+    // [链路追踪] 节点4：AI评分过滤
+    console.log(`[链路追踪] 策略${strategy.id} AI计算概率: ${aiProb}%, 阈值: 60%. 判断结果: ${passed ? '通过' : '未通过'}`);
+    if (!passed) {
       console.log(`[AI评分过滤] 策略${strategy.id} AI概率${aiProb}%未达60%阈值, matchId=${match.matchId || ''}`);
       return false;
     }
