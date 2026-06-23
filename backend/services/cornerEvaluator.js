@@ -60,18 +60,19 @@ export function filterMarketsByType(handicaps, marketType) {
  * @returns {number} 0-100 的概率百分比
  */
 export function quickAIProbability(match, strategy) {
-  const homeCorners = match.homeCorners ?? 0;
-  const awayCorners = match.awayCorners ?? 0;
-  const totalCorners = homeCorners + awayCorners;
+  // 先解构 match 对象中的关键字段，避免引用错误
+  const { homeCorners = 0, awayCorners = 0, handicap } = match;
   const currentMinute = match.elapsedMinutes ?? match.currentMinute ?? match.elapsed_minutes ?? 0;
+
+  const totalCorners = homeCorners + awayCorners;
   const remainingMinutes = Math.max(0, 90 - currentMinute);
 
   // 平均每分钟0.15角球的简化假设
   const expectedRemaining = remainingMinutes * 0.15;
   const expectedTotal = totalCorners + expectedRemaining;
 
-  // 获取归一化后的盘口线
-  const rawHandicap = match.handicap ?? match.cornerHandicap ?? 0;
+  // 获取归一化后的盘口线（使用解构出来的 handicap，fallback 到 cornerHandicap）
+  const rawHandicap = handicap ?? match.cornerHandicap ?? 0;
   const line = normalizeHandicap(rawHandicap);
 
   // 简化概率计算：基于预期总角球与盘口线的对比
