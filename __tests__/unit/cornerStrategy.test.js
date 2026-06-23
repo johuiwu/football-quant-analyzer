@@ -246,11 +246,11 @@ describe('evaluateSingleStrategy - 7级流水线评估', () => {
     cornerHandicap: 1.5,
     handicap: 1.5,
     cornerOdds: 0.90,
-    cornerOU: { overOdds: 0.90, underOdds: 0.95, handicap: 1.5 },
+    cornerOU: { line: 9.5, overOdds: 0.90, underOdds: 0.95 },
     handicaps: [
-      { category: 'O/U', handicap: 1.5, overOdds: 0.90, underOdds: 0.95 },
-      { category: 'HDP', handicap: -0.5, homeOdds: 0.90, awayOdds: 1.00 },
-      { category: 'NEXT', overOdds: 1.20, underOdds: 0.70 },
+      { category: 'O/U', line: 9.5, odds: { over: 0.90, under: 0.95 }, period: 'full' },
+      { category: 'HDP', line: -0.5, odds: { home: 0.90, away: 1.00 }, period: 'full' },
+      { category: 'NEXT', homeOdds: 1.20, underOdds: 0.70, period: 'full' },
     ],
   };
 
@@ -263,8 +263,8 @@ describe('evaluateSingleStrategy - 7级流水线评估', () => {
     minute_max: 55,
     leadGoals: 99,
     leadGoalsWeak: 0,
-    line_min: -1.25,
-    line_max: 2.5,
+    line_min: 7.5,
+    line_max: 11.5,
     odds_min: 0.8,
     odds_max: 1.10,
     corner_min: 3,
@@ -293,7 +293,7 @@ describe('evaluateSingleStrategy - 7级流水线评估', () => {
   // --- 第2级：盘口类型过滤 ---
   it('第2级-market_type=over_under 但无 O/U 盘口应返回 false', () => {
     const match = { ...baseMatch, handicaps: [
-      { category: 'HDP', handicap: -0.5, homeOdds: 0.90, awayOdds: 1.00 },
+      { category: 'HDP', line: -0.5, odds: { home: 0.90, away: 1.00 }, period: 'full' },
     ]};
     expect(evaluateSingleStrategy(match, { ...baseStrategy, market_type: 'over_under' }, globalSettings)).toBe(false);
   });

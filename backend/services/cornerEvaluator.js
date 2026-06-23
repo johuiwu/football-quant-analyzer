@@ -295,27 +295,54 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   if (String(rawHandicap) !== String(handicap)) {
     console.log(`[链路追踪] 归一化转换: 原始盘口 "${rawHandicap}" -> 转换值 "${handicap}"`);
   }
+  // 检查 filteredMarkets 中的 line 值是否被归一化
+  for (const fm of filteredMarkets) {
+    const rawLine = fm.line;
+    const normalizedLine = normalizeHandicap(rawLine);
+    if (String(rawLine) !== String(normalizedLine)) {
+      console.log(`[链路追踪] 归一化转换: 盘口line "${rawLine}"(${fm.category}) -> 转换值 "${normalizedLine}"`);
+    }
+  }
 
   // ========== 第4级：盘口区间过滤（next_corner 类型跳过） ==========
   const lineMin = strategy.line_min ?? strategy.cornerHandicapLower ?? -3;
   const lineMax = strategy.line_max ?? strategy.cornerHandicapUpper ?? 5;
 
   if (marketType !== 'next_corner') {
+    // ★ 修复：根据 market_type 从 filteredMarkets 中提取对应盘口的 line 值
+    // over_under → 使用 cornerOU.line（大小球盘口线，如 9.5）
+    // handicap → 使用 cornerHDP.line（让球盘口值，如 0.75）
+    // auto → fallback 到 match.handicap
+    let effectiveLine;
+    if (filteredMarkets.length > 0) {
+      const targetMarket = filteredMarkets[0];
+      // ★ 直接传入 line 值给 normalizeHandicap，保留字符串格式（如 "0/0.5"→0.25）
+      effectiveLine = normalizeHandicap(targetMarket.line);
+    } else if (marketType === 'over_under' && match.cornerOU) {
+      effectiveLine = normalizeHandicap(match.cornerOU.line);
+    } else if (marketType === 'handicap' && match.cornerHDP) {
+      effectiveLine = normalizeHandicap(match.cornerHDP.line);
+    } else {
+      effectiveLine = handicap; // fallback
+    }
+
     // 方向感知：direction=Auto 时使用绝对值比较，否则使用原始值
     const rawDir = strategy.direction || strategy.betDirection || "Auto";
     const dirLower = rawDir.toLowerCase();
+    let linePassed = false;
     if (dirLower === "auto" || dirLower == null) {
-      const absHcp = Math.abs(handicap);
-      if (absHcp < lineMin || absHcp > lineMax) {
-        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: |${handicap}| 不在 ${lineMin}~${lineMax} 范围内`);
-        return false;
+      const absLine = Math.abs(effectiveLine);
+      linePassed = absLine >= lineMin && absLine <= lineMax;
+      if (!linePassed) {
+        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: |${effectiveLine}|(${marketType}) 不在 ${lineMin}~${lineMax} 范围内`);
       }
     } else {
-      if (handicap < lineMin || handicap > lineMax) {
-        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: ${handicap} 不在 ${lineMin}~${lineMax} 范围内`);
-        return false;
+      linePassed = effectiveLine >= lineMin && effectiveLine <= lineMax;
+      if (!linePassed) {
+        console.log(`[流水线-4级] 策略${strategy.id} 盘口区间过滤未通过: ${effectiveLine}(${marketType}) 不在 ${lineMin}~${lineMax} 范围内`);
       }
     }
+    if (!linePassed) return false;
   } else {
     console.log(`[流水线-4级] 策略${strategy.id} next_corner类型，跳过盘口区间过滤`);
   }
