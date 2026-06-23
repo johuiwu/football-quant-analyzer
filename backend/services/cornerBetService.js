@@ -40,6 +40,7 @@ const RETRY_DELAY_MS = 10000;
 export function getMaxBetAmount() { return MAX_BET_AMOUNT; }
 
 export function buildBetTarget(betDirection, handicap) {
+  betDirection = (betDirection || 'auto').toLowerCase();
   const h = handicap != null ? handicap : "";
   switch (betDirection) {
     case "over": return "大 " + h;

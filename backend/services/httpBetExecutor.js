@@ -555,6 +555,7 @@ export async function executeBetViaHttp(betData) {
  * @returns {{ wtype: string, choseTeam: string }}
  */
 function resolveBetDirection(direction, handicap, match) {
+  direction = (direction || 'auto').toLowerCase();
   switch (direction) {
     case "over":
       return { wtype: "ROU", choseTeam: "O" };
