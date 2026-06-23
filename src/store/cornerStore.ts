@@ -640,7 +640,37 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
           existingKeys.add(teamKey.toLowerCase());
           existingIds.add(String(m.matchId || ""));
 
-          const mm = (mainMarkets as any)[String(m.matchId || "")] || (mainMarkets as any)[teamKey];
+          // ★ 多策略匹配 mainMarkets：matchId → teamKey → teamKey.toLowerCase → 模糊匹配
+          let mm = (mainMarkets as any)[String(m.matchId || "")]
+            || (mainMarkets as any)[teamKey]
+            || (mainMarkets as any)[teamKey.toLowerCase()];
+
+          // fallback: 遍历 mainMarkets key 做大小写不敏感匹配
+          if (!mm) {
+            const lKey = teamKey.toLowerCase();
+            for (const [mk, mv] of Object.entries(mainMarkets as any)) {
+              if (mk.toLowerCase() === lKey) { mm = mv; break; }
+            }
+          }
+
+          // fallback: 用队名包含关系匹配（处理翻译/缩写差异）
+          if (!mm && m.homeTeam && m.awayTeam) {
+            const hLower = m.homeTeam.toLowerCase();
+            const aLower = m.awayTeam.toLowerCase();
+            for (const [mk, mv] of Object.entries(mainMarkets as any)) {
+              const sepIdx = mk.indexOf("|");
+              if (sepIdx < 1) continue;
+              const mkHome = mk.substring(0, sepIdx).toLowerCase();
+              const mkAway = mk.substring(sepIdx + 1).toLowerCase();
+              // 双向包含：任一方队名包含对方 或 被对方包含
+              if ((hLower.includes(mkHome) || mkHome.includes(hLower)) &&
+                  (aLower.includes(mkAway) || mkAway.includes(aLower))) {
+                mm = mv;
+                break;
+              }
+            }
+          }
+
           if (!mm) continue;
 
           const extraHandicaps: any[] = [];
