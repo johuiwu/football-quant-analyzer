@@ -29,7 +29,7 @@ export default defineConfig(() => {
         : false,
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? undefined : {
-        ignored: ['**/debug/**', '**/debug-*', '**/debug_*']
+        ignored: ['**/debug/**', '**/debug-*', '**/debug_*', '**/src/data/worldcup_team_stats.json', '**/src/data/worldcup_standings.json']
       },
       // API 代理配置：将 /api 请求转发到后端服务器
       proxy: {
