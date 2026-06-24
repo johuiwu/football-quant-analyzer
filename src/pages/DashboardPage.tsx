@@ -151,17 +151,27 @@ export default function DashboardPage() {
 
   // Arbitrated direction derived values (extracted from IIFE for stable rendering)
   const arbitratedDecision = useMemo(() => {
-    if (!results?.aggregatedDecision) return { direction: undefined, confidence: undefined, modelDirection: undefined };
+    if (!results?.aggregatedDecision) return { direction: undefined, confidence: undefined, modelDirection: undefined, coverProbability: undefined, arbitrationMode: undefined, flipReason: undefined };
     const effectiveDirection = liveResults && liveMatchState.isLive
       ? (liveResults.liveHomeWin > liveResults.liveAwayWin && liveResults.liveHomeWin > liveResults.liveDraw ? 'HOME_WIN' as const
          : liveResults.liveAwayWin > liveResults.liveHomeWin && liveResults.liveAwayWin > liveResults.liveDraw ? 'AWAY_WIN' as const
          : 'DRAW' as const)
       : results.aggregatedDecision.direction;
-    const arbitrated = calculateFinalDirection(effectiveDirection, asianHandicap.handicap, results.expectedHomeGoals - results.expectedAwayGoals);
+    const arbitrated = calculateFinalDirection(
+      effectiveDirection,
+      asianHandicap.handicap,
+      results.expectedHomeGoals - results.expectedAwayGoals,
+      results.dixonColesGrid,
+      results.normFactor
+    );
+    console.log('[仲裁调试] 传入的 coverProbability:', arbitrated.coverProbability);
     return {
       direction: arbitrated?.direction,
       confidence: arbitrated ? results.aggregatedDecision?.confidence : undefined,
       modelDirection: results.aggregatedDecision?.direction,
+      coverProbability: arbitrated?.coverProbability,
+      arbitrationMode: arbitrated?.arbitrationMode,
+      flipReason: arbitrated?.flipReason,
     };
   }, [results, liveResults, liveMatchState.isLive, asianHandicap.handicap]);
 
