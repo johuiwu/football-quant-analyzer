@@ -240,110 +240,29 @@ export async function fetchMatchResults() {
 
     await page.goto(RESULTS_URL, { waitUntil: 'networkidle2', timeout: TIMEOUT });
 
-    // Parse match results from the page DOM
+    // 从 __NEXT_DATA__ JSON 中提取赛果数据（最可靠的方式）
     const matches = await page.evaluate(() => {
       const results = [];
+      const nextDataEl = document.getElementById('__NEXT_DATA__');
+      if (!nextDataEl) return results;
 
-      // LiveScore results page uses data-id attributes for match rows
-      // Match rows typically contain: home team name, score, away team name, date/time
-      // Try multiple selectors to handle different page layouts
-
-      // Strategy 1: Look for match row elements with data-id starting with "match-" or similar
-      const matchElements = document.querySelectorAll('[data-id^="match-"], [data-testid^="match-"], div[class*="MatchRow"], div[class*="match-row"], div[class*="SoccerMatch"]');
-
-      matchElements.forEach(el => {
-        try {
-          // Try to extract team names and scores from the match element
-          // LiveScore typically has home/away team names and score in specific elements
-          const homeEl = el.querySelector('[data-id="home"], [class*="home"], [class*="Home"]');
-          const awayEl = el.querySelector('[data-id="away"], [class*="away"], [class*="Away"]');
-          const scoreEl = el.querySelector('[data-id="score"], [class*="score"], [class*="Score"]');
-
-          if (homeEl && awayEl && scoreEl) {
-            const homeName = homeEl.textContent.trim();
-            const awayName = awayEl.textContent.trim();
-            const scoreText = scoreEl.textContent.trim();
-            const scoreMatch = scoreText.match(/(\d+)\s*[-:]\s*(\d+)/);
-            if (scoreMatch) {
+      try {
+        const data = JSON.parse(nextDataEl.textContent);
+        const sections = data?.props?.pageProps?.initialData?.sections || [];
+        for (const section of sections) {
+          for (const event of section.events || []) {
+            if (event.homeTeamScore != null && event.awayTeamScore != null) {
               results.push({
-                homeName,
-                awayName,
-                homeScore: parseInt(scoreMatch[1], 10),
-                awayScore: parseInt(scoreMatch[2], 10),
+                homeName: event.homeTeamName,
+                awayName: event.awayTeamName,
+                homeScore: parseInt(event.homeTeamScore, 10),
+                awayScore: parseInt(event.awayTeamScore, 10),
               });
             }
           }
-        } catch (e) {
-          // Skip this element on error
         }
-      });
-
-      // Strategy 2: If Strategy 1 didn't find matches, try a broader approach
-      // Look for elements that contain score-like patterns (e.g., "2 - 1" or "2:1")
-      if (results.length === 0) {
-        // Find all elements that look like score containers
-        const allElements = document.querySelectorAll('div, span, a');
-        const scorePattern = /^(\d+)\s*[-:]\s*(\d+)$/;
-
-        allElements.forEach(el => {
-          const text = el.textContent.trim();
-          const match = text.match(scorePattern);
-          if (match && el.children.length === 0) {
-            // This element contains just a score like "2 - 1"
-            // Try to find team names in sibling/parent elements
-            const parent = el.closest('[class*="match"], [class*="Match"], [class*="row"], [class*="Row"]');
-            if (!parent) return;
-
-            // Look for team name elements near this score
-            const prevSibling = el.previousElementSibling;
-            const nextSibling = el.nextElementSibling;
-
-            if (prevSibling && nextSibling) {
-              const homeName = prevSibling.textContent.trim();
-              const awayName = nextSibling.textContent.trim();
-              // Only add if names are reasonable (not too long, not numbers)
-              if (homeName.length > 1 && awayName.length > 1 &&
-                  !/^\d+$/.test(homeName) && !/^\d+$/.test(awayName) &&
-                  homeName.length < 40 && awayName.length < 40) {
-                results.push({
-                  homeName,
-                  awayName,
-                  homeScore: parseInt(match[1], 10),
-                  awayScore: parseInt(match[2], 10),
-                });
-              }
-            }
-          }
-        });
-      }
-
-      // Strategy 3: Last resort - look for structured match data in the page
-      if (results.length === 0) {
-        // Try to find __NEXT_DATA__ or similar JSON embedded in the page
-        const nextDataScript = document.querySelector('#__NEXT_DATA__');
-        if (nextDataScript) {
-          try {
-            const jsonData = JSON.parse(nextDataScript.textContent);
-            // Navigate the JSON structure to find match results
-            // This is highly dependent on the page structure
-            const props = jsonData?.props?.pageProps;
-            if (props?.matches || props?.results || props?.fixtures) {
-              const matchList = props.matches || props.results || props.fixtures;
-              for (const m of matchList) {
-                if (m.homeTeam && m.awayTeam && m.homeScore != null && m.awayScore != null) {
-                  results.push({
-                    homeName: m.homeTeam.name || m.homeTeam,
-                    awayName: m.awayTeam.name || m.awayTeam,
-                    homeScore: typeof m.homeScore === 'number' ? m.homeScore : parseInt(m.homeScore, 10),
-                    awayScore: typeof m.awayScore === 'number' ? m.awayScore : parseInt(m.awayScore, 10),
-                  });
-                }
-              }
-            }
-          } catch (e) {
-            // JSON parse failed, ignore
-          }
-        }
+      } catch (e) {
+        // JSON parse failed
       }
 
       return results;
@@ -352,7 +271,7 @@ export async function fetchMatchResults() {
     await browser.close();
     browser = null;
 
-    // Map results to system team IDs
+    // 将英文名映射为系统 teamId
     const resultMap = {};
     for (const m of matches) {
       const homeTeamId = LIVESCORE_TO_TEAM_ID[m.homeName];
@@ -360,8 +279,6 @@ export async function fetchMatchResults() {
       if (!homeTeamId || !awayTeamId) continue;
       if (isNaN(m.homeScore) || isNaN(m.awayScore)) continue;
 
-      // Use a generic key without date/time since the results page may not have exact times
-      // The matching will be done by team IDs
       const key = `${homeTeamId}_${awayTeamId}`;
       resultMap[key] = { homeScore: m.homeScore, awayScore: m.awayScore };
     }
