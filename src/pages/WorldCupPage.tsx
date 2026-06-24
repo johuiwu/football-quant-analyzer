@@ -44,7 +44,7 @@ const FILTERS: { key: ScheduleFilter; label: string }[] = [
 
 function ScheduleTab() {
   const fixtures = useWorldCupStore((s) => s.fixtures);
-  const [scheduleData, setScheduleData] = useState<Record<string, { completed: boolean; stats: any }>>({});
+  const [scheduleData, setScheduleData] = useState<Record<string, { completed: boolean; stats: any; homeScore?: number | null; awayScore?: number | null; scoreType?: string | null }>>({});
   const [dateFilter, setDateFilter] = useState<ScheduleFilter>('all');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -54,9 +54,9 @@ function ScheduleTab() {
       const res = await fetch('/api/worldcup/schedule-scores');
       const data = await res.json();
       if (data.success && data.fixtures) {
-        const map: Record<string, { completed: boolean; stats: any }> = {};
+        const map: Record<string, { completed: boolean; stats: any; homeScore?: number | null; awayScore?: number | null; scoreType?: string | null }> = {};
         for (const f of data.fixtures) {
-          map[f.id] = { completed: f.completed, stats: f.stats };
+          map[f.id] = { completed: f.completed, stats: f.stats, homeScore: f.homeScore, awayScore: f.awayScore, scoreType: f.scoreType };
         }
         setScheduleData(map);
       }
@@ -152,6 +152,9 @@ function ScheduleTab() {
                 const info = scheduleData[fixture.id];
                 const completed = info?.completed ?? false;
                 const stats = info?.stats ?? null;
+                const homeScore = info?.homeScore ?? null;
+                const awayScore = info?.awayScore ?? null;
+                const scoreType = info?.scoreType ?? null;
 
                 return (
                   <div key={fixture.id} className={`bg-slate-900/50 border rounded-xl p-4 transition-colors ${completed ? 'border-emerald-800/40' : 'border-slate-800 hover:border-slate-700'}`}>
@@ -167,12 +170,16 @@ function ScheduleTab() {
                         <span className="text-sm font-medium text-slate-200 truncate">{homeName}</span>
                         <span className="text-lg">{homeFlag}</span>
                       </div>
-                      <div className={`text-xs font-bold shrink-0 ${completed ? 'text-amber-400 font-mono text-lg' : 'text-slate-400'}`}>
+                      <div className={`font-bold shrink-0 ${completed ? (homeScore != null ? 'text-2xl text-amber-400' : 'text-xs text-amber-400') : 'text-xs text-slate-400'}`}>
                         {completed ? (
-                          <span className="flex flex-col items-center">
-                            <span>{stats.home.goalsScored} - {stats.away.goalsScored}</span>
-                            <span className="text-[10px] text-slate-500 font-normal">({stats.home.goalsScored + stats.away.goalsScored}球)</span>
-                          </span>
+                          homeScore != null && awayScore != null ? (
+                            <span className="font-mono">{homeScore} - {awayScore}</span>
+                          ) : (
+                            <span className="flex flex-col items-center">
+                              <span className="text-[10px] font-normal text-slate-500">赛事累计进球</span>
+                              <span className="font-mono">{stats.home.goalsScored} - {stats.away.goalsScored}</span>
+                            </span>
+                          )
                         ) : isTbd ? (
                           <span className="text-slate-600">TBD</span>
                         ) : (
@@ -184,10 +191,11 @@ function ScheduleTab() {
                         <span className="text-sm font-medium text-slate-200 truncate">{awayName}</span>
                       </div>
                     </div>
-                    {completed && (
+                    {completed && scoreType === 'cumulative' && (stats.home.played > 0 || stats.away.played > 0) && (
                       <div className="mt-2 text-[10px] text-slate-500 text-center">
-                        场均 {stats.home.goalsScored > 0 || stats.home.goalsConceded > 0 ? `主${(stats.home.goalsScored / stats.home.played).toFixed(1)}球/场` : ''}
-                        {stats.away.goalsScored > 0 || stats.away.goalsConceded > 0 ? ` 客${(stats.away.goalsScored / stats.away.played).toFixed(1)}球/场` : ''}
+                        {stats.home.played > 0 ? `主${(stats.home.goalsScored / stats.home.played).toFixed(1)}球/场(${stats.home.played}场)` : ''}
+                        {stats.home.played > 0 && stats.away.played > 0 ? ' · ' : ''}
+                        {stats.away.played > 0 ? `客${(stats.away.goalsScored / stats.away.played).toFixed(1)}球/场(${stats.away.played}场)` : ''}
                       </div>
                     )}
                   </div>
