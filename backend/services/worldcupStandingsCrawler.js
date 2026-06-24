@@ -195,3 +195,192 @@ export async function fetchStandings() {
     return { success: false, error: error.message };
   }
 }
+
+const RESULTS_URL = 'https://www.livescore.com/en/football/international/world-cup-2026/results/';
+const RESULTS_CACHE = { data: null, time: 0 };
+const RESULTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * 爬取 livescore 赛果页面，提取每场比赛的单场比分
+ * @returns {Promise<Record<string, { homeScore: number, awayScore: number }> | null>}
+ *   key 格式: 日期_时间_主队teamId_客队teamId (e.g., "2026-06-12_03:00_moxige_nanfei")
+ *   Returns null if crawling fails
+ */
+export async function fetchMatchResults() {
+  // Check cache first
+  if (RESULTS_CACHE.data && Date.now() - RESULTS_CACHE.time < RESULTS_CACHE_TTL) {
+    return RESULTS_CACHE.data;
+  }
+
+  let browser = null;
+  try {
+    const args = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--ignore-certificate-errors',
+    ];
+
+    if (process.env.PUPPETEER_PROXY) {
+      args.push(`--proxy-server=${process.env.PUPPETEER_PROXY}`);
+      args.push('--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost');
+    }
+
+    const headless = process.env.CRAWLER_HEADLESS === 'false' ? false : 'new';
+    const browserPath = detectLocalBrowser();
+    if (!browserPath) {
+      console.warn('[worldcupStandingsCrawler] No browser detected, cannot fetch match results');
+      return null;
+    }
+
+    browser = await puppeteer.launch({ headless, executablePath: browserPath, args });
+
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    await page.goto(RESULTS_URL, { waitUntil: 'networkidle2', timeout: TIMEOUT });
+
+    // Parse match results from the page DOM
+    const matches = await page.evaluate(() => {
+      const results = [];
+
+      // LiveScore results page uses data-id attributes for match rows
+      // Match rows typically contain: home team name, score, away team name, date/time
+      // Try multiple selectors to handle different page layouts
+
+      // Strategy 1: Look for match row elements with data-id starting with "match-" or similar
+      const matchElements = document.querySelectorAll('[data-id^="match-"], [data-testid^="match-"], div[class*="MatchRow"], div[class*="match-row"], div[class*="SoccerMatch"]');
+
+      matchElements.forEach(el => {
+        try {
+          // Try to extract team names and scores from the match element
+          // LiveScore typically has home/away team names and score in specific elements
+          const homeEl = el.querySelector('[data-id="home"], [class*="home"], [class*="Home"]');
+          const awayEl = el.querySelector('[data-id="away"], [class*="away"], [class*="Away"]');
+          const scoreEl = el.querySelector('[data-id="score"], [class*="score"], [class*="Score"]');
+
+          if (homeEl && awayEl && scoreEl) {
+            const homeName = homeEl.textContent.trim();
+            const awayName = awayEl.textContent.trim();
+            const scoreText = scoreEl.textContent.trim();
+            const scoreMatch = scoreText.match(/(\d+)\s*[-:]\s*(\d+)/);
+            if (scoreMatch) {
+              results.push({
+                homeName,
+                awayName,
+                homeScore: parseInt(scoreMatch[1], 10),
+                awayScore: parseInt(scoreMatch[2], 10),
+              });
+            }
+          }
+        } catch (e) {
+          // Skip this element on error
+        }
+      });
+
+      // Strategy 2: If Strategy 1 didn't find matches, try a broader approach
+      // Look for elements that contain score-like patterns (e.g., "2 - 1" or "2:1")
+      if (results.length === 0) {
+        // Find all elements that look like score containers
+        const allElements = document.querySelectorAll('div, span, a');
+        const scorePattern = /^(\d+)\s*[-:]\s*(\d+)$/;
+
+        allElements.forEach(el => {
+          const text = el.textContent.trim();
+          const match = text.match(scorePattern);
+          if (match && el.children.length === 0) {
+            // This element contains just a score like "2 - 1"
+            // Try to find team names in sibling/parent elements
+            const parent = el.closest('[class*="match"], [class*="Match"], [class*="row"], [class*="Row"]');
+            if (!parent) return;
+
+            // Look for team name elements near this score
+            const prevSibling = el.previousElementSibling;
+            const nextSibling = el.nextElementSibling;
+
+            if (prevSibling && nextSibling) {
+              const homeName = prevSibling.textContent.trim();
+              const awayName = nextSibling.textContent.trim();
+              // Only add if names are reasonable (not too long, not numbers)
+              if (homeName.length > 1 && awayName.length > 1 &&
+                  !/^\d+$/.test(homeName) && !/^\d+$/.test(awayName) &&
+                  homeName.length < 40 && awayName.length < 40) {
+                results.push({
+                  homeName,
+                  awayName,
+                  homeScore: parseInt(match[1], 10),
+                  awayScore: parseInt(match[2], 10),
+                });
+              }
+            }
+          }
+        });
+      }
+
+      // Strategy 3: Last resort - look for structured match data in the page
+      if (results.length === 0) {
+        // Try to find __NEXT_DATA__ or similar JSON embedded in the page
+        const nextDataScript = document.querySelector('#__NEXT_DATA__');
+        if (nextDataScript) {
+          try {
+            const jsonData = JSON.parse(nextDataScript.textContent);
+            // Navigate the JSON structure to find match results
+            // This is highly dependent on the page structure
+            const props = jsonData?.props?.pageProps;
+            if (props?.matches || props?.results || props?.fixtures) {
+              const matchList = props.matches || props.results || props.fixtures;
+              for (const m of matchList) {
+                if (m.homeTeam && m.awayTeam && m.homeScore != null && m.awayScore != null) {
+                  results.push({
+                    homeName: m.homeTeam.name || m.homeTeam,
+                    awayName: m.awayTeam.name || m.awayTeam,
+                    homeScore: typeof m.homeScore === 'number' ? m.homeScore : parseInt(m.homeScore, 10),
+                    awayScore: typeof m.awayScore === 'number' ? m.awayScore : parseInt(m.awayScore, 10),
+                  });
+                }
+              }
+            }
+          } catch (e) {
+            // JSON parse failed, ignore
+          }
+        }
+      }
+
+      return results;
+    });
+
+    await browser.close();
+    browser = null;
+
+    // Map results to system team IDs
+    const resultMap = {};
+    for (const m of matches) {
+      const homeTeamId = LIVESCORE_TO_TEAM_ID[m.homeName];
+      const awayTeamId = LIVESCORE_TO_TEAM_ID[m.awayName];
+      if (!homeTeamId || !awayTeamId) continue;
+      if (isNaN(m.homeScore) || isNaN(m.awayScore)) continue;
+
+      // Use a generic key without date/time since the results page may not have exact times
+      // The matching will be done by team IDs
+      const key = `${homeTeamId}_${awayTeamId}`;
+      resultMap[key] = { homeScore: m.homeScore, awayScore: m.awayScore };
+    }
+
+    if (Object.keys(resultMap).length > 0) {
+      RESULTS_CACHE.data = resultMap;
+      RESULTS_CACHE.time = Date.now();
+      console.log(`[worldcupStandingsCrawler] Fetched ${Object.keys(resultMap).length} match results from LiveScore`);
+      return resultMap;
+    }
+
+    console.warn('[worldcupStandingsCrawler] No match results extracted from LiveScore results page');
+    return null;
+
+  } catch (error) {
+    if (browser) {
+      try { await browser.close(); } catch {}
+    }
+    console.warn('[worldcupStandingsCrawler] fetchMatchResults failed:', error.message);
+    return null;
+  }
+}
