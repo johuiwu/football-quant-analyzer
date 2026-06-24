@@ -35,12 +35,16 @@ interface Props {
   arbitratedDirection?: MatchDirection;
   arbitratedConfidence?: number;
   arbitratedModelDirection?: MatchDirection;
+  // 概率仲裁扩展字段
+  arbitratedCoverProbability?: number;
+  arbitratedMode?: string;
+  arbitratedFlipReason?: string;
   // 实时贝叶斯更新结果（由 DashboardPage 传入）
   liveResults?: { liveHomeWin: number; liveDraw: number; liveAwayWin: number };
   isLiveActive?: boolean;
 }
 
-export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap, homeTeam: propsHomeTeam, awayTeam: propsAwayTeam, payoutRate, riskRating, compHomeWin, compDraw, compAwayWin, recommendedReason, upsetLevel, coldUpsetAlert, zScoreHome, zScoreAway, arbitratedDirection, arbitratedConfidence, arbitratedModelDirection, liveResults, isLiveActive }: Props) {
+export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, awayTeamName, handicap, homeTeam: propsHomeTeam, awayTeam: propsAwayTeam, payoutRate, riskRating, compHomeWin, compDraw, compAwayWin, recommendedReason, upsetLevel, coldUpsetAlert, zScoreHome, zScoreAway, arbitratedDirection, arbitratedConfidence, arbitratedModelDirection, arbitratedCoverProbability, arbitratedMode, arbitratedFlipReason, liveResults, isLiveActive }: Props) {
   const liveMatch = useAppStore((s) => s.liveMatch);
 
   // 直接从 Zustand Store 获取最新球队数据，确保 Understat 字段实时更新
@@ -278,6 +282,16 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
                   （基于亚盘 {(handicap ?? 0) > 0 ? '客让' : '让'} {Math.abs(handicap ?? 0)} 球优化）
                 </span>
               )}
+              {arbitratedCoverProbability !== undefined && arbitratedCoverProbability >= 0 && (
+                <span className="text-xs text-cyan-400 self-center">
+                  盘口覆盖概率：{(arbitratedCoverProbability * 100).toFixed(0)}%
+                </span>
+              )}
+              {arbitratedMode && (
+                <span className={`text-xs self-center ${arbitratedMode === 'PROBABILISTIC' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  {arbitratedMode === 'PROBABILISTIC' ? '概率仲裁' : '阈值仲裁'}
+                </span>
+              )}
             </div>
 
             {/* 大小球推荐（独立维度） */}
@@ -362,6 +376,11 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
         <div className="flex flex-col gap-3 mt-2 text-sm text-slate-400">
           {recommendedReason && (
             <p className="leading-relaxed">{recommendedReason}</p>
+          )}
+
+          {/* 仲裁翻转原因 */}
+          {arbitratedFlipReason && (
+            <p className="text-xs text-slate-500">{arbitratedFlipReason}</p>
           )}
 
           {/* 冷门预警 / 数据积累中 */}

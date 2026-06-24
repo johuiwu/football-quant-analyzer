@@ -1131,6 +1131,9 @@ export default function DashboardPage() {
                     arbitratedDirection={arbitratedDecision.direction}
                     arbitratedConfidence={arbitratedDecision.confidence}
                     arbitratedModelDirection={arbitratedDecision.modelDirection}
+                    arbitratedCoverProbability={arbitratedDecision.coverProbability}
+                    arbitratedMode={arbitratedDecision.arbitrationMode}
+                    arbitratedFlipReason={arbitratedDecision.flipReason}
                     liveResults={liveResults ? { liveHomeWin: liveResults.liveHomeWin, liveDraw: liveResults.liveDraw, liveAwayWin: liveResults.liveAwayWin } : undefined}
                     isLiveActive={!!(liveResults && liveMatchState.isLive)}
                   />
