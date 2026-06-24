@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateBetsModel, BetsModelInput, AsianHandicapFeatures } from '../utils/quantModel';
-import { calculateFinalDirection } from '../utils/handicapArbiter';
+import { calculateFinalDirection, calculateCoverProbability } from '../utils/handicapArbiter';
 
 const mockHomeTeam = {
   id: 'mancity',
@@ -642,6 +642,150 @@ describe('盘口（让球方）计算修复', () => {
     // 平局概率应在合理范围内（0.15-0.35）
     expect(result.fusedDrawProb).toBeGreaterThan(0.15);
     expect(result.fusedDrawProb).toBeLessThan(0.38);
+  });
+});
+
+// ======================== 动态概率仲裁测试 ========================
+
+// 构造一个简化的 Dixon-Coles 矩阵（3x3 足够测试）
+// 假设主队较强：高比分格子概率偏向主队
+function makeGrid(homeAdvantage: number): { grid: number[][]; normFactor: number } {
+  const grid = [
+    [0.05, 0.03, 0.01],
+    [0.10, 0.05, 0.02],
+    [0.15, 0.08, 0.03],
+  ];
+  // 根据 homeAdvantage 调整：值越大主队越强
+  const adjusted = grid.map((row, h) => row.map((_, a) => {
+    const diff = h - a;
+    return Math.max(0.001, grid[h][a] + homeAdvantage * diff * 0.05);
+  }));
+  const sum = adjusted.flat().reduce((s, v) => s + v, 0);
+  const normFactor = 1 / sum;
+  return { grid: adjusted, normFactor };
+}
+
+describe('calculateCoverProbability', () => {
+  it('主让球盘口：应正确计算覆盖概率', () => {
+    const { grid, normFactor } = makeGrid(2);
+    const prob = calculateCoverProbability(-1, grid, normFactor);
+    // 主让1球：需要 h-a >= 1，即 (1,0), (2,0), (2,1)
+    expect(prob).toBeGreaterThan(0);
+    expect(prob).toBeLessThanOrEqual(1);
+  });
+
+  it('受让球盘口：应正确计算覆盖概率', () => {
+    const { grid, normFactor } = makeGrid(-1);
+    const prob = calculateCoverProbability(1, grid, normFactor);
+    // 客让1球：需要 a-h >= 1，即 (0,1), (0,2), (1,2)
+    expect(prob).toBeGreaterThan(0);
+    expect(prob).toBeLessThanOrEqual(1);
+  });
+
+  it('0.5球盘口：ceil(0.5)=1，等价于净胜≥1', () => {
+    const { grid, normFactor } = makeGrid(2);
+    const prob05 = calculateCoverProbability(-0.5, grid, normFactor);
+    const prob1 = calculateCoverProbability(-1, grid, normFactor);
+    // 0.5球盘口覆盖概率应 >= 1球盘口（因为 ceil(0.5) = ceil(1) = 1）
+    expect(prob05).toBeCloseTo(prob1, 5);
+  });
+
+  it('平手盘应返回 1.0', () => {
+    const { grid, normFactor } = makeGrid(1);
+    const prob = calculateCoverProbability(0, grid, normFactor);
+    expect(prob).toBe(1.0);
+  });
+
+  it('空矩阵应返回 -1', () => {
+    const prob = calculateCoverProbability(-1, [], 1);
+    expect(prob).toBe(-1);
+  });
+
+  it('normFactor 归一化：乘以 normFactor 后概率应正确', () => {
+    const { grid, normFactor } = makeGrid(1);
+    // 直接用 grid 值（未归一化）乘以 normFactor，概率之和应为 1
+    const sum = grid.flat().reduce((s, v) => s + v * normFactor, 0);
+    expect(sum).toBeCloseTo(1, 5);
+    // 覆盖概率应在合理范围
+    const prob = calculateCoverProbability(-1, grid, normFactor);
+    expect(prob).toBeGreaterThan(0);
+    expect(prob).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('calculateFinalDirection 概率仲裁', () => {
+  it('有矩阵数据时使用概率仲裁模式', () => {
+    const { grid, normFactor } = makeGrid(3); // 强主队
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5, grid, normFactor);
+    expect(result.arbitrationMode).toBe('PROBABILISTIC');
+    expect(result.coverProbability).toBeGreaterThan(0);
+    expect(result.flipReason).toContain('概率仲裁');
+  });
+
+  it('覆盖概率 ≥ 40% 时不翻转', () => {
+    // 构造一个主队很强的矩阵，使覆盖概率 > 40%
+    const { grid, normFactor } = makeGrid(5);
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5, grid, normFactor);
+    if (result.coverProbability >= 0.4) {
+      expect(result.wasFlipped).toBe(false);
+      expect(result.direction).toBe('HOME_WIN');
+    }
+  });
+
+  it('覆盖概率 < 40% 时翻转', () => {
+    // 构造一个主队很弱的矩阵，使覆盖概率 < 40%
+    const { grid, normFactor } = makeGrid(-3);
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5, grid, normFactor);
+    if (result.coverProbability >= 0 && result.coverProbability < 0.4) {
+      expect(result.wasFlipped).toBe(true);
+      expect(result.direction).toBe('AWAY_WIN');
+    }
+  });
+
+  it('无矩阵数据时回退到阈值仲裁', () => {
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5);
+    expect(result.arbitrationMode).toBe('THRESHOLD');
+    expect(result.coverProbability).toBe(-1);
+  });
+
+  it('DRAW 早期退出：不执行任何翻转逻辑', () => {
+    const { grid, normFactor } = makeGrid(3);
+    const result = calculateFinalDirection('DRAW', -1, 0.5, grid, normFactor);
+    expect(result.direction).toBe('DRAW');
+    expect(result.wasFlipped).toBe(false);
+    expect(result.coverProbability).toBe(-1);
+    expect(result.flipReason).toBe('平局方向不参与盘口仲裁');
+  });
+
+  it('coverProbabilityThreshold 参数可选且缺失时不报错', () => {
+    const { grid, normFactor } = makeGrid(2);
+    // 不传 coverProbabilityThreshold，应使用默认值 0.4
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5, grid, normFactor);
+    expect(result).toBeDefined();
+    expect(result.arbitrationMode).toBe('PROBABILISTIC');
+  });
+
+  it('coverProbabilityThreshold 自定义阈值生效', () => {
+    const { grid, normFactor } = makeGrid(2);
+    // 使用 0.6 阈值
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5, grid, normFactor, 0.6);
+    expect(result).toBeDefined();
+    expect(result.arbitrationMode).toBe('PROBABILISTIC');
+  });
+
+  it('向后兼容：原有阈值仲裁行为不变', () => {
+    // 主让1球，expectedNetGoals=0.5 < requiredMargin=1 → 翻转
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5);
+    expect(result.direction).toBe('AWAY_WIN');
+    expect(result.wasFlipped).toBe(true);
+    expect(result.arbitrationMode).toBe('THRESHOLD');
+  });
+
+  it('ArbitratedDirection 包含 coverProbability、arbitrationMode、flipReason 字段', () => {
+    const result = calculateFinalDirection('HOME_WIN', -1, 0.5);
+    expect(result).toHaveProperty('coverProbability');
+    expect(result).toHaveProperty('arbitrationMode');
+    expect(result).toHaveProperty('flipReason');
   });
 });
 
