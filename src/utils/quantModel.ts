@@ -459,6 +459,10 @@ lowScoreProbability: {
 
   noPredictability?: boolean; // 极端市场无可预测性标记
 
+  dixonColesGrid: number[][]; // Dixon-Coles 双变量进球分布矩阵（9x9）
+
+  normFactor: number; // 矩阵归一化因子
+
   handicapCoverage: {
 
     covered: boolean;
@@ -2022,6 +2026,10 @@ const strengthDiff = homeStrength - awayStrength;
 
     noPredictability,
 
+    dixonColesGrid,
+
+    normFactor,
+
     handicapCoverage: checkHandicapCoverage(expectedHomeGoals, expectedAwayGoals, asianFeatures.handicapValue)
 
   };
@@ -2132,6 +2140,8 @@ const strengthDiff = homeStrength - awayStrength;
       recommendedReason: '系统进入安全模式，请检查数据完整性。',
       riskRating: 'MEDIUM',
       coldUpsetAlert: false,
+      dixonColesGrid: [],
+      normFactor: 1,
       handicapCoverage: { covered: true, netGoals: 0, requiredMargin: 0, reason: '安全模式，无盘口验证' }
     };
   }
