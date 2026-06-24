@@ -2141,7 +2141,7 @@ const strengthDiff = homeStrength - awayStrength;
       recommendedReason: '系统进入安全模式，请检查数据完整性。',
       riskRating: 'MEDIUM',
       coldUpsetAlert: false,
-      dixonColesGrid: [],
+      dixonColesGrid: [[]], // 空矩阵兜底，避免 calculateCoverProbability 误判为有效矩阵
       normFactor: 1,
       handicapCoverage: { covered: true, netGoals: 0, requiredMargin: 0, reason: '安全模式，无盘口验证' }
     };

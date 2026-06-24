@@ -173,7 +173,7 @@ export default function DashboardPage() {
       arbitrationMode: arbitrated?.arbitrationMode,
       flipReason: arbitrated?.flipReason,
     };
-  }, [results, liveResults, liveMatchState.isLive, asianHandicap.handicap]);
+  }, [results, liveResults, liveMatchState.isLive, asianHandicap.handicap, results?.dixonColesGrid, results?.normFactor]);
 
   // ===== Handlers =====
   const handleSelectFixture = (fixtureId: string) => {

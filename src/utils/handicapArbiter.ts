@@ -102,7 +102,7 @@ export function calculateFinalDirection(
 
     if (coverProb < 0) {
       // 概率计算失败，回退到阈值仲裁
-      return thresholdArbitration(modelDirection, handicap, expectedNetGoals, threshold);
+      return thresholdArbitration(modelDirection, handicap, expectedNetGoals, threshold, true);
     }
 
     if (modelDirection === 'HOME_WIN' && handicap < 0) {
@@ -166,8 +166,11 @@ function thresholdArbitration(
   modelDirection: MatchDirection,
   handicap: number,
   expectedNetGoals: number,
-  _threshold: number
+  _threshold: number,
+  _probCalcFailed: boolean = false
 ): ArbitratedDirection {
+  const probWarning = _probCalcFailed ? ' (概率计算异常)' : '';
+
   // 主让球：模型推荐主胜但净胜球不足以覆盖盘口 → 修正为客胜
   if (modelDirection === 'HOME_WIN' && handicap < 0) {
     const absHandicap = Math.abs(handicap);
@@ -178,7 +181,7 @@ function thresholdArbitration(
         wasFlipped: true,
         coverProbability: -1,
         arbitrationMode: 'THRESHOLD',
-        flipReason: `阈值仲裁：预期净胜球 ${expectedNetGoals.toFixed(2)} < 盘口要求 ${requiredMargin}，修正为客胜`
+        flipReason: `阈值仲裁：预期净胜球 ${expectedNetGoals.toFixed(2)} < 盘口要求 ${requiredMargin}，修正为客胜${probWarning}`
       };
     }
     return {
@@ -186,7 +189,7 @@ function thresholdArbitration(
       wasFlipped: false,
       coverProbability: -1,
       arbitrationMode: 'THRESHOLD',
-      flipReason: `阈值仲裁：预期净胜球 ${expectedNetGoals.toFixed(2)} ≥ 盘口要求 ${requiredMargin}，保持主胜方向`
+      flipReason: `阈值仲裁：预期净胜球 ${expectedNetGoals.toFixed(2)} ≥ 盘口要求 ${requiredMargin}，保持主胜方向${probWarning}`
     };
   }
 
@@ -199,7 +202,7 @@ function thresholdArbitration(
         wasFlipped: true,
         coverProbability: -1,
         arbitrationMode: 'THRESHOLD',
-        flipReason: `阈值仲裁：客队预期净胜球不足覆盖盘口要求 ${requiredMargin}，修正为主胜`
+        flipReason: `阈值仲裁：客队预期净胜球不足覆盖盘口要求 ${requiredMargin}，修正为主胜${probWarning}`
       };
     }
     return {
@@ -207,7 +210,7 @@ function thresholdArbitration(
       wasFlipped: false,
       coverProbability: -1,
       arbitrationMode: 'THRESHOLD',
-      flipReason: `阈值仲裁：客队预期净胜球足以覆盖盘口要求 ${requiredMargin}，保持客胜方向`
+      flipReason: `阈值仲裁：客队预期净胜球足以覆盖盘口要求 ${requiredMargin}，保持客胜方向${probWarning}`
     };
   }
 
@@ -217,6 +220,6 @@ function thresholdArbitration(
     wasFlipped: false,
     coverProbability: -1,
     arbitrationMode: 'THRESHOLD',
-    flipReason: '阈值仲裁：方向与盘口无冲突，保持原方向'
+    flipReason: `阈值仲裁：方向与盘口无冲突，保持原方向${probWarning}`
   };
 }

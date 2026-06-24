@@ -199,7 +199,7 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
   const ppdaDiff = (results as any)?.ppdaDiff || 0;
   const npxgdDiff = (results as any)?.npxgdDiff || 0;
   // 高级战术特征差值来自 quantModel.ts 的标准化计算（场均差值）
-  const hasAdvancedData = xptsDiff !== 0 || ppdaDiff !== 0 || npxgdDiff !== 0;
+  const hasAdvancedData = typeof xptsDiff === 'number' && typeof ppdaDiff === 'number' && typeof npxgdDiff === 'number';
 
   // 推荐方向：仅使用 DashboardPage 传入的仲裁结果，不再本地计算
   const recommendation = useMemo(() => {
@@ -313,7 +313,7 @@ export function AggregationDecisionCenter({ marketOdds, results, homeTeamName, a
               <span className="text-slate-300">
                 {recommendation.modelDirection === 'HOME_WIN' ? homeTeamDisplay : recommendation.modelDirection === 'AWAY_WIN' ? awayTeamDisplay : recommendation.direction}
                 {recommendation.modelDirection && (
-                  <span className="text-slate-500 ml-1">（{(Math.max(adjustedHomeWin, adjustedDraw, adjustedAwayWin) * 100).toFixed(1)}%）</span>
+                  <span className="text-slate-500 ml-1">（{(Math.max(results?.compHomeWin ?? 0, results?.compDraw ?? 0, results?.compAwayWin ?? 0) * 100).toFixed(1)}%）</span>
                 )}
               </span>
             </div>
