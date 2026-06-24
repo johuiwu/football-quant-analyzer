@@ -8,6 +8,7 @@ import { exactAsianTo1X2, exact1X2ToAsian } from '../models/odds';
 import { calculateLeagueTimeDecay } from '../models/bayesian';
 import { getLeagueRho, getLeagueAvgGoals, getLeagueHomeAdv } from '../config/leagueParams';
 import { evaluateUpsetAlert } from '../models/heatIndex';
+import { calculateCoverProbability } from './handicapArbiter';
 
 // P3-16: LRU cache
 const mc = new LRUCache({ max: 100 });
@@ -2030,7 +2031,7 @@ const strengthDiff = homeStrength - awayStrength;
 
     normFactor,
 
-    handicapCoverage: checkHandicapCoverage(expectedHomeGoals, expectedAwayGoals, asianFeatures.handicapValue)
+    handicapCoverage: checkHandicapCoverage(expectedHomeGoals, expectedAwayGoals, asianFeatures.handicapValue, dixonColesGrid, normFactor)
 
   };
 
@@ -2662,14 +2663,36 @@ function getDynamicWeights(
 export function checkHandicapCoverage(
   homeGoals: number,
   awayGoals: number,
-  handicap: number
-): { covered: boolean; netGoals: number; requiredMargin: number; reason: string } {
+  handicap: number,
+  dixonColesGrid?: number[][],
+  normFactor?: number
+): { covered: boolean; netGoals: number; requiredMargin: number; reason: string; coverProbability?: number } {
   const netGoals = homeGoals - awayGoals;
 
   if (handicap === 0) {
-    return { covered: true, netGoals, requiredMargin: 0, reason: '平手盘，无需覆盖' };
+    return { covered: true, netGoals, requiredMargin: 0, reason: '平手盘，无需覆盖', coverProbability: 1.0 };
   }
 
+  // 概率仲裁分支：有 Dixon-Coles 矩阵数据时
+  if (dixonColesGrid && dixonColesGrid.length > 0 && normFactor !== undefined) {
+    const coverProb = calculateCoverProbability(handicap, dixonColesGrid, normFactor);
+    if (coverProb >= 0) {
+      const covered = coverProb >= 0.4;
+      const absHandicap = Math.abs(handicap);
+      const requiredMargin = Math.ceil(absHandicap);
+      return {
+        covered,
+        netGoals,
+        requiredMargin,
+        coverProbability: coverProb,
+        reason: covered
+          ? `概率仲裁：覆盖概率 ${(coverProb * 100).toFixed(0)}% ≥ 40%，足够覆盖${handicap < 0 ? '主让' : '客让'}${absHandicap}球`
+          : `概率仲裁：覆盖概率 ${(coverProb * 100).toFixed(0)}% < 40%，不足以覆盖${handicap < 0 ? '主让' : '客让'}${absHandicap}球`
+      };
+    }
+  }
+
+  // 阈值仲裁分支：无矩阵数据时回退到原有逻辑（向后兼容）
   if (handicap < 0) {
     const absHandicap = Math.abs(handicap);
     const requiredMargin = Math.ceil(absHandicap);
@@ -2678,6 +2701,7 @@ export function checkHandicapCoverage(
       covered,
       netGoals,
       requiredMargin,
+      coverProbability: -1,
       reason: covered
         ? `预期净胜 ${netGoals.toFixed(2)} 球，足够覆盖主让${absHandicap}球（需净胜≥${requiredMargin}球）`
         : `需要净胜 ≥${requiredMargin} 球才能覆盖主让${absHandicap}球，当前预期净胜 ${netGoals.toFixed(2)} 球`
@@ -2691,13 +2715,14 @@ export function checkHandicapCoverage(
       covered,
       netGoals,
       requiredMargin,
+      coverProbability: -1,
       reason: covered
         ? `预期净胜 ${netGoals.toFixed(2)} 球，主队被客让${handicap}球下保持不败，足以覆盖盘口`
         : `预期净负 ${Math.abs(netGoals).toFixed(2)} 球，无法覆盖客让${handicap}球盘口`
     };
   }
 
-  return { covered: false, netGoals, requiredMargin: 0, reason: '未知盘口' };
+  return { covered: false, netGoals, requiredMargin: 0, reason: '未知盘口', coverProbability: -1 };
 }
 
 // ==================== 信心信号判定 ====================
