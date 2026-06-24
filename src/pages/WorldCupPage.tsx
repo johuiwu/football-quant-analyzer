@@ -170,9 +170,11 @@ function ScheduleTab() {
                         <span className="text-sm font-medium text-slate-200 truncate">{homeName}</span>
                         <span className="text-lg">{homeFlag}</span>
                       </div>
-                      <div className={`font-bold shrink-0 ${completed && homeScore != null ? 'text-2xl text-amber-400' : 'text-xs text-slate-400'}`}>
+                      <div className={`font-bold shrink-0 ${completed && homeScore != null ? 'text-2xl text-amber-400' : completed ? 'text-xs text-emerald-400' : 'text-xs text-slate-400'}`}>
                         {completed && homeScore != null && awayScore != null ? (
                           <span className="font-mono">{homeScore} - {awayScore}</span>
+                        ) : completed ? (
+                          <span className="text-emerald-400">已完赛</span>
                         ) : isTbd ? (
                           <span className="text-slate-600">TBD</span>
                         ) : (

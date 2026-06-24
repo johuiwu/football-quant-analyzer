@@ -4,7 +4,7 @@ import path from 'path';
 import { predictMatch, predictMatchWithStats, simulateGroupStage } from '../services/worldcupPredictionService.js';
 import { WORLD_CUP_TEAMS, WORLD_CUP_FIXTURES_2026, worldcupTeamIdToName } from '../../src/data/worldcup_data.js';
 import { fetchMultipleTeamsRecentStats, fetchWorldCupMatchResults } from '../services/worldcupDataFetcher.js';
-import { fetchStandings } from '../services/worldcupStandingsCrawler.js';
+import { fetchStandings, fetchMatchResults } from '../services/worldcupStandingsCrawler.js';
 
 const TEAM_STATS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.json');
 const TEAM_STATS_TS_FILE = path.resolve(process.cwd(), 'src', 'data', 'worldcup_team_stats.ts');
@@ -423,10 +423,10 @@ router.get('/worldcup/schedule-scores', async (req, res) => {
       return res.json(SCHEDULE_CACHE.data);
     }
 
-    const [goalsJson, cleanSheetsJson, lsFixturesMap] = await Promise.all([
+    const [goalsJson, cleanSheetsJson, matchResultsMap] = await Promise.all([
       fetchLsCategory('goals'),
       fetchLsCategory('clean_sheets'),
-      fetchLsFixtures(),
+      fetchMatchResults(),
     ]);
 
     if (!goalsJson?.group?.participants) {
@@ -453,16 +453,16 @@ router.get('/worldcup/schedule-scores', async (req, res) => {
       const isDatePast = f.date <= todayStr;
       const completed = homeHasStats && awayHasStats && isDatePast;
 
-      // Try to find individual match score
-      const matchKey = `${f.date}_${f.time}_${f.homeTeam}_${f.awayTeam}`;
-      const matchScore = lsFixturesMap?.[matchKey];
+      // Try to find individual match score from crawler results
+      const matchKey = `${f.homeTeam}_${f.awayTeam}`;
+      const matchScore = matchResultsMap?.[matchKey];
 
       return {
         ...f,
         completed,
         homeScore: matchScore?.homeScore ?? null,
         awayScore: matchScore?.awayScore ?? null,
-        scoreType: completed ? (matchScore ? 'match' : 'cumulative') : null,
+        scoreType: completed && matchScore ? 'match' : null,
         stats: completed ? { home: teamStats[f.homeTeam], away: teamStats[f.awayTeam] } : null
       };
     });
@@ -486,44 +486,6 @@ async function fetchLsCategory(category) {
     });
     if (!res.ok) return null;
     return await res.json();
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchLsFixtures() {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_FETCH_TIMEOUT);
-  try {
-    const res = await fetch('https://prod-cdn-stats-api.livescore.com/api/v1/competition/734/fixtures', {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data?.fixtures) return null;
-
-    // Parse fixtures into a map keyed by date_time_homeTeam_awayTeam
-    const map = {};
-    for (const fixture of data.fixtures) {
-      // Try to match by team names
-      const homeName = fixture.homeTeam?.name || '';
-      const awayName = fixture.awayTeam?.name || '';
-      const homeTeamId = LIVESCORE_TO_TEAM_ID[homeName];
-      const awayTeamId = LIVESCORE_TO_TEAM_ID[awayName];
-      if (!homeTeamId || !awayTeamId) continue;
-
-      const date = fixture.date ? fixture.date.slice(0, 10) : '';
-      const time = fixture.time || '';
-      const key = `${date}_${time}_${homeTeamId}_${awayTeamId}`;
-
-      if (fixture.homeScore != null && fixture.awayScore != null) {
-        map[key] = { homeScore: fixture.homeScore, awayScore: fixture.awayScore };
-      }
-    }
-    return Object.keys(map).length > 0 ? map : null;
   } catch {
     return null;
   } finally {
