@@ -170,16 +170,9 @@ function ScheduleTab() {
                         <span className="text-sm font-medium text-slate-200 truncate">{homeName}</span>
                         <span className="text-lg">{homeFlag}</span>
                       </div>
-                      <div className={`font-bold shrink-0 ${completed ? (homeScore != null ? 'text-2xl text-amber-400' : 'text-xs text-amber-400') : 'text-xs text-slate-400'}`}>
-                        {completed ? (
-                          homeScore != null && awayScore != null ? (
-                            <span className="font-mono">{homeScore} - {awayScore}</span>
-                          ) : (
-                            <span className="flex flex-col items-center">
-                              <span className="text-[10px] font-normal text-slate-500">赛事累计进球</span>
-                              <span className="font-mono">{stats.home.goalsScored} - {stats.away.goalsScored}</span>
-                            </span>
-                          )
+                      <div className={`font-bold shrink-0 ${completed && homeScore != null ? 'text-2xl text-amber-400' : 'text-xs text-slate-400'}`}>
+                        {completed && homeScore != null && awayScore != null ? (
+                          <span className="font-mono">{homeScore} - {awayScore}</span>
                         ) : isTbd ? (
                           <span className="text-slate-600">TBD</span>
                         ) : (
@@ -191,13 +184,6 @@ function ScheduleTab() {
                         <span className="text-sm font-medium text-slate-200 truncate">{awayName}</span>
                       </div>
                     </div>
-                    {completed && scoreType === 'cumulative' && (stats.home.played > 0 || stats.away.played > 0) && (
-                      <div className="mt-2 text-[10px] text-slate-500 text-center">
-                        {stats.home.played > 0 ? `主${(stats.home.goalsScored / stats.home.played).toFixed(1)}球/场(${stats.home.played}场)` : ''}
-                        {stats.home.played > 0 && stats.away.played > 0 ? ' · ' : ''}
-                        {stats.away.played > 0 ? `客${(stats.away.goalsScored / stats.away.played).toFixed(1)}球/场(${stats.away.played}场)` : ''}
-                      </div>
-                    )}
                   </div>
                 );
               })}
