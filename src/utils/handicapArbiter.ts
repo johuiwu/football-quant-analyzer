@@ -24,17 +24,20 @@ export function calculateCoverProbability(
   // 平手盘无需仲裁
   if (handicap === 0) return 1.0;
 
-  // 无效输入检查
+  // 无效输入检查（防御 [[]] 等伪矩阵：length>0 但内部为空数组）
   if (!dixonColesGrid || dixonColesGrid.length === 0) return -1;
+  if (!dixonColesGrid[0] || dixonColesGrid[0].length === 0) return -1;
 
   const requiredMargin = Math.ceil(Math.abs(handicap));
   let coverProb = 0;
 
   for (let h = 0; h < dixonColesGrid.length; h++) {
     const row = dixonColesGrid[h];
-    if (!row) continue;
+    if (!row || row.length === 0) continue;
     for (let a = 0; a < row.length; a++) {
       const cellProb = row[a] * normFactor;
+      // NaN 防御：cellProb 非有限值时跳过
+      if (!Number.isFinite(cellProb)) continue;
       if (handicap < 0) {
         // 主让球：主队净胜球 >= 盘口要求
         if (h - a >= requiredMargin) {

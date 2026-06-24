@@ -516,6 +516,11 @@ async function _loginToHGImpl(credentials, forceNew = false, isolated = false) {
   }
   let page = null;
 
+  // ★ null 检查：浏览器启动失败时返回友好错误，避免 bi.newPage() 崩溃
+  if (!bi) {
+    throw new Error("browser_launch_failed: 未检测到 Chrome 或 Edge 浏览器，请安装后重试");
+  }
+
   try {
     page = await bi.newPage();
     await page.setUserAgent(

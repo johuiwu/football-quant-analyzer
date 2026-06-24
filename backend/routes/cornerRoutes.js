@@ -3,7 +3,10 @@ import { getLiveCornerData, evaluateStrategies, DEFAULT_STRATEGIES, setCornerStr
 import { startCornerBackendPolling, stopCornerBackendPolling, pauseCornerBackendPolling, resumeCornerBackendPolling, getBackendPollingStatus, getAlertStatus, getPollingAnalytics } from "../services/cornerService.js";
 import { getCornerHistory, saveCornerHistory, clearHistory, setBetConfig, getAutoBetConfig, executePendingBets, getCornerBets, checkDuplicateBet, addManualBet, getMaxBetAmount, getPendingConfirms, confirmBet, rejectBet, retryBet, getBetQueueStatus } from "../services/cornerBetService.js";
 import { diagnoseCrawler, getDebugInfo, closeCrawler, startCornerPolling, stopCornerPolling, getPollingStatus, getBalance, crawlCornerMatches, resetBrowserClosedFlag, extractBalance, loginToHG as cornerLoginToHG } from "../services/cornerCrawler.js";
+import { loginViaHttp } from "../services/httpLogin.js";
 import { runBacktest, getSimulationRecords, getStrategyStats } from "../services/cornerStrategyEngine.js";
+import { registerSSEClient, getSSEStats } from "../services/sseBroadcaster.js";
+import { recordLatencySample, getLatencyReport, resetLatencyStats } from "../services/latencyMonitor.js";
 
 import { requireFields, validateTypes, validateLength } from "../middleware/validate.js";
 
@@ -11,6 +14,63 @@ const router = Router();
 
 // DEFAULT_STRATEGIES 从 cornerService 导入（统一策略源）
 // 使用见下方 parsedStrategies 兜底逻辑
+
+// ======================== GET /api/corner/stream (SSE 实时推送) ========================
+// 前端通过 EventSource 订阅此端点，后端数据变更时主动推送，实现毫秒级同步
+router.get("/corner/stream", (req, res) => {
+  // 检查是否已有 SSE 客户端连接（限制最大连接数避免资源泄漏）
+  const currentStats = getSSEStats();
+  if (currentStats.connectedClients >= 10) {
+    return res.status(503).json({ success: false, error: "SSE连接数已达上限(10)，请稍后重试" });
+  }
+
+  const unregister = registerSSEClient(res);
+
+  // 客户端断开时清理
+  req.on("close", () => {
+    unregister();
+  });
+
+  // 防止 Express 超时中断 SSE 连接
+  req.setTimeout(0);
+});
+
+// ======================== GET /api/corner/sse-stats ========================
+router.get("/corner/sse-stats", (req, res) => {
+  res.json({ success: true, data: getSSEStats() });
+});
+
+// ======================== GET /api/corner/latency-report ========================
+// 获取完整的延迟统计报告（含P50/P95/P99百分位数、告警率、按来源/类型分组）
+router.get("/corner/latency-report", (req, res) => {
+  const report = getLatencyReport();
+  res.json({ success: true, data: report });
+});
+
+// ======================== POST /api/corner/latency-report ========================
+// 前端上报SSE延迟样本（由前端EventSource.onmessage计算后上报）
+router.post("/corner/latency-report", (req, res) => {
+  try {
+    const sample = req.body || {};
+    recordLatencySample({
+      serverTs: sample.serverTs,
+      clientTs: sample.clientTs || Date.now(),
+      source: sample.source || "unknown",
+      type: sample.type || "unknown",
+      clientId: sample.clientId || "anon",
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ======================== DELETE /api/corner/latency-report ========================
+// 重置延迟统计（清除所有历史样本，重新开始监测）
+router.delete("/corner/latency-report", (req, res) => {
+  resetLatencyStats();
+  res.json({ success: true, message: "延迟统计已重置" });
+});
 
 // ======================== GET /api/corner/live ========================
 router.get("/corner/live", async (req, res) => {
@@ -353,13 +413,43 @@ router.post("/corner/history", validateTypes({ matchId: "string", matchName: "st
 });
 
 // ======================== POST /api/corner/login ========================
-// ★ 统一使用 cornerCrawler 的登录实现（内部含凭证验证）
+// ★ 登录策略：优先纯 HTTP 登录（1-3s），失败则回退到 Puppeteer 浏览器登录（15-30s）
 router.post("/corner/login", requireFields(["username", "password"]), validateLength({ username: { min: 1, max: 100 }, password: { min: 1, max: 100 } }), async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ success: false, error: "请提供用户名和密码" });
     }
+
+    console.log("[cornerRoutes] 登录请求: username=" + username + ", 优先尝试 HTTP 登录...");
+    const loginStartTime = Date.now();
+
+    // ======================== 第一步：尝试纯 HTTP 登录 ========================
+    let httpResult = null;
+    try {
+      httpResult = await loginViaHttp(username, password);
+      if (httpResult.success) {
+        console.log("[cornerRoutes] HTTP 登录成功! 耗时: " + (Date.now() - loginStartTime) + "ms, reason=" + httpResult.reason);
+
+        // HTTP 登录成功后重置浏览器关闭标志（供后续可能需要的浏览器操作使用）
+        resetBrowserClosedFlag();
+
+        return res.json({
+          success: true,
+          message: "登录成功（HTTP模式, " + (Date.now() - loginStartTime) + "ms）",
+          balance: 0, // HTTP 模式不自动获取余额，等首次轮询时刷新
+          loginMode: "http",
+          uid: httpResult.uid,
+        });
+      }
+      console.warn("[cornerRoutes] HTTP 登录失败: " + (httpResult.error || "未知") + ", reason=" + httpResult.reason + ", 回退到浏览器登录...");
+    } catch (httpErr) {
+      console.warn("[cornerRoutes] HTTP 登录异常: " + httpErr.message + ", 回退到浏览器登录...");
+      httpResult = { error: httpErr.message, reason: "http_exception" };
+    }
+
+    // ======================== 第二步：回退到 Puppeteer 浏览器登录 ========================
+    console.log("[cornerRoutes] 启动浏览器登录... (已耗时: " + (Date.now() - loginStartTime) + "ms)");
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("登录超时，请重试")), 90000)
@@ -377,6 +467,8 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
     // 登录成功后重置浏览器关闭标志
     if (result.success) {
       resetBrowserClosedFlag();
+      result.loginMode = "browser";
+      result.httpLoginError = httpResult?.error || null; // 附带 HTTP 登录失败原因供诊断
     }
 
     // 根据失败原因提供友好建议
@@ -393,6 +485,9 @@ router.post("/corner/login", requireFields(["username", "password"]), validateLe
         suggestion = "请检查网络连接和凭据是否正确，终端日志可查看详细信息";
       }
       result.suggestion = suggestion;
+      // 附带 HTTP 登录失败原因，便于诊断
+      result.httpLoginError = httpResult?.error || null;
+      result.httpLoginReason = httpResult?.reason || null;
     }
 
     res.json(result);

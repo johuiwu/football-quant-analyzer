@@ -134,3 +134,26 @@ test-*.js
 test-browser-fetch.js
 debug_*.png
 backend/debug_autobet_chain.js
+
+# =============================================================================
+# 临时调试 / 冒烟测试产物（勿提交）
+# =============================================================================
+# CodeBuddy 会话数据
+.codebuddy/
+
+# 一次性检查脚本
+_check_*.cjs
+_check_*.js
+
+# 测试输出与截图
+_results_page.png
+test_result.txt
+realtime_sync_test_report.txt
+
+# 临时审计计划
+audit_plan.md
+
+# EXE 启动调试日志
+exe_stdout.log
+exe_stderr.log
+

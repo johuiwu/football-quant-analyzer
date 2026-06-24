@@ -25,13 +25,15 @@ function _resolveCredPath() {
 
 let CRED_PATH = _resolveCredPath();
 
-// 旧路径（import.meta.url 时代）— 用于自动迁移
+// 旧路径（import.meta.url 时代）— 仅用于自动迁移读取，不用于写入
+// ★ 注意：process.cwd() 在 EXE 打包后可能指向只读目录，此处仅做读取迁移源
 const _OLD_CRED_PATHS = [
   // 开发模式旧路径：backend/credentials.json（相对于项目根目录）
   path.resolve(process.cwd(), 'backend', 'credentials.json'),
 ];
 
 // 自动迁移：如果新路径不存在但旧路径存在，复制过来
+// ★ 安全加固：迁移过程中任何失败都不影响主流程（CRED_PATH 已通过 _resolveCredPath 设置为可写路径）
 function _migrateCredFile() {
   if (fs.existsSync(CRED_PATH)) return; // 新路径已有文件，无需迁移
   for (const oldPath of _OLD_CRED_PATHS) {
@@ -45,7 +47,8 @@ function _migrateCredFile() {
         return;
       }
     } catch (e) {
-      console.warn('[credentialManager] 凭证文件迁移失败:', e.message);
+      // ★ 迁移失败时仅警告，不抛出异常（旧路径可能在只读 .asar 中，读取失败是正常的）
+      console.warn('[credentialManager] 凭证文件迁移跳过（旧路径不可读或新路径不可写）:', e.message);
     }
   }
 }

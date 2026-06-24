@@ -1,8 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const TEAM_STATS_MAP = require('../../src/data/worldcup_team_stats.json');
+import TEAM_STATS_MAP from '../../src/data/worldcup_team_stats.json';
 
 function getTeamStatsFromTs(teamId) {
   return TEAM_STATS_MAP[teamId] || {

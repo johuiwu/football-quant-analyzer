@@ -81,7 +81,7 @@ export function quickAIProbability(match, strategy) {
   const matchName = (match.matchName || match.match_name || '').toLowerCase();
   const leagueName = (match.leagueName || match.league_name || '').toLowerCase();
   const combinedName = matchName + ' ' + leagueName;
-  const esportsKeywords = ['efootball', 'esports', '电竞', 'fifa', 'efootball'];
+  const esportsKeywords = ['efootball', 'esports', '电竞', 'fifa'];
   const isEsports = esportsKeywords.some(kw => combinedName.includes(kw));
 
   // 电竞赛事角球频率极低，降权处理
@@ -141,15 +141,19 @@ export function resolveStrategyOdds(match, strategy) {
 
       if (homeCorners < awayCorners) {
         console.log(`[NextCorner Auto] 主队角球落后(${homeCorners}<${awayCorners})，自动投注主队(Home), matchId=${match.matchId || ''}`);
-        return homeOdds || awayOdds;
+        // ★ 零赔率保护：与固定方向逻辑一致，homeOdds<=0 时返回 0（让第5级赔率过滤拦截）
+        return homeOdds > 0 ? homeOdds : 0;
       } else if (awayCorners < homeCorners) {
         console.log(`[NextCorner Auto] 客队角球落后(${awayCorners}<${homeCorners})，自动投注客队(Away), matchId=${match.matchId || ''}`);
-        return awayOdds || homeOdds;
+        // ★ 零赔率保护：与固定方向逻辑一致，awayOdds<=0 时返回 0（让第5级赔率过滤拦截）
+        return awayOdds > 0 ? awayOdds : 0;
       } else {
+        // 角球数相等：选择赔率更低的一方（市场更看好的一方）
         const chosenSide = (homeOdds > 0 && awayOdds > 0 && awayOdds < homeOdds) ? 'Away' : 'Home';
         const chosenOdds = chosenSide === 'Away' ? awayOdds : homeOdds;
         console.log(`[NextCorner Auto] 角球数相等(${homeCorners}=${awayCorners})，选择赔率更低的${chosenSide}方(odds=${chosenOdds}), matchId=${match.matchId || ''}`);
-        return chosenOdds;
+        // ★ 零赔率保护：选中方赔率<=0 时返回 0
+        return chosenOdds > 0 ? chosenOdds : 0;
       }
     }
 
@@ -252,7 +256,7 @@ export function evaluateSingleStrategy(match, strategy, globalSettings) {
   const awayCorners = match.awayCorners ?? 0;
 
   // 策略触发校验日志
-  console.log(`[策略触发校验] 策略${strategy.id}: 比分: ${homeScore}-${awayScore}, 角球: ${homeCorners}-${awayCorners}, 实际领先球数: ${goalDiff}`);
+  // [策略触发校验] 日志已移除（生产环境清理，避免每次评估都刷屏）
 
   // ========== 第1级：时间过滤 ==========
   // 比赛时间合理性校验

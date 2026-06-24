@@ -4,6 +4,7 @@ import { normalizeHandicap } from "./crawlerShared.js";
 import { POLL_CONFIG } from "./crawlerConfig.js";
 import { run, query } from "../dbService.js";
 import { subscribeMatches, unsubscribeAll } from "./GismoSubscriber.js";
+import { broadcastMatches, broadcastStatus } from "./sseBroadcaster.js";
 import {
   saveCornerTrigger,
   checkDuplicateBet,
@@ -380,6 +381,11 @@ async function pollOnce() {
   cachedMainMarkets = mainMarkets;
   lastFetchTime = Date.now();
 
+  // ★ SSE 实时推送：数据更新后立即广播给所有连接的前端客户端
+  if (hasChanges || !pollingFirstDone) {
+    broadcastMatches(cachedMatches, cachedMainMarkets, "poll", hasChanges ? changes : null);
+  }
+
   // gismo 订阅：提取 matchId 列表并订阅实时数据
   const matchIds = cachedMatches.map(m => m.matchId).filter(Boolean);
   if (matchIds.length > 0) {
@@ -439,6 +445,9 @@ async function pollOnce() {
                   console.error("[cornerService] gismo触发自动投注失败:", e.message)
                 );
               }
+
+              // ★ SSE 实时推送：Gismo 检测到角球变化后立即推送该比赛数据给前端
+              broadcastMatches([match], {}, "gismo", [deltaData]);
             })();
             return; // 避免同步代码也执行策略评估
           }
@@ -574,6 +583,10 @@ export function startCornerBackendPolling() {
   lastFetchTime = 0;
 
   scheduleNextPoll();
+
+  // ★ SSE 广播监控启动状态
+  broadcastStatus("monitoring_started", { interval: POLL_INTERVAL });
+
   return { success: true, interval: POLL_INTERVAL };
 }
 
@@ -590,6 +603,9 @@ export function stopCornerBackendPolling() {
   }
   cachedMatches = [];
   cachedMainMarkets = {};
+
+  // ★ SSE 广播监控停止状态
+  broadcastStatus("monitoring_stopped");
   return { success: true };
 }
 

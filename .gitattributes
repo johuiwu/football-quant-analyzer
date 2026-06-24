@@ -1,0 +1,95 @@
+# =============================================================================
+# .gitattributes — 换行符统一 / 二进制标记 / Git LFS 前瞻配置
+# 项目：足球竞彩量化分析系统 (Electron + Node + TypeScript + React)
+# =============================================================================
+
+# --- 统一文本换行符为 LF（跨平台一致，避免 CRLF 污染 diff）---
+* text=auto eol=lf
+
+# 源代码 / 配置：强制 LF
+*.js    text eol=lf
+*.cjs   text eol=lf
+*.mjs   text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.jsx   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.scss  text eol=lf
+*.sh    text eol=lf
+*.sql   text eol=lf
+*.toml  text eol=lf
+*.xml   text eol=lf
+
+# Windows 脚本：保持 CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# --- 纯二进制文件（不做换行符转换，不进 LFS）---
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.svg   text eol=lf
+*.ico   binary
+*.icns  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.otf   binary
+*.pdf   binary
+*.zip   binary
+*.7z    binary
+*.gz    binary
+*.tar   binary
+*.lockb binary
+
+# --- Git LFS 前瞻追踪规则 ---
+# 当前仓库历史干净（.git 仅 ~5MB），无大文件污染，无需历史迁移。
+# 以下规则为防御性配置：确保未来若有大型原生模块 / 打包产物 / 数据库
+# 意外进入仓库时自动走 LFS，避免拖慢 clone / fetch 速度。
+# 注意：release/、dist/、node_modules/ 等已在 .gitignore 排除，
+# 此处规则仅在被 -f 强制添加或解除忽略时生效。
+
+# 可执行文件 / 原生库
+*.exe       filter=lfs diff=lfs merge=lfs -text
+*.dll       filter=lfs diff=lfs merge=lfs -text
+*.node      filter=lfs diff=lfs merge=lfs -text
+*.so        filter=lfs diff=lfs merge=lfs -text
+*.dylib     filter=lfs diff=lfs merge=lfs -text
+
+# Electron / Chromium 资源包
+*.pak       filter=lfs diff=lfs merge=lfs -text
+*.dat       filter=lfs diff=lfs merge=lfs -text
+*.bin       filter=lfs diff=lfs merge=lfs -text
+*.wasm      filter=lfs diff=lfs merge=lfs -text
+
+# electron-builder 产物
+*.blockmap  filter=lfs diff=lfs merge=lfs -text
+*.snap      filter=lfs diff=lfs merge=lfs -text
+*.AppImage  filter=lfs diff=lfs merge=lfs -text
+*.dmg       filter=lfs diff=lfs merge=lfs -text
+*.deb       filter=lfs diff=lfs merge=lfs -text
+*.rpm       filter=lfs diff=lfs merge=lfs -text
+
+# 数据库文件（覆盖种子库 football_data.db 的未来变更）
+*.db        filter=lfs diff=lfs merge=lfs -text
+*.sqlite    filter=lfs diff=lfs merge=lfs -text
+*.sqlite3   filter=lfs diff=lfs merge=lfs -text
+
+# 大型媒体资源
+*.mp4       filter=lfs diff=lfs merge=lfs -text
+*.mp3       filter=lfs diff=lfs merge=lfs -text
+*.wav       filter=lfs diff=lfs merge=lfs -text
+*.mov       filter=lfs diff=lfs merge=lfs -text
+
+# 归档包
+*.msi       filter=lfs diff=lfs merge=lfs -text
+*.cab       filter=lfs diff=lfs merge=lfs -text

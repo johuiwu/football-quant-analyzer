@@ -392,7 +392,8 @@ function _resolveCookiePath() {
 
 let COOKIE_PATH = _resolveCookiePath();
 
-// 旧路径（import.meta.url 时代）— 用于自动迁移
+// 旧路径（import.meta.url 时代）— 仅用于自动迁移读取，不用于写入
+// ★ 注意：process.cwd() 在 EXE 打包后可能指向只读目录，此处仅做读取迁移源
 const _OLD_COOKIE_PATHS = [
   // 开发模式旧路径：backend/cookies.json（相对于项目根目录）
   path.resolve(process.cwd(), 'backend', 'cookies.json'),
@@ -412,7 +413,8 @@ function _migrateCookieFile() {
         return;
       }
     } catch (e) {
-      console.warn('[browserPool] Cookie 文件迁移失败:', e.message);
+      // ★ 迁移失败时仅警告，不抛出异常（旧路径可能在只读 .asar 中）
+      console.warn('[browserPool] Cookie 文件迁移跳过（旧路径不可读或新路径不可写）:', e.message);
     }
   }
 }

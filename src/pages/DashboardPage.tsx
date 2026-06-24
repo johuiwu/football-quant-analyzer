@@ -164,7 +164,6 @@ export default function DashboardPage() {
       results.dixonColesGrid,
       results.normFactor
     );
-    console.log('[仲裁调试] 传入的 coverProbability:', arbitrated.coverProbability);
     return {
       direction: arbitrated?.direction,
       confidence: arbitrated ? results.aggregatedDecision?.confidence : undefined,

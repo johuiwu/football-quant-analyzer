@@ -11,37 +11,37 @@
     "winRate": 0.625
   },
   "faguo": {
-    "avgXgFor": 1.8,
-    "avgXgAgainst": 0.5,
+    "avgXgFor": 4.5,
+    "avgXgAgainst": 1.2,
     "avgPossession": 50,
-    "avgShots": 9,
-    "avgShotsOnTarget": 8,
-    "avgGoalsFor": 3,
+    "avgShots": 12,
+    "avgShotsOnTarget": 6.5,
+    "avgGoalsFor": 6,
     "avgGoalsAgainst": 1,
     "avgCorners": 3.5,
-    "winRate": 0.8
+    "winRate": 0.6875
   },
   "agenting": {
-    "avgXgFor": 1.3,
-    "avgXgAgainst": 0.3,
+    "avgXgFor": 3.6,
+    "avgXgAgainst": 0.8,
     "avgPossession": 50,
-    "avgShots": 10,
-    "avgShotsOnTarget": 6,
-    "avgGoalsFor": 3,
+    "avgShots": 9.5,
+    "avgShotsOnTarget": 5.5,
+    "avgGoalsFor": 5,
     "avgGoalsAgainst": 0,
     "avgCorners": 3.5,
-    "winRate": 0.925
+    "winRate": 0.675
   },
   "yinggelan": {
-    "avgXgFor": 3.2,
-    "avgXgAgainst": 0.7,
+    "avgXgFor": 4.6,
+    "avgXgAgainst": 0.9,
     "avgPossession": 50,
-    "avgShots": 17,
-    "avgShotsOnTarget": 11,
+    "avgShots": 15,
+    "avgShotsOnTarget": 7,
     "avgGoalsFor": 4,
     "avgGoalsAgainst": 2,
     "avgCorners": 3.5,
-    "winRate": 0.7
+    "winRate": 0.425
   },
   "xibanya": {
     "avgXgFor": 4.4,
@@ -77,26 +77,26 @@
     "winRate": 0.8625
   },
   "putaoya": {
-    "avgXgFor": 0.7,
-    "avgXgAgainst": 0.9,
+    "avgXgFor": 3.3,
+    "avgXgAgainst": 1.1,
     "avgPossession": 50,
-    "avgShots": 5,
-    "avgShotsOnTarget": 1,
-    "avgGoalsFor": 1,
+    "avgShots": 9.5,
+    "avgShotsOnTarget": 5,
+    "avgGoalsFor": 6,
     "avgGoalsAgainst": 1,
     "avgCorners": 3.5,
-    "winRate": 0.575
+    "winRate": 0.8375
   },
   "keluodiya": {
-    "avgXgFor": 0.7,
-    "avgXgAgainst": 3.2,
+    "avgXgFor": 2.3,
+    "avgXgAgainst": 3.8,
     "avgPossession": 50,
-    "avgShots": 8,
-    "avgShotsOnTarget": 5,
-    "avgGoalsFor": 2,
+    "avgShots": 6.5,
+    "avgShotsOnTarget": 3.5,
+    "avgGoalsFor": 3,
     "avgGoalsAgainst": 4,
     "avgCorners": 3.5,
-    "winRate": 0.825
+    "winRate": 0.5875
   },
   "bilishi": {
     "avgXgFor": 3.1,
@@ -143,15 +143,15 @@
     "winRate": 0.375
   },
   "gelunbiya": {
-    "avgXgFor": 1.6,
-    "avgXgAgainst": 1.2,
+    "avgXgFor": 2.6,
+    "avgXgAgainst": 1.5,
     "avgPossession": 50,
-    "avgShots": 11,
-    "avgShotsOnTarget": 4,
-    "avgGoalsFor": 3,
+    "avgShots": 12.5,
+    "avgShotsOnTarget": 6.5,
+    "avgGoalsFor": 4,
     "avgGoalsAgainst": 1,
     "avgCorners": 3.5,
-    "winRate": 0.85
+    "winRate": 0.675
   },
   "ruishi": {
     "avgXgFor": 5.3,
@@ -176,15 +176,15 @@
     "winRate": 0.35
   },
   "saineijiaer": {
-    "avgXgFor": 0.5,
-    "avgXgAgainst": 1.8,
+    "avgXgFor": 2.2,
+    "avgXgAgainst": 4,
     "avgPossession": 50,
-    "avgShots": 5,
-    "avgShotsOnTarget": 2,
-    "avgGoalsFor": 1,
-    "avgGoalsAgainst": 3,
+    "avgShots": 8,
+    "avgShotsOnTarget": 3,
+    "avgGoalsFor": 3,
+    "avgGoalsAgainst": 6,
     "avgCorners": 3.5,
-    "winRate": 0.625
+    "winRate": 0.6
   },
   "ruidian1": {
     "avgXgFor": 2.3,
@@ -242,26 +242,26 @@
     "winRate": 0.0625
   },
   "nuowei": {
-    "avgXgFor": 2.5,
-    "avgXgAgainst": 0.8,
+    "avgXgFor": 4.7,
+    "avgXgAgainst": 2.5,
     "avgPossession": 50,
-    "avgShots": 9,
-    "avgShotsOnTarget": 5,
-    "avgGoalsFor": 4,
-    "avgGoalsAgainst": 1,
+    "avgShots": 9.5,
+    "avgShotsOnTarget": 6,
+    "avgGoalsFor": 7,
+    "avgGoalsAgainst": 3,
     "avgCorners": 3.5,
-    "winRate": 0.875
+    "winRate": 0.7875
   },
   "aodili": {
-    "avgXgFor": 1.7,
-    "avgXgAgainst": 0.5,
+    "avgXgFor": 2.2,
+    "avgXgAgainst": 2.8,
     "avgPossession": 50,
-    "avgShots": 10,
-    "avgShotsOnTarget": 4,
+    "avgShots": 8,
+    "avgShotsOnTarget": 2.5,
     "avgGoalsFor": 3,
-    "avgGoalsAgainst": 1,
+    "avgGoalsAgainst": 3,
     "avgCorners": 3.5,
-    "winRate": 0.825
+    "winRate": 0.6
   },
   "moxige": {
     "avgXgFor": 2,
@@ -429,81 +429,81 @@
     "winRate": 0.5625
   },
   "yilake1": {
-    "avgXgFor": 0.8,
-    "avgXgAgainst": 2.5,
+    "avgXgFor": 1.4,
+    "avgXgAgainst": 5.2,
     "avgPossession": 50,
-    "avgShots": 9,
-    "avgShotsOnTarget": 1,
+    "avgShots": 6,
+    "avgShotsOnTarget": 0.5,
     "avgGoalsFor": 1,
-    "avgGoalsAgainst": 4,
+    "avgGoalsAgainst": 7,
     "avgCorners": 3.5,
-    "winRate": 0.55
+    "winRate": 0.45
   },
   "minzhugangguo": {
-    "avgXgFor": 0.9,
-    "avgXgAgainst": 0.7,
+    "avgXgFor": 1.2,
+    "avgXgAgainst": 1.6,
+    "avgPossession": 50,
+    "avgShots": 5,
+    "avgShotsOnTarget": 1.5,
+    "avgGoalsFor": 1,
+    "avgGoalsAgainst": 2,
+    "avgCorners": 3.5,
+    "winRate": 0.475
+  },
+  "wuzibiekesitan": {
+    "avgXgFor": 1.4,
+    "avgXgAgainst": 4.2,
     "avgPossession": 50,
     "avgShots": 5,
     "avgShotsOnTarget": 2,
     "avgGoalsFor": 1,
-    "avgGoalsAgainst": 1,
-    "avgCorners": 3.5,
-    "winRate": 0.525
-  },
-  "wuzibiekesitan": {
-    "avgXgFor": 1.2,
-    "avgXgAgainst": 1.6,
-    "avgPossession": 50,
-    "avgShots": 6,
-    "avgShotsOnTarget": 2,
-    "avgGoalsFor": 1,
-    "avgGoalsAgainst": 3,
+    "avgGoalsAgainst": 8,
     "avgCorners": 3.5,
     "winRate": 0.45
   },
   "aerjiliya": {
-    "avgXgFor": 0.3,
-    "avgXgAgainst": 1.3,
+    "avgXgFor": 2.2,
+    "avgXgAgainst": 1.9,
     "avgPossession": 50,
-    "avgShots": 4,
-    "avgShotsOnTarget": 0,
-    "avgGoalsFor": 0,
-    "avgGoalsAgainst": 3,
+    "avgShots": 8,
+    "avgShotsOnTarget": 4,
+    "avgGoalsFor": 2,
+    "avgGoalsAgainst": 4,
     "avgCorners": 3.5,
-    "winRate": 0.425
+    "winRate": 0.475
   },
   "yuedan1": {
-    "avgXgFor": 0.5,
-    "avgXgAgainst": 1.7,
+    "avgXgFor": 1.1,
+    "avgXgAgainst": 3.6,
     "avgPossession": 50,
-    "avgShots": 9,
+    "avgShots": 8.5,
     "avgShotsOnTarget": 4,
-    "avgGoalsFor": 1,
-    "avgGoalsAgainst": 3,
+    "avgGoalsFor": 2,
+    "avgGoalsAgainst": 5,
     "avgCorners": 3.5,
-    "winRate": 0.625
+    "winRate": 0.6125
   },
   "jiana": {
-    "avgXgFor": 1.3,
-    "avgXgAgainst": 0.7,
+    "avgXgFor": 1.4,
+    "avgXgAgainst": 2.1,
     "avgPossession": 50,
-    "avgShots": 6,
-    "avgShotsOnTarget": 2,
+    "avgShots": 3.5,
+    "avgShotsOnTarget": 1.5,
     "avgGoalsFor": 1,
     "avgGoalsAgainst": 0,
     "avgCorners": 3.5,
-    "winRate": 0.425
+    "winRate": 0.45
   },
   "banama": {
-    "avgXgFor": 0.7,
-    "avgXgAgainst": 1.3,
+    "avgXgFor": 1.3,
+    "avgXgAgainst": 2.9,
     "avgPossession": 50,
-    "avgShots": 9,
-    "avgShotsOnTarget": 4,
+    "avgShots": 7.5,
+    "avgShotsOnTarget": 2.5,
     "avgGoalsFor": 0,
-    "avgGoalsAgainst": 1,
+    "avgGoalsAgainst": 2,
     "avgCorners": 3.5,
-    "winRate": 0.325
+    "winRate": 0.3375
   },
   "meiguo": {
     "avgXgFor": 2.5,

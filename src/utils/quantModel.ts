@@ -10,8 +10,8 @@ import { getLeagueRho, getLeagueAvgGoals, getLeagueHomeAdv } from '../config/lea
 import { evaluateUpsetAlert } from '../models/heatIndex';
 import { calculateCoverProbability } from './handicapArbiter';
 
-// P3-16: LRU cache
-const mc = new LRUCache({ max: 100 });
+// P3-16: LRU cache（添加 TTL 5分钟，避免异常结果长期缓存）
+const mc = new LRUCache({ max: 100, ttl: 300000 });
 
 
 
@@ -1433,7 +1433,7 @@ const strengthDiff = homeStrength - awayStrength;
     (homeFormScore / (homeFormScore + awayFormScore || 1)) * weights.form
 
   ) + clippedExtFactor;
-  console.log('[DEBUG] compHomeWin=', compHomeWin, 'extFactor=', extFactor, 'clippedExtFactor=', clippedExtFactor);
+  // [DEBUG] compHomeWin 日志已移除（生产环境清理）
 
 
 
@@ -2035,7 +2035,7 @@ const strengthDiff = homeStrength - awayStrength;
 
   };
 
-  // P3-16: cache and return
+  // P3-16: cache and return（仅缓存正常路径结果，catch 块的异常结果不缓存）
   mc.set(ck, _r);
   return _r;
 
@@ -2141,8 +2141,8 @@ const strengthDiff = homeStrength - awayStrength;
       recommendedReason: '系统进入安全模式，请检查数据完整性。',
       riskRating: 'MEDIUM',
       coldUpsetAlert: false,
-      dixonColesGrid: [[]], // 空矩阵兜底，避免 calculateCoverProbability 误判为有效矩阵
-      normFactor: 1,
+      dixonColesGrid: null as any, // ★ 安全模式：返回 null 而非 [[]]，让 calculateFinalDirection 走阈值仲裁分支
+      normFactor: 0,
       handicapCoverage: { covered: true, netGoals: 0, requiredMargin: 0, reason: '安全模式，无盘口验证' }
     };
   }

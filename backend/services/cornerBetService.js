@@ -769,7 +769,9 @@ export async function confirmBet(betId) {
         strategyId: bet.strategy_id,
         odds: bet.odds,
         amount: bet.amount,
-        handicap: 0
+        handicap: bet.handicap || 0,
+        // ★ 修复：补充 betDirection 字段（与 retryBet 保持一致），避免 processBetQueue 中 task.betDirection 为 undefined
+        betDirection: bet.bet_direction || "auto"
       });
       processBetQueue().catch(e =>
         console.error("[cornerBetService] 确认投注执行失败:", e.message)

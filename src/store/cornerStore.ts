@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
+import { trackLatency } from "../utils/latencyTracker";
 
 // ==================== 类型定义 ====================
 
@@ -143,7 +144,6 @@ export interface CornerStore {
   crawlerData: any | null;
   scheduleData: any[];
   mainMarketData: Record<string, { league?: string; time?: string; homeScore?: number | null; awayScore?: number | null; hdp?: { line: string; homeOdds: number; awayOdds: number } | null; ou?: { line: number; overOdds: number; underOdds: number } | null }>;
-  betConfirmRequired: boolean;
   scheduleFreshLoaded: boolean;
   autoRefresh: boolean;
   setStrategies: (strategies: CornerStrategy[], skipBackendSync?: boolean) => void;
@@ -171,10 +171,11 @@ export interface CornerStore {
   setCrawlerData: (data: any | null) => void;
   setScheduleData: (data: any[]) => void;
   setMainMarketData: (data: any) => void;
-  setBetConfirmRequired: (required: boolean) => void;
   setScheduleFreshLoaded: (loaded: boolean) => void;
   setAutoRefresh: (on: boolean) => void;
   syncAllSettingsToBackend: () => Promise<void>;
+  /** ★ SSE 数据应用：将后端推送的数据合并到 liveMatches（内部方法） */
+  _applySSEData: (sseData: any[], sseMainMarkets: any, source: string) => void;
 }
 
 // ==================== 默认策略 ====================
@@ -366,6 +367,116 @@ function getAppStoreState(): any | null {
 
 let monitorInterval: ReturnType<typeof setTimeout> | null = null;
 
+// ★ SSE 实时推送连接（替代轮询的主数据通道）
+let sseEventSource: EventSource | null = null;
+// ★ 降级轮询定时器（SSE断开时自动启用）
+let fallbackPollInterval: ReturnType<typeof setTimeout> | null = null;
+// SSE 重连控制
+let sseReconnectAttempts = 0;
+const SSE_MAX_RECONNECT = 5;
+const SSE_RECONNECT_BASE_DELAY = 2000;
+
+// ==================== SSE 实时推送管理 ====================
+
+/**
+ * 建立 SSE 连接，接收后端实时数据推送
+ * 成功时通过 onmessage 更新 liveMatches，无需前端轮询
+ */
+function connectSSE(onDataUpdate: (data: any[], mainMarkets: any, source: string) => void, onStatusChange?: (status: string) => void) {
+  disconnectSSE();
+
+  try {
+    sseEventSource = new EventSource('/api/corner/stream');
+  } catch (err) {
+    console.error('[cornerStore] SSE 连接创建失败，降级到轮询模式:', err);
+    return false;
+  }
+
+  sseEventSource.onopen = () => {
+    console.log('[cornerStore] SSE 连接已建立，切换到实时推送模式');
+    sseReconnectAttempts = 0;
+    // SSE 连接成功后停止降级轮询
+    if (fallbackPollInterval) {
+      clearTimeout(fallbackPollInterval);
+      fallbackPollInterval = null;
+    }
+  };
+
+  sseEventSource.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+
+      // ★ 延迟追踪：记录 serverTimestamp 到前端接收的端到端延迟
+      const latency = trackLatency(payload);
+      if (latency >= 0 && latency > 100) {
+        console.warn(`[SSE延迟] ${latency}ms (source=${payload.source}, type=${payload.type})`);
+      }
+
+      if (payload.type === 'matches') {
+        // 全量数据推送
+        onDataUpdate(payload.data || [], payload.mainMarkets || {}, payload.source || 'sse');
+      } else if (payload.type === 'delta') {
+        // 增量数据推送（仅变更的比赛）
+        if (payload.data && payload.data.length > 0) {
+          onDataUpdate(payload.data, payload.mainMarkets || {}, payload.source || 'sse');
+        }
+      } else if (payload.type === 'status') {
+        if (onStatusChange) onStatusChange(payload.status);
+      } else if (payload.type === 'heartbeat') {
+        // 心跳，无需处理（延迟追踪已在上方完成）
+      }
+    } catch (err) {
+      console.error('[cornerStore] SSE 消息解析失败:', err);
+    }
+  };
+
+  sseEventSource.onerror = (err) => {
+    console.warn('[cornerStore] SSE 连接错误，准备重连或降级到轮询');
+    sseEventSource?.close();
+    sseEventSource = null;
+
+    sseReconnectAttempts++;
+    if (sseReconnectAttempts <= SSE_MAX_RECONNECT) {
+      const delay = SSE_RECONNECT_BASE_DELAY * sseReconnectAttempts;
+      console.log(`[cornerStore] SSE 第${sseReconnectAttempts}次重连，${delay}ms后重试...`);
+      setTimeout(() => connectSSE(onDataUpdate, onStatusChange), delay);
+    } else {
+      console.warn('[cornerStore] SSE 重连超过${SSE_MAX_RECONNECT}次，降级到轮询模式');
+      startFallbackPoll(onDataUpdate);
+    }
+  };
+
+  return true;
+}
+
+/**
+ * 断开 SSE 连接
+ */
+function disconnectSSE() {
+  if (sseEventSource) {
+    sseEventSource.close();
+    sseEventSource = null;
+    console.log('[cornerStore] SSE 连接已断开');
+  }
+  if (fallbackPollInterval) {
+    clearTimeout(fallbackPollInterval);
+    fallbackPollInterval = null;
+  }
+  sseReconnectAttempts = 0;
+}
+
+/**
+ * 降级轮询模式（SSE不可用时的后备方案）
+ */
+function startFallbackPoll(onDataUpdate: (data: any[], mainMarkets: any, source: string) => void) {
+  if (fallbackPollInterval) clearTimeout(fallbackPollInterval);
+  const poll = async () => {
+    await useCornerStore.getState().refreshData();
+    fallbackPollInterval = setTimeout(poll, 8000 + Math.random() * 2000);
+  };
+  poll();
+}
+
 // ==================== Store 创建 ====================
 
 export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
@@ -403,7 +514,6 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   crawlerData: null,
   scheduleData: [],
   mainMarketData: {},
-  betConfirmRequired: false,
   scheduleFreshLoaded: false,
   autoRefresh: false,
   balanceLastUpdated: null,
@@ -444,7 +554,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
           autoBetConfirmRequired: s.autoBetConfirmRequired ?? false,
           trackedMatchIds
         })
-      }).catch(() => {});
+      }).catch(err => console.error('[cornerStore] 投注配置同步失败:', err));
     }
     // 全局盘口设置变更时同步到后端
     if ('strongHandicapThreshold' in partial || 'handicapUpperLimit' in partial || 'handicapLowerLimit' in partial) {
@@ -457,7 +567,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
           handicapUpperLimit: s.handicapUpperLimit,
           handicapLowerLimit: s.handicapLowerLimit,
         })
-      }).catch(() => {});
+      }).catch(err => console.error('[cornerStore] 全局盘口设置同步失败:', err));
     }
   },
 
@@ -475,7 +585,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         autoBetConfirmRequired: s.autoBetConfirmRequired ?? false,
         trackedMatchIds
       })
-    }).catch(() => {});
+    }).catch(err => console.error('[cornerStore] 初始化投注配置同步失败:', err));
     // ★ 同步策略到后端，确保后端重启后策略不丢失
     syncStrategiesToBackend(get().strategies);
     // ★ 同步全局设置到后端（盘口分界线、上下限）
@@ -487,7 +597,7 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
         handicapUpperLimit: s.handicapUpperLimit,
         handicapLowerLimit: s.handicapLowerLimit,
       })
-    }).catch(() => {});
+    }).catch(err => console.error('[cornerStore] 初始化全局盘口设置同步失败:', err));
   },
 
   updateBalance: (balance) =>
@@ -577,13 +687,33 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
       if (data.success) {
         set({ isMonitoring: true });
         get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已启动", level: "info" });
+
+        // ★ 先执行一次全量数据拉取（确保立即有数据展示）
         await get().refreshData();
-        const schedulePoll = () => {
-          if (!get().isMonitoring) return;
-          const interval = 8000 + Math.random() * 2000;
-          monitorInterval = setTimeout(() => { get().refreshData(); schedulePoll(); }, interval);
-        };
-        schedulePoll();
+
+        // ★ 优先使用 SSE 实时推送模式
+        const sseConnected = connectSSE(
+          (sseData, sseMainMarkets, source) => {
+            // SSE 数据回调：复用 refreshData 中的合并逻辑
+            get()._applySSEData(sseData, sseMainMarkets, source);
+          },
+          (status) => {
+            if (status === 'monitoring_stopped') {
+              get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "后端监控已停止", level: "warning" });
+            }
+          }
+        );
+
+        // SSE 不可用时降级到轮询
+        if (!sseConnected) {
+          console.log('[cornerStore] SSE不可用，使用轮询模式');
+          const schedulePoll = () => {
+            if (!get().isMonitoring) return;
+            const interval = 8000 + Math.random() * 2000;
+            monitorInterval = setTimeout(() => { get().refreshData(); schedulePoll(); }, interval);
+          };
+          schedulePoll();
+        }
       } else {
         set({ error: "后端监控启动失败: " + (data.error || "未知错误") });
         get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控启动失败", level: "warning" });
@@ -595,7 +725,9 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   },
 
   stopMonitor: () => {
-    fetch('/api/corner/pause', { method: 'POST' }).catch(() => {});
+    fetch('/api/corner/pause', { method: 'POST' }).catch(err => console.error('[cornerStore] 停止监控请求失败:', err));
+    // ★ 断开 SSE 连接
+    disconnectSSE();
     if (monitorInterval) { clearTimeout(monitorInterval); monitorInterval = null; }
     set({ isMonitoring: false, autoRefresh: false });
     get().addLog({ timestamp: new Date().toLocaleTimeString(), message: "监控已停止", level: "info" });
@@ -808,9 +940,112 @@ export const useCornerStore = create<CornerStore>()(persist((set, get) => ({
   setCrawlerData: (data) => set({ crawlerData: data }),
   setScheduleData: (data) => set({ scheduleData: data }),
   setMainMarketData: (data) => set({ mainMarketData: data }),
-  setBetConfirmRequired: (required) => set({ betConfirmRequired: required }),
   setScheduleFreshLoaded: (loaded) => set({ scheduleFreshLoaded: loaded }),
   setAutoRefresh: (on) => set({ autoRefresh: on }),
+
+  // ★ SSE 数据应用：将后端推送的比赛数据合并更新到 liveMatches
+  // 复用 refreshData 中的 mainMarkets 合并逻辑，但跳过 fetch 请求
+  _applySSEData: (sseData, sseMainMarkets, source) => {
+    const currentMatches = get().liveMatches;
+
+    // 将 SSE 推送的数据映射为 CornerLiveMatch 格式
+    const incomingMatches: CornerLiveMatch[] = sseData.map((m: any) => ({
+      matchId: String(m.matchId || ""),
+      homeTeam: m.homeTeam || "",
+      awayTeam: m.awayTeam || "",
+      time: m.time || "",
+      elapsedMinutes: m.elapsedMinutes ?? 0,
+      homeScore: m.homeScore ?? 0,
+      awayScore: m.awayScore ?? 0,
+      homeCorners: m.homeCorners ?? 0,
+      awayCorners: m.awayCorners ?? 0,
+      cornerHandicap: m.cornerHandicap ?? 0,
+      cornerOdds: m.cornerOdds ?? 0,
+      handicaps: m.handicaps || [],
+      _dataSource: m._dataSource,
+      _cornerSource: m._cornerSource,
+      triggeredStrategies: m.triggeredStrategies || []
+    }));
+
+    // 增量合并策略：SSE 推送的比赛更新或追加到现有列表
+    const matchMap = new Map<string, CornerLiveMatch>();
+    for (const m of currentMatches) matchMap.set(m.matchId, m);
+
+    for (const m of incomingMatches) {
+      const existing = matchMap.get(m.matchId);
+      if (existing) {
+        // 合并：优先使用 SSE 推送的新数据，但保留 mainMarkets 合并的 handicaps
+        const mergedHandicaps = (m.handicaps && m.handicaps.length > 0)
+          ? m.handicaps
+          : existing.handicaps;
+        matchMap.set(m.matchId, { ...existing, ...m, handicaps: mergedHandicaps });
+      } else {
+        matchMap.set(m.matchId, m);
+      }
+    }
+
+    // 合并 mainMarkets（如果有）
+    if (sseMainMarkets && Object.keys(sseMainMarkets).length > 0) {
+      const liveMatches = Array.from(matchMap.values());
+
+      for (const m of liveMatches) {
+        const teamKey = (m.homeTeam || "") + "|" + (m.awayTeam || "");
+        let mm = (sseMainMarkets as any)[String(m.matchId || "")]
+          || (sseMainMarkets as any)[teamKey]
+          || (sseMainMarkets as any)[teamKey.toLowerCase()];
+
+        if (!mm && m.homeTeam && m.awayTeam) {
+          const hLower = m.homeTeam.toLowerCase();
+          const aLower = m.awayTeam.toLowerCase();
+          for (const [mk, mv] of Object.entries(sseMainMarkets as any)) {
+            const sepIdx = mk.indexOf("|");
+            if (sepIdx >= 1) {
+              const mkHome = mk.substring(0, sepIdx).toLowerCase();
+              const mkAway = mk.substring(sepIdx + 1).toLowerCase();
+              if ((hLower.includes(mkHome) || mkHome.includes(hLower)) &&
+                  (aLower.includes(mkAway) || mkAway.includes(aLower))) {
+                mm = mv;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!mm) continue;
+
+        const extraHandicaps: any[] = [];
+        let order = (m.handicaps || []).length + 1;
+
+        for (const h of (mm.hdp || [])) {
+          extraHandicaps.push({ order: order++, category: "HDP", categoryLabel: "让球", period: "full", line: h.line || 0, odds: { home: h.homeOdds || 0, away: h.awayOdds || 0 }, source: "api", marketGroup: "hdp" });
+        }
+        for (const o of (mm.ou || [])) {
+          extraHandicaps.push({ order: order++, category: "O/U", categoryLabel: "大小球", period: "full", line: o.line || 0, odds: { over: o.overOdds || 0, under: o.underOdds || 0 }, source: "api", marketGroup: "ou" });
+        }
+        for (const h of (mm.hdpHalf || [])) {
+          extraHandicaps.push({ order: order++, category: "HDP", categoryLabel: "上半场 让球", period: "half", line: h.line || 0, odds: { home: h.homeOdds || 0, away: h.awayOdds || 0 }, source: "api", marketGroup: "hdp" });
+        }
+        for (const o of (mm.ouHalf || [])) {
+          extraHandicaps.push({ order: order++, category: "O/U", categoryLabel: "上半场 大小球", period: "half", line: o.line || 0, odds: { over: o.overOdds || 0, under: o.underOdds || 0 }, source: "api", marketGroup: "ou" });
+        }
+
+        if (extraHandicaps.length > 0) {
+          m.handicaps = [...(m.handicaps || []), ...extraHandicaps];
+        }
+      }
+
+      set({ liveMatches });
+    } else {
+      // 无 mainMarkets，直接使用合并后的列表
+      set({ liveMatches: Array.from(matchMap.values()) });
+    }
+
+    // 触发策略日志
+    const triggeredCount = incomingMatches.reduce((sum, m) => sum + m.triggeredStrategies.length, 0);
+    if (triggeredCount > 0 && source === 'gismo') {
+      get().addLog({ timestamp: new Date().toLocaleTimeString(), message: `[SSE] 实时检测到 ${triggeredCount} 个策略触发 (${source})`, level: "signal" });
+    }
+  },
 }), {
   name: "corner-store",
   storage: createJSONStorage(() => localStorage),
