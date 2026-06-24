@@ -1,6 +1,17 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getTeamStats as getTeamStatsFromTs } from '../../src/data/worldcup_team_stats.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const TEAM_STATS_MAP = require('../../src/data/worldcup_team_stats.json');
+
+function getTeamStatsFromTs(teamId) {
+  return TEAM_STATS_MAP[teamId] || {
+    avgXgFor: 1.2, avgXgAgainst: 1.3, avgPossession: 48,
+    avgShots: 9.0, avgShotsOnTarget: 3.5,
+    avgGoalsFor: 1.2, avgGoalsAgainst: 1.3,
+    avgCorners: 3.5, winRate: 0.40
+  };
+}
 
 const TEAM_STATS_FILE = join(process.cwd(), 'src', 'data', 'worldcup_team_stats.json');
 

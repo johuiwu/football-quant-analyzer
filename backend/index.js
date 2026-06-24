@@ -11,6 +11,7 @@ import predictRoutes from './routes/predict.js';
 // import aiRoutes from './routes/aiRoutes.js'; // 需要 TypeScript 编译，暂时禁用
 import cornerRoutes from './routes/cornerRoutes.js';
 import crawlerRoutes from './routes/crawlerRoutes.js';
+import worldcupRoutes from './routes/worldcupRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -90,6 +91,7 @@ app.use('/api', predictRoutes);
 // app.use('/api', aiRoutes); // 需要 TypeScript 编译，暂时禁用
 app.use('/api', cornerRoutes);
 app.use('/api', crawlerRoutes);
+app.use('/api', worldcupRoutes);
 
 // 根路由 — 重定向到 API 文档
 app.get('/', (req, res) => {

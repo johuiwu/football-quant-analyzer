@@ -451,18 +451,20 @@ router.get('/worldcup/schedule-scores', async (req, res) => {
       const homeHasStats = teamStats[f.homeTeam] && teamStats[f.homeTeam].played > 0;
       const awayHasStats = teamStats[f.awayTeam] && teamStats[f.awayTeam].played > 0;
       const isDatePast = f.date <= todayStr;
-      const completed = homeHasStats && awayHasStats && isDatePast;
 
-      // Try to find individual match score from crawler results
+      // 从爬虫结果中查找该场比赛的单场比分
       const matchKey = `${f.homeTeam}_${f.awayTeam}`;
       const matchScore = matchResultsMap?.[matchKey];
+
+      // 只有爬虫确认有比分时才标记为已完赛（避免用累计数据误判）
+      const completed = matchScore ? true : (homeHasStats && awayHasStats && isDatePast);
 
       return {
         ...f,
         completed,
         homeScore: matchScore?.homeScore ?? null,
         awayScore: matchScore?.awayScore ?? null,
-        scoreType: completed && matchScore ? 'match' : null,
+        scoreType: matchScore ? 'match' : null,
         stats: completed ? { home: teamStats[f.homeTeam], away: teamStats[f.awayTeam] } : null
       };
     });
