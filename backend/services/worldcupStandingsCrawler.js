@@ -198,6 +198,7 @@ export async function fetchStandings() {
 
 const SCHEDULE_URL = 'https://www.livescore.com/en/football/international/world-cup-2026/';
 const RESULTS_URL = 'https://www.livescore.com/en/football/international/world-cup-2026/results/';
+const LS_DETAILS_API = 'https://prod-cdn-public-api.livescore.com/v1/api/app/competition/734/details/8?locale=en';
 const RESULTS_CACHE = { data: null, time: 0 };
 const RESULTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -213,114 +214,59 @@ export async function fetchMatchResults() {
     return RESULTS_CACHE.data;
   }
 
-  let browser = null;
   try {
-    const args = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--ignore-certificate-errors',
-    ];
+    // 直接调用 LiveScore Details API（无需 Puppeteer，速度快）
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch(LS_DETAILS_API, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    clearTimeout(timer);
 
-    if (process.env.PUPPETEER_PROXY) {
-      args.push(`--proxy-server=${process.env.PUPPETEER_PROXY}`);
-      args.push('--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE localhost');
-    }
-
-    const headless = process.env.CRAWLER_HEADLESS === 'false' ? false : 'new';
-    const browserPath = detectLocalBrowser();
-    if (!browserPath) {
-      console.warn('[worldcupStandingsCrawler] No browser detected, cannot fetch match results');
+    if (!res.ok) {
+      console.warn('[worldcupStandingsCrawler] LS Details API returned', res.status);
       return null;
     }
 
-    browser = await puppeteer.launch({ headless, executablePath: browserPath, args });
-
-    // 同时爬取主赛程页和赛果页，合并数据
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-    // 爬取主赛程页（包含更多已完赛比赛）
-    await page.goto(SCHEDULE_URL, { waitUntil: 'networkidle2', timeout: TIMEOUT });
-    const scheduleMatches = await extractMatchesFromPage(page);
-
-    // 爬取赛果页（可能有额外历史结果）
-    await page.goto(RESULTS_URL, { waitUntil: 'networkidle2', timeout: TIMEOUT });
-    const resultsMatches = await extractMatchesFromPage(page);
-
-    await browser.close();
-    browser = null;
-
-    // 合并两个来源的数据（results 页面的数据优先覆盖）
-    const allMatches = [...scheduleMatches];
-    for (const rm of resultsMatches) {
-      const existingIdx = allMatches.findIndex(m => m.homeName === rm.homeName && m.awayName === rm.awayName);
-      if (existingIdx >= 0) {
-        allMatches[existingIdx] = rm; // results 页数据更新
-      } else {
-        allMatches.push(rm); // 额外的比赛
-      }
-    }
+    const data = await res.json();
+    const stages = data?.Stages || [];
 
     // 将英文名映射为系统 teamId
     const resultMap = {};
-    for (const m of allMatches) {
-      const homeTeamId = LIVESCORE_TO_TEAM_ID[m.homeName];
-      const awayTeamId = LIVESCORE_TO_TEAM_ID[m.awayName];
-      if (!homeTeamId || !awayTeamId) continue;
-      if (isNaN(m.homeScore) || isNaN(m.awayScore)) continue;
+    for (const stage of stages) {
+      for (const event of stage.Events || []) {
+        // 只处理已完赛的比赛（Eps === 'FT'）
+        if (event.Eps !== 'FT') continue;
+        const homeName = event.T1?.[0]?.Nm;
+        const awayName = event.T2?.[0]?.Nm;
+        if (!homeName || !awayName) continue;
 
-      const key = `${homeTeamId}_${awayTeamId}`;
-      resultMap[key] = { homeScore: m.homeScore, awayScore: m.awayScore };
+        const homeTeamId = LIVESCORE_TO_TEAM_ID[homeName];
+        const awayTeamId = LIVESCORE_TO_TEAM_ID[awayName];
+        if (!homeTeamId || !awayTeamId) continue;
+
+        const homeScore = parseInt(event.Tr1, 10);
+        const awayScore = parseInt(event.Tr2, 10);
+        if (isNaN(homeScore) || isNaN(awayScore)) continue;
+
+        const key = `${homeTeamId}_${awayTeamId}`;
+        resultMap[key] = { homeScore, awayScore };
+      }
     }
 
     if (Object.keys(resultMap).length > 0) {
       RESULTS_CACHE.data = resultMap;
       RESULTS_CACHE.time = Date.now();
-      console.log(`[worldcupStandingsCrawler] Fetched ${Object.keys(resultMap).length} match results from LiveScore (schedule+results)`);
+      console.log(`[worldcupStandingsCrawler] Fetched ${Object.keys(resultMap).length} match results from LS Details API`);
       return resultMap;
     }
 
-    console.warn('[worldcupStandingsCrawler] No match results extracted from LiveScore');
+    console.warn('[worldcupStandingsCrawler] No match results from LS Details API');
     return null;
 
   } catch (error) {
-    if (browser) {
-      try { await browser.close(); } catch {}
-    }
     console.warn('[worldcupStandingsCrawler] fetchMatchResults failed:', error.message);
     return null;
   }
-}
-
-/**
- * 从当前页面 __NEXT_DATA__ 中提取比赛比分
- */
-async function extractMatchesFromPage(page) {
-  return await page.evaluate(() => {
-    const results = [];
-    const nextDataEl = document.getElementById('__NEXT_DATA__');
-    if (!nextDataEl) return results;
-
-    try {
-      const data = JSON.parse(nextDataEl.textContent);
-      const sections = data?.props?.pageProps?.initialData?.sections || [];
-      for (const section of sections) {
-        for (const event of section.events || []) {
-          if (event.homeTeamScore != null && event.awayTeamScore != null) {
-            results.push({
-              homeName: event.homeTeamName,
-              awayName: event.awayTeamName,
-              homeScore: parseInt(event.homeTeamScore, 10),
-              awayScore: parseInt(event.awayTeamScore, 10),
-            });
-          }
-        }
-      }
-    } catch (e) {
-      // JSON parse failed
-    }
-
-    return results;
-  });
 }
